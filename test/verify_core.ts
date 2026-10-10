@@ -5,6 +5,7 @@ import { ClaudeAdapter } from '../src/adapters/claude_adapter.ts';
 import { CodexAdapter } from '../src/adapters/codex_adapter.ts';
 import { SqliteStore } from '../src/core/sqlite_store.ts';
 import { validateCwd } from '../src/core/paths.ts';
+import { formatTaskReport } from '../src/mcp/mcp_server.ts';
 
 console.log('🧪 Agent Observatory Kapsamlı Hardening & Doğrulama Testi Başlatılıyor...\n');
 
@@ -276,5 +277,50 @@ console.log('8. Oturum seçici ok tuşu mantığı Test Ediliyor...');
   }
 }
 console.log('✔ Oturum seçici boş liste/mod korumaları doğrulandı!\n');
+
+// MCP rapor formatlayıcı: token tasarruflu (compact) ve detaylı mod
+console.log('MCP formatTaskReport (compact / detailed) Test Ediliyor...');
+{
+  const longText = 'A'.repeat(1500) + 'B'.repeat(3000) + 'C'.repeat(1000);
+  const summary = {
+    agent: 'claude',
+    model: 'sonnet',
+    status: 'completed',
+    durationMs: 12340,
+    taskId: 'task-123',
+    sessionId: 'sess-abc',
+    usage: { inputTokens: 12400, cachedTokens: 800, outputTokens: 1000, reasoningTokens: 0, totalTokens: 14200 },
+    toolsUsed: [
+      { name: 'Edit', input: { file_path: 'src/a.ts', old_string: 'x' } },
+      { name: 'Edit', input: { file_path: 'src/a.ts', old_string: 'y' } },
+      { name: 'Write', input: { path: 'src/b.ts', content: 'SECRET_BODY' } },
+      { name: 'Read', input: { file_path: 'src/c.ts' } },
+      { name: 'Read', input: { file_path: 'src/d.ts' } },
+      { name: 'PowerShell', input: { command: 'npm test' } }
+    ],
+    assistantText: longText
+  };
+
+  const compact = formatTaskReport(summary);
+  assert.ok(compact.includes('12.4k'), 'Token >= 1000 kısaltılmalı');
+  assert.ok(compact.includes('800'), 'Token < 1000 düz sayı olmalı');
+  assert.ok(compact.includes('**Araç Çağrıları**: 6 adet (Edit: 2, Write: 1, Read: 2, PowerShell: 1)'), 'Araç sayıları toplanmalı');
+  assert.ok(compact.includes('**Değiştirilen Dosyalar**'), 'Değiştirilen dosyalar listelenmeli');
+  assert.ok(compact.includes('src/a.ts') && compact.includes('src/b.ts'), 'Edit/Write dosyaları çıkarılmalı');
+  assert.ok(!compact.includes('src/c.ts') && !compact.includes('src/d.ts'), 'Read dosyaları değiştirilen listede olmamalı');
+  assert.strictEqual(compact.split('src/a.ts').length - 1, 1, 'Dosyalar tekilleştirilmeli');
+  assert.ok(!compact.includes('SECRET_BODY') && !compact.includes('old_string'), 'Compact modda tool JSON dökülmemeli');
+  assert.ok(compact.includes('3000 karakter'), 'Uzun yanıt kırpılıp atlanan karakter sayısı yazılmalı');
+  assert.ok(compact.includes('A'.repeat(1500)) && compact.includes('C'.repeat(1000)) && !compact.includes('BBBBBBBBBB'), 'Yanıtın başı ve sonu korunmalı');
+
+  const detailed = formatTaskReport(summary, true);
+  assert.ok(detailed.includes('Yürütülen Araçlar'), 'Detaylı modda araç listesi olmalı');
+  assert.ok(detailed.includes('SECRET_BODY'), 'Detaylı modda tool girdileri yazılmalı');
+  assert.ok(detailed.includes('B'.repeat(3000)), 'Detaylı modda yanıt kırpılmamalı');
+
+  const errReport = formatTaskReport({ agent: 'codex', status: 'failed', durationMs: 500, taskId: 't', error: 'boom' });
+  assert.ok(errReport.includes('boom'), 'Hata bloğu korunmalı');
+}
+console.log('✔ formatTaskReport doğrulandı!\n');
 
 console.log('🎉 TÜM P0 GÜVENLİK, TAM TEST İZOLASYONU VE VERİ TUTARLILIĞI TESTLERİ EKSİKSİZ BAŞARIYLA TAMAMLANDI!');
