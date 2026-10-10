@@ -107,7 +107,7 @@ export async function startMcpServer(): Promise<void> {
     async ({ agent, prompt, cwd, session_id, dangerously_skip_permissions, sandbox, timeout_seconds }) => {
       try {
         const validatedCwd = validateCwd(cwd);
-        const { taskId } = globalRunner.startTask({
+        const { taskId, promise } = globalRunner.startTask({
           agent,
           prompt,
           cwd: validatedCwd,
@@ -115,6 +115,10 @@ export async function startMcpServer(): Promise<void> {
           dangerouslySkipPermissions: dangerously_skip_permissions,
           sandbox,
           timeoutSeconds: timeout_seconds || 300
+        });
+
+        promise.catch((err) => {
+          console.error(`[AgentObservatory] Background task ${taskId} error:`, err.message);
         });
 
         return {

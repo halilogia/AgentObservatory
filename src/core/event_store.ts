@@ -1,15 +1,17 @@
 import { EventEmitter } from 'node:events';
 import type { TaskEvent, TaskSummary } from './types.ts';
-import { globalSqlite } from './sqlite_store.ts';
+import { globalSqlite, SqliteStore } from './sqlite_store.ts';
 
 export interface EventStoreOptions {
   maxEvents?: number;
+  sqliteStore?: SqliteStore;
 }
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
 export class EventStore extends EventEmitter {
   private maxEvents: number;
+  private sqliteStore: SqliteStore;
   private events: TaskEvent[] = [];
   private tasks: Map<string, TaskSummary> = new Map();
   private sessionToTask: Map<string, string> = new Map();
@@ -18,6 +20,7 @@ export class EventStore extends EventEmitter {
   constructor(options: EventStoreOptions = {}) {
     super();
     this.maxEvents = options.maxEvents || 10000;
+    this.sqliteStore = options.sqliteStore || globalSqlite;
   }
 
   recordEvent(event: TaskEvent, pid?: number): void {
@@ -25,7 +28,7 @@ export class EventStore extends EventEmitter {
 
     // Persist to cross-process SQLite
     try {
-      globalSqlite.recordEvent(event, pid);
+      this.sqliteStore.recordEvent(event, pid);
     } catch (err: any) {
       console.error(`[Observatory] SQLite record error: ${err.message}`);
     }
@@ -146,7 +149,7 @@ export class EventStore extends EventEmitter {
   }
 
   getTask(taskId: string): TaskSummary | null {
-    return this.tasks.get(taskId) || globalSqlite.getTask(taskId);
+    return this.tasks.get(taskId) || this.sqliteStore.getTask(taskId);
   }
 
   getTaskBySession(sessionId: string): TaskSummary | null {
@@ -159,17 +162,17 @@ export class EventStore extends EventEmitter {
     if (memTasks.length > 0) {
       return memTasks.sort((a, b) => b.startTime - a.startTime).slice(0, limit);
     }
-    return globalSqlite.getRecentTasks(limit);
+    return this.sqliteStore.getRecentTasks(limit);
   }
 
   getEvents(taskId: string): TaskEvent[] {
     const memEvents = this.events.filter((e) => e.taskId === taskId);
     if (memEvents.length > 0) return memEvents;
-    return globalSqlite.getEvents(taskId);
+    return this.sqliteStore.getEvents(taskId);
   }
 
   cancelTask(taskId: string, reason: string = 'Kullanıcı tarafından iptal edildi'): boolean {
-    return globalSqlite.cancelTask(taskId, reason);
+    return this.sqliteStore.cancelTask(taskId, reason);
   }
 }
 

@@ -166,6 +166,11 @@ export class AgentRunner {
       });
     });
 
+    // Safety handler: Prevents unhandled promise rejection crashes in Node.js when startTask is called fire-and-forget
+    promise.catch((_err) => {
+      // The failure is already recorded to eventStore/SQLite above via task.failed
+    });
+
     return { taskId, promise };
   }
 

@@ -41,7 +41,7 @@ console.log('✔ Güvenlik varsayılanları ve dizin doğrulaması başarıyla g
 
 // 3. DOĞRULUK: Paralel Codex Görevlerinde Oturum İzolasyonu
 console.log('3. Paralel Görevlerde Oturum İzolasyonu (Session Isolation) Test Ediliyor...');
-const codexStore = new EventStore();
+const codexStore = new EventStore({ sqliteStore: memSqlite });
 
 // Görev A ve Görev B eşzamanlı olarak aynı adapter üzerinden yürütülüyor
 const taskA = 'task_codex_parallel_A';
@@ -78,7 +78,7 @@ console.log('✔ Paralel görev oturum izolasyonu başarıyla doğrulandı!\n');
 
 // 4. İPTAL DURUM MAKİNESİ: Değiştirilemez Terminal Durumu (Immutable Terminal State)
 console.log('4. İptal Durum Makinesi ve Terminal Durum Güvencesi Test Ediliyor...');
-const cancelStore = new EventStore();
+const cancelStore = new EventStore({ sqliteStore: memSqlite });
 const cancelTaskId = 'task_cancel_test_1';
 
 // Görev başlar
@@ -124,10 +124,44 @@ assert.ok(eventsSinceSeq0[0].seq < eventsSinceSeq0[1].seq);
 assert.ok(eventsSinceSeq0[1].seq < eventsSinceSeq0[2].seq);
 console.log('✔ Monotonik artan seq ve mesaj bütünlüğü başarıyla doğrulandı!\n');
 
-// 6. RESMİ MCP SDK MODÜL DOĞRULAMASI
-console.log('6. Resmi MCP SDK (@modelcontextprotocol/sdk) Modül Yüklemesi Test Ediliyor...');
+// 6. CODEX PROTOKOL AYRIŞTIRICISI: item.started, aggregated_output, mcp_tool_call
+console.log('6. Codex Protokol Ayrıştırıcısı (item.started & aggregated_output) Test Ediliyor...');
+const codexParserStore = new EventStore({ sqliteStore: memSqlite });
+const codexParserTaskId = 'task_codex_parser_test';
+
+// Codex item.started
+codex.handleStdoutLine(
+  JSON.stringify({
+    type: 'item.started',
+    item: { type: 'mcp_tool_call', name: 'read_file', input: { path: 'test.txt' } }
+  }),
+  codexParserTaskId,
+  codexParserStore
+);
+let parserEvents = codexParserStore.getEvents(codexParserTaskId);
+assert.strictEqual(parserEvents.length, 1);
+assert.strictEqual(parserEvents[0].type, 'tool.invoked');
+assert.strictEqual(parserEvents[0].data.name, 'read_file');
+
+// Codex item.completed with aggregated_output
+codex.handleStdoutLine(
+  JSON.stringify({
+    type: 'item.completed',
+    item: { type: 'mcp_tool_call', name: 'read_file', exit_code: 0, aggregated_output: 'file content preview' }
+  }),
+  codexParserTaskId,
+  codexParserStore
+);
+parserEvents = codexParserStore.getEvents(codexParserTaskId);
+assert.strictEqual(parserEvents.length, 2);
+assert.strictEqual(parserEvents[1].type, 'tool.completed');
+assert.strictEqual(parserEvents[1].data.output, 'file content preview');
+console.log('✔ Codex protokol ayrıştırıcısı (item.started, aggregated_output) başarıyla doğrulandı!\n');
+
+// 7. RESMİ MCP SDK MODÜL DOĞRULAMASI
+console.log('7. Resmi MCP SDK (@modelcontextprotocol/sdk) Modül Yüklemesi Test Ediliyor...');
 const mcpModule = await import('../src/mcp/mcp_server.ts');
 assert.strictEqual(typeof mcpModule.startMcpServer, 'function');
 console.log('✔ Resmi MCP Server modülü doğrulandı!\n');
 
-console.log('🎉 TÜM P0 GÜVENLİK, OTURUM İZOLASYONU VE VERİ TUTARLILIĞI TESTLERİ EKSİKSİZ BAŞARIYLA TAMAMLANDI!');
+console.log('🎉 TÜM P0 GÜVENLİK, TAM TEST İZOLASYONU VE VERİ TUTARLILIĞI TESTLERİ EKSİKSİZ BAŞARIYLA TAMAMLANDI!');

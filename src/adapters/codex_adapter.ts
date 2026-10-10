@@ -73,10 +73,12 @@ export class CodexAdapter extends BaseAdapter {
         type: 'task.started',
         data: { model }
       }));
-    } else if (dtype === 'item.created') {
+    } else if (dtype === 'item.started' || dtype === 'item.created') {
       const item = event.item || {};
       const itype = item.type;
-      if (itype === 'command_execution' || itype === 'tool_call') {
+      if (itype === 'command_execution' || itype === 'tool_call' || itype === 'mcp_tool_call') {
+        const toolName = item.name || (itype === 'command_execution' ? 'bash' : itype);
+        const inputCmd = item.command || (item.input ? JSON.stringify(item.input) : '') || '';
         store.recordEvent(createEvent({
           taskId,
           sessionId: currentSession,
@@ -84,8 +86,8 @@ export class CodexAdapter extends BaseAdapter {
           tier: 1,
           type: 'tool.invoked',
           data: {
-            name: itype,
-            input: { command: item.command || item.name || '' }
+            name: toolName,
+            input: { command: inputCmd }
           }
         }));
       }
@@ -102,7 +104,9 @@ export class CodexAdapter extends BaseAdapter {
           type: 'message.delta',
           data: { text: item.text || '' }
         }));
-      } else if (itype === 'command_execution' || itype === 'tool_call') {
+      } else if (itype === 'command_execution' || itype === 'tool_call' || itype === 'mcp_tool_call') {
+        const toolName = item.name || (itype === 'command_execution' ? 'bash' : itype);
+        const rawOutput = item.aggregated_output || item.output || (item.result ? JSON.stringify(item.result) : '') || '';
         store.recordEvent(createEvent({
           taskId,
           sessionId: currentSession,
@@ -110,9 +114,9 @@ export class CodexAdapter extends BaseAdapter {
           tier: 1,
           type: 'tool.completed',
           data: {
-            name: itype,
+            name: toolName,
             exitCode: item.exit_code,
-            output: (item.output || '').slice(0, 300)
+            output: String(rawOutput).slice(0, 300)
           }
         }));
       } else if (itype === 'error' || itype === 'error_message') {
