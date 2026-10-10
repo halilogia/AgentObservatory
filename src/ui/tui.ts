@@ -147,6 +147,7 @@ export class TerminalUI {
   private pollInterval: NodeJS.Timeout | null = null;
   private lastSeq: number = 0;
   private seenEventIds: Set<string> = new Set();
+  private keyListener: ((chunk: Buffer | string) => void) | null = null;
 
   constructor(store: EventStore = globalStore) {
     this.store = store;
@@ -173,6 +174,41 @@ export class TerminalUI {
     this.pollInterval = setInterval(() => {
       this.pollSqlite();
     }, intervalMs);
+
+    this.setupKeyboard();
+  }
+
+  private loadHistory(): void {
+    console.log(paint('yellow', '\n📜 [GEÇMİŞ] Tüm geçmiş olaylar veritabanından yükleniyor...\n'));
+    this.seenEventIds.clear();
+    this.lastSeq = 0;
+    this.pollSqlite();
+  }
+
+  private setupKeyboard(): void {
+    const stdin = process.stdin;
+    if (!stdin.isTTY || this.keyListener) return;
+    try {
+      stdin.setRawMode(true);
+    } catch {
+      return;
+    }
+    stdin.resume();
+    this.keyListener = (chunk: Buffer | string) => {
+      const key = chunk.toString();
+      if (key === '\u0003' || key === 'q' || key === 'Q') {
+        this.stop();
+        process.exit(0);
+      } else if (key === 'h' || key === 'H') {
+        this.loadHistory();
+      } else if (key === 'c' || key === 'C') {
+        try {
+          console.clear();
+        } catch {}
+        this.renderHeader();
+      }
+    };
+    stdin.on('data', this.keyListener);
   }
 
   stop(): void {
@@ -181,6 +217,14 @@ export class TerminalUI {
       this.pollInterval = null;
     }
     this.store.off('event', this.boundOnEvent);
+    if (this.keyListener) {
+      process.stdin.off('data', this.keyListener);
+      this.keyListener = null;
+      try {
+        if (process.stdin.isTTY) process.stdin.setRawMode(false);
+      } catch {}
+      process.stdin.pause();
+    }
   }
 
   private pollSqlite(): void {
@@ -201,7 +245,7 @@ export class TerminalUI {
   renderHeader(): void {
     console.log(paint('cyan', '═'.repeat(80)));
     console.log(` ${paint('bold', '🔭 AGENT OBSERVATORY')} · ${paint('green', 'Canlı Olay Akışı')} · ${paint('gray', hms())}`);
-    console.log(` ${paint('gray', 'Mod: Event-First Hybrid (TS) · SQLite WAL Cross-Process · Çıkış: Ctrl+C')}`);
+    console.log(` ${paint('gray', 'Kısayollar: [H] Geçmişi Yükle · [C] Ekranı Temizle · [Q] Çıkış')}`);
     console.log(paint('cyan', '═'.repeat(80)));
   }
 

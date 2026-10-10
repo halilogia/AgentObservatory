@@ -36,7 +36,7 @@ async function main(): Promise<void> {
     const isHistory = args.includes('--history') || args.includes('--all');
     const tui = new TerminalUI(globalStore);
     tui.startWatchMode(300, !isHistory);
-    console.log(paint('gray', isHistory ? 'Tüm geçmiş olaylar ve canlı akış dinleniyor...' : 'Temiz oturum: Sadece yeni gelen canlı olaylar dinleniyor (Geçmiş için --history)...'));
+    console.log(paint('gray', isHistory ? 'Tüm geçmiş olaylar ve canlı akış dinleniyor...' : 'Temiz oturum: Sadece yeni gelen canlı olaylar dinleniyor (Geçmiş için --history/--all veya [H] tuşu)...'));
   } else if (command === 'mcp') {
     const { startMcpServer } = await import('./mcp/mcp_server.ts');
     await startMcpServer();
