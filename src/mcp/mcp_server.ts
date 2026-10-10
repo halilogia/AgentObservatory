@@ -112,9 +112,11 @@ export async function startMcpServer(): Promise<void> {
       dangerously_skip_permissions: z.boolean().optional().default(false).describe('Explicitly skip permission prompts (default: false, safe)'),
       sandbox: z.enum(['workspace-write', 'read-only', 'danger-full-access']).optional().default('workspace-write').describe('Codex sandbox mode'),
       timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds'),
-      detailed: z.boolean().optional().default(false).describe('Return verbose tool logs and full output (default false)')
+      detailed: z.boolean().optional().default(false).describe('Return verbose tool logs and full output (default false)'),
+      effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().describe('Reasoning effort level (low, medium, high, xhigh, max). Used by Claude.'),
+      model: z.string().optional().describe('Model override (e.g. sonnet, opus, haiku). Used by Claude.')
     },
-    async ({ agent, prompt, cwd, session_id, dangerously_skip_permissions, sandbox, timeout_seconds, detailed }) => {
+    async ({ agent, prompt, cwd, session_id, dangerously_skip_permissions, sandbox, timeout_seconds, detailed, effort, model }) => {
       try {
         const validatedCwd = validateCwd(cwd);
         const summary = await globalRunner.runTask({
@@ -124,7 +126,9 @@ export async function startMcpServer(): Promise<void> {
           sessionId: session_id,
           dangerouslySkipPermissions: dangerously_skip_permissions,
           sandbox,
-          timeoutSeconds: timeout_seconds || 300
+          timeoutSeconds: timeout_seconds || 300,
+          effort,
+          model
         });
 
         return {
@@ -151,9 +155,11 @@ export async function startMcpServer(): Promise<void> {
       dangerously_skip_permissions: z.boolean().optional().default(false).describe('Explicitly skip permission prompts (default: false)'),
       sandbox: z.enum(['workspace-write', 'read-only', 'danger-full-access']).optional().default('workspace-write').describe('Codex sandbox mode'),
       timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds'),
-      parent_task_id: z.string().optional().describe('Optional parent task ID (hierarchy)')
+      parent_task_id: z.string().optional().describe('Optional parent task ID (hierarchy)'),
+      effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().describe('Reasoning effort level (low, medium, high, xhigh, max). Used by Claude.'),
+      model: z.string().optional().describe('Model override (e.g. sonnet, opus, haiku). Used by Claude.')
     },
-    async ({ agent, prompt, cwd, session_id, dangerously_skip_permissions, sandbox, timeout_seconds, parent_task_id }) => {
+    async ({ agent, prompt, cwd, session_id, dangerously_skip_permissions, sandbox, timeout_seconds, parent_task_id, effort, model }) => {
       try {
         const validatedCwd = validateCwd(cwd);
         const { taskId, promise } = globalRunner.startTask({
@@ -164,7 +170,9 @@ export async function startMcpServer(): Promise<void> {
           parentTaskId: parent_task_id,
           dangerouslySkipPermissions: dangerously_skip_permissions,
           sandbox,
-          timeoutSeconds: timeout_seconds || 300
+          timeoutSeconds: timeout_seconds || 300,
+          effort,
+          model
         });
 
         promise.catch((err) => {
@@ -219,9 +227,11 @@ export async function startMcpServer(): Promise<void> {
       session_id: z.string().optional().describe('Optional session ID to resume'),
       dangerously_skip_permissions: z.boolean().optional().default(false).describe('Explicitly bypass tool prompts (default: false)'),
       timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds'),
-      detailed: z.boolean().optional().default(false).describe('Return verbose tool logs and full output (default false)')
+      detailed: z.boolean().optional().default(false).describe('Return verbose tool logs and full output (default false)'),
+      effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().default('medium').describe('Reasoning effort level (low, medium, high, xhigh, max). Default: medium.'),
+      model: z.string().optional().describe('Model override (e.g. sonnet, opus, haiku). Default: sonnet.')
     },
-    async ({ prompt, cwd, session_id, dangerously_skip_permissions, timeout_seconds, detailed }) => {
+    async ({ prompt, cwd, session_id, dangerously_skip_permissions, timeout_seconds, detailed, effort, model }) => {
       try {
         const validatedCwd = validateCwd(cwd);
         const summary = await globalRunner.runTask({
@@ -230,7 +240,9 @@ export async function startMcpServer(): Promise<void> {
           cwd: validatedCwd,
           sessionId: session_id,
           dangerouslySkipPermissions: dangerously_skip_permissions,
-          timeoutSeconds: timeout_seconds || 300
+          timeoutSeconds: timeout_seconds || 300,
+          effort,
+          model
         });
         return { content: [{ type: 'text', text: formatTaskReport(summary, detailed) }] };
       } catch (err: any) {

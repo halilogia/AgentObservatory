@@ -1,0 +1,10 @@
+{
+  "governance": {
+    "enforceDocObligations": true
+  },
+  "testEvidence": {
+    "enabled": true,
+    "deferredMode": true,
+    "requireTestInfrastructure": false
+  }
+}

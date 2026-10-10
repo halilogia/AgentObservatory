@@ -9,6 +9,8 @@ export interface CommandOptions {
   dangerouslySkipPermissions?: boolean;
   sandbox?: string;
   timeoutSeconds?: number;
+  effort?: string;
+  model?: string;
 }
 
 export interface BuiltCommand {

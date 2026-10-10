@@ -20,6 +20,8 @@ export interface RunTaskOptions {
   dangerouslySkipPermissions?: boolean;
   sandbox?: string;
   parentTaskId?: string;
+  effort?: string;
+  model?: string;
 }
 
 interface ActiveProcessEntry {
@@ -69,7 +71,9 @@ export class AgentRunner {
     const cmd = adapter.buildCommand({
       ...options,
       taskId,
-      cwd: validatedCwd
+      cwd: validatedCwd,
+      effort: options.effort,
+      model: options.model
     });
 
     autoLaunchTui();

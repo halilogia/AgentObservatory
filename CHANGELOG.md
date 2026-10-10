@@ -5,7 +5,15 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/) standardına day
 
 ---
 
+## [Unreleased]
+
+### Eklendi
+- **Dinamik Effort & Model Kontrolü:** Claude Code adaptörüne ve MCP sunucusuna `--effort` (`low`, `medium`, `high`, `xhigh`, `max`) ve `--model` parametreleri eklendi. Varsayılan olarak kota tasarruflu `medium` seviyesi kullanılır.
+- **Demo Modülü:** `src/demo_obligation.ts` ve ilişkili `test/demo_obligation.test.ts` eklendi (`calculateMetrics`, `divideMetrics`).
+
+
 ## [1.0.0-alpha] - 2026-10-10
+
 
 ### Eklendi
 - **Mimari:** Event-First Hybrid Agent Observatory mimari tasarımı oluşturuldu.

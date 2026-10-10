@@ -24,6 +24,14 @@ const codex = new CodexAdapter();
 const clCmd = claude.buildCommand({ prompt: 'test prompt' });
 assert.ok(!clCmd.args.includes('--dangerously-skip-permissions'), 'Claude varsayılan olarak TEHLİKELİ izinleri atlamamalı!');
 
+// A2. Claude effort & model parametreleri
+const clEffortCmd = claude.buildCommand({ prompt: 'hi', effort: 'medium', model: 'sonnet' });
+const effortIdx = clEffortCmd.args.indexOf('--effort');
+const modelIdx = clEffortCmd.args.indexOf('--model');
+assert.ok(effortIdx >= 0 && clEffortCmd.args[effortIdx + 1] === 'medium', 'Claude komutu --effort medium içermeli!');
+assert.ok(modelIdx >= 0 && clEffortCmd.args[modelIdx + 1] === 'sonnet', 'Claude komutu --model sonnet içermeli!');
+assert.ok(!clCmd.args.includes('--effort') && !clCmd.args.includes('--model'), 'Belirtilmediğinde --effort/--model eklenmemeli!');
+
 // B. Codex varsayılan sandbox kontrolü
 const cxCmd = codex.buildCommand({ prompt: 'test prompt' });
 assert.ok(cxCmd.args.includes('workspace-write'), 'Codex varsayılan olarak workspace-write sandbox kullanmalı!');

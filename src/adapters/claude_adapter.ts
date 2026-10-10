@@ -24,6 +24,14 @@ export class ClaudeAdapter extends BaseAdapter {
       args.push('--resume', sessionId);
     }
 
+    if (opts.effort) {
+      args.push('--effort', opts.effort);
+    }
+
+    if (opts.model) {
+      args.push('--model', opts.model);
+    }
+
     return {
       exe: resolveBinary('claude'),
       args,
