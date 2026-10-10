@@ -36,6 +36,19 @@ assert.ok(!clCmd.args.includes('--effort') && !clCmd.args.includes('--model'), '
 const cxCmd = codex.buildCommand({ prompt: 'test prompt' });
 assert.ok(cxCmd.args.includes('workspace-write'), 'Codex varsayılan olarak workspace-write sandbox kullanmalı!');
 assert.ok(!cxCmd.args.includes('danger-full-access'), 'Codex asla varsayılan olarak danger-full-access olmamalı!');
+assert.ok(!cxCmd.args.includes('--model') && !cxCmd.args.includes('-c') && !cxCmd.args.includes('--dangerously-bypass-approvals-and-sandbox'), 'Belirtilmediğinde Codex --model/-c/bypass eklenmemeli!');
+
+const cxModelCmd = codex.buildCommand({ prompt: 'hi', model: 'o3', effort: 'low', dangerouslySkipPermissions: true });
+const cxModelIdx = cxModelCmd.args.indexOf('--model');
+assert.ok(cxModelIdx >= 0 && cxModelCmd.args[cxModelIdx + 1] === 'o3', 'Codex komutu --model o3 içermeli!');
+const cxCfgIdx = cxModelCmd.args.indexOf('-c');
+assert.ok(cxCfgIdx >= 0 && cxModelCmd.args[cxCfgIdx + 1] === 'model_reasoning_effort="low"', 'Codex komutu model_reasoning_effort="low" içermeli!');
+assert.ok(cxModelCmd.args.includes('--dangerously-bypass-approvals-and-sandbox'), 'Codex açıkça istenince bypass bayrağını içermeli!');
+
+for (const e of ['xhigh', 'max']) {
+  const c = codex.buildCommand({ prompt: 'hi', effort: e });
+  assert.ok(c.args.includes('model_reasoning_effort="high"'), `Codex effort ${e} -> high eşlenmeli!`);
+}
 
 // C. CWD Doğrulama
 assert.throws(() => {

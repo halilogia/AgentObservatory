@@ -24,6 +24,10 @@ export class AgyAdapter extends BaseAdapter {
       args.push('--conversation', sessionId);
     }
 
+    if (opts.model) {
+      args.push('--model', opts.model);
+    }
+
     return {
       exe: resolveBinary('agy'),
       args,

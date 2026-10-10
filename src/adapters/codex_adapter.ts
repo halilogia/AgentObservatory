@@ -28,6 +28,20 @@ export class CodexAdapter extends BaseAdapter {
       args = ['exec', prompt, '--json', '--skip-git-repo-check', '--sandbox', sandbox];
     }
 
+    if (opts.model) {
+      args.push('--model', opts.model);
+    }
+
+    if (opts.effort) {
+      const effortVal = (opts.effort === 'xhigh' || opts.effort === 'max') ? 'high' : opts.effort;
+      args.push('-c', `model_reasoning_effort="${effortVal}"`);
+    }
+
+    // Only bypass approvals/sandbox if explicitly set to true
+    if (opts.dangerouslySkipPermissions === true) {
+      args.push('--dangerously-bypass-approvals-and-sandbox');
+    }
+
     return {
       exe: resolveBinary('codex'),
       args,

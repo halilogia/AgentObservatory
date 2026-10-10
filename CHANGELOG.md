@@ -7,9 +7,12 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/) standardına day
 
 ## [Unreleased]
 
-### Eklendi
-- **Dinamik Effort & Model Kontrolü:** Claude Code adaptörüne ve MCP sunucusuna `--effort` (`low`, `medium`, `high`, `xhigh`, `max`) ve `--model` parametreleri eklendi. Varsayılan olarak kota tasarruflu `medium` seviyesi kullanılır.
+- **Dinamik Effort & Model Kontrolü (Claude, Codex, Agy Eşitliği):**
+  - Claude adaptörüne `--effort` ve `--model` eklendi (varsayılan `medium`).
+  - OpenAI Codex adaptörüne `--model`, `-c model_reasoning_effort="..."` ve `--dangerously-bypass-approvals-and-sandbox` parametreleri eklendi.
+  - Antigravity Agy adaptörüne `--model` parametresi eklendi.
 - **Demo Modülü:** `src/demo_obligation.ts` ve ilişkili `test/demo_obligation.test.ts` eklendi (`calculateMetrics`, `divideMetrics`).
+
 
 
 ## [1.0.0-alpha] - 2026-10-10
