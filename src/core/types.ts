@@ -42,6 +42,7 @@ export interface TaskEvent {
   type: EventType;
   data: Record<string, any>;
   timestamp: number;
+  parentTaskId?: string;
 }
 
 export interface TaskSummary {
@@ -58,6 +59,7 @@ export interface TaskSummary {
   assistantText: string;
   usage: TaskUsage;
   error: string | null;
+  parentTaskId?: string;
 }
 
 export interface CreateEventParams {
@@ -68,6 +70,7 @@ export interface CreateEventParams {
   type: EventType;
   data?: Record<string, any>;
   timestamp?: number;
+  parentTaskId?: string;
 }
 
 export function createEvent(params: CreateEventParams): TaskEvent {
@@ -79,6 +82,7 @@ export function createEvent(params: CreateEventParams): TaskEvent {
     tier: (params.tier ?? 1) as TaskTier,
     type: params.type,
     data: params.data || {},
-    timestamp: params.timestamp ?? Date.now()
+    timestamp: params.timestamp ?? Date.now(),
+    ...(params.parentTaskId ? { parentTaskId: String(params.parentTaskId) } : {})
   };
 }

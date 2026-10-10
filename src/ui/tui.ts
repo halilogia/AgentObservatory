@@ -25,8 +25,124 @@ export function hms(date: Date | number = new Date()): string {
   return d.toTimeString().split(' ')[0];
 }
 
+const MAX_PENDING_TOOLS = 500;
+
+type ToolKind = 'read' | 'edit' | 'write' | 'bash' | 'grep' | 'glob' | 'agent' | 'other';
+
+export interface ToolInfo {
+  name: string;
+  kind: ToolKind;
+  target: string;
+}
+
+// JSON kaçışlarını okunur hale getirir ve boşlukları sıkıştırır.
+export function cleanText(text: unknown): string {
+  return String(text ?? '')
+    .replace(/\\\\/g, '/')
+    .replace(/\\[nrt]/g, ' ')
+    .replace(/\\"/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function truncate(text: string, max: number): string {
+  return text.length > max ? text.slice(0, max - 3) + '...' : text;
+}
+
+// Absolute yolları cwd'ye göre rölatifleştirir; proje dışı uzun yolları kısaltır.
+export function shortPath(p: unknown): string {
+  const norm = String(p ?? '').replace(/\\+/g, '/').replace(/\s+/g, ' ').trim();
+  if (!norm) return '';
+  const cwd = process.cwd().replace(/\\/g, '/').replace(/\/+$/, '');
+  if (norm.toLowerCase() === cwd.toLowerCase()) return '.';
+  if (norm.toLowerCase().startsWith(cwd.toLowerCase() + '/')) {
+    return truncate(norm.slice(cwd.length + 1), 70);
+  }
+  const parts = norm.split('/').filter(Boolean);
+  if (parts.length > 3) return '.../' + parts.slice(-3).join('/');
+  return truncate(norm, 70);
+}
+
+export function describeTool(name: string, input: any): ToolInfo {
+  const n = String(name || 'tool');
+  const inp = input && typeof input === 'object' ? input : {};
+  const file = inp.file_path ?? inp.path ?? inp.filePath ?? inp.notebook_path;
+  const lower = n.toLowerCase();
+  if (lower === 'read') return { name: n, kind: 'read', target: shortPath(file) };
+  if (lower === 'edit' || lower === 'multiedit') return { name: n, kind: 'edit', target: shortPath(file) };
+  if (lower === 'write') return { name: n, kind: 'write', target: shortPath(file) };
+  if (/bash|powershell|shell|command|exec/.test(lower)) {
+    const cmd = inp.command ?? inp.cmd ?? '';
+    return { name: n, kind: 'bash', target: truncate(cleanText(Array.isArray(cmd) ? cmd.join(' ') : cmd), 80) };
+  }
+  if (lower === 'grep') {
+    const where = inp.path ? ` (${shortPath(inp.path)})` : '';
+    return { name: n, kind: 'grep', target: `"${truncate(cleanText(inp.pattern), 50)}"${where}` };
+  }
+  if (lower === 'glob') return { name: n, kind: 'glob', target: truncate(cleanText(inp.pattern), 70) };
+  if (lower === 'agent' || lower === 'task') {
+    const desc = truncate(cleanText(inp.description || inp.prompt), 80);
+    const type = inp.subagent_type ? ` (${cleanText(inp.subagent_type)})` : '';
+    return { name: n, kind: 'agent', target: desc + type };
+  }
+  const preview = Object.keys(inp).length ? truncate(cleanText(JSON.stringify(inp)).replace(/[{}"]/g, ''), 70) : '';
+  return { name: n, kind: 'other', target: preview };
+}
+
+export function formatToolCall(name: string, input: any): string {
+  const info = describeTool(name, input);
+  switch (info.kind) {
+    case 'read': return `${paint('yellow', '📖 OKUYOR')}: ${paint('gray', info.target)}`;
+    case 'edit': return `${paint('yellow', '✏️ DÜZENLİYOR')}: ${paint('gray', info.target)}`;
+    case 'write': return `${paint('yellow', '📝 YAZIYOR')}: ${paint('gray', info.target)}`;
+    case 'bash': return `${paint('yellow', '💻 KOMUT')}: ${paint('gray', info.target)}`;
+    case 'grep': return `${paint('yellow', '🔎 KOD ARAMA')}: ${paint('gray', info.target)}`;
+    case 'glob': return `${paint('yellow', '📁 DOSYA LİSTELEME')}: ${paint('gray', info.target)}`;
+    case 'agent':
+      return paint('magenta', `${COLORS.bold}🤖 [ALT AJAN (SUBAGENT) BAŞLATILDI]: ${info.target}`);
+    default:
+      return `${paint('yellow', '⚡ ARAÇ')} ${paint('bold', info.name)}${info.target ? ': ' + paint('gray', info.target) : ''}`;
+  }
+}
+
+export function formatToolCompleted(
+  info: ToolInfo | undefined,
+  output: unknown,
+  isError: boolean,
+  exitCode?: number
+): string {
+  const out = truncate(cleanText(output), 80);
+  const code = exitCode !== undefined && exitCode !== null ? ` [kod: ${exitCode}]` : '';
+  const kind = info?.kind ?? 'other';
+  const target = info?.target || '';
+
+  if (kind === 'agent') {
+    const summary = out || '(tamamlandı)';
+    return isError
+      ? `${paint('red', '✖ ALT AJAN HATASI')}: ${paint('gray', summary)}`
+      : paint('magenta', `${COLORS.bold}🤖 [ALT AJAN GÖREVİ BİTİRDİ]: ${summary}`);
+  }
+  if (isError) {
+    const label = info ? `${info.name}${target ? ' ' + target : ''}` : 'araç';
+    return `${paint('red', '✖ ARAÇ HATASI')} ▶ ${paint('bold', label)}${code}: ${paint('gray', out || '(hata)')}`;
+  }
+
+  const done: Record<ToolKind, string> = {
+    read: 'OKUNDU', edit: 'DÜZENLENDİ', write: 'YAZILDI', bash: 'KOMUT TAMAMLANDI',
+    grep: 'ARAMA BİTTİ', glob: 'LİSTELEME BİTTİ', agent: '', other: 'ARAÇ BİTTİ'
+  };
+  const label = done[kind];
+  if (kind === 'read' || kind === 'edit' || kind === 'write') {
+    return `${paint('green', `✔ ${label}`)}: ${paint('bold', target)}`;
+  }
+  const head = info && kind === 'other' ? `${label} ▶ ${paint('bold', info.name)}` : label;
+  const detail = kind === 'bash' || kind === 'other' ? out : target;
+  return `${paint('green', `✔ ${head}`)}${code}${detail ? ': ' + paint('gray', detail) : ''}`;
+}
+
 export class TerminalUI {
   private store: EventStore;
+  private pendingTools: Map<string, ToolInfo> = new Map();
   private boundOnEvent: (evt: TaskEvent) => void;
   private pollInterval: NodeJS.Timeout | null = null;
   private lastSeq: number = 0;
@@ -42,12 +158,17 @@ export class TerminalUI {
     this.store.on('event', this.boundOnEvent);
   }
 
-  startWatchMode(intervalMs: number = 300): void {
+  startWatchMode(intervalMs: number = 300, clean: boolean = true): void {
+    try {
+      console.clear();
+    } catch {}
     this.renderHeader();
     this.store.on('event', this.boundOnEvent);
 
-    this.lastSeq = 0;
-    this.pollSqlite();
+    this.lastSeq = clean ? globalSqlite.getMaxSeq() : 0;
+    if (!clean) {
+      this.pollSqlite();
+    }
 
     this.pollInterval = setInterval(() => {
       this.pollSqlite();
@@ -91,7 +212,9 @@ export class TerminalUI {
   }
 
   private renderEvent(evt: TaskEvent): void {
-    const time = paint('gray', hms(evt.timestamp));
+    const parentId = evt.data?.parentTaskId || evt.parentTaskId;
+    const childPrefix = parentId ? paint('yellow', '   └─ ') : '';
+    const time = childPrefix + paint('gray', hms(evt.timestamp));
     const agent = paint('cyan', `[${evt.agent.toUpperCase()}]`);
 
     switch (evt.type) {
@@ -107,19 +230,24 @@ export class TerminalUI {
 
       case 'tool.invoked': {
         const toolName = evt.data.name || 'tool';
-        const inputStr = JSON.stringify(evt.data.input || {});
-        const preview = inputStr.length > 80 ? inputStr.slice(0, 77) + '...' : inputStr;
-        console.log(`${time} ${agent} ${paint('yellow', '⚡ ARAÇ BAŞLADI')} ▶ ${paint('bold', toolName)}: ${paint('gray', preview)}`);
+        const toolId = evt.data.id || evt.data.toolUseId;
+        if (toolId) {
+          this.pendingTools.set(String(toolId), describeTool(toolName, evt.data.input));
+          if (this.pendingTools.size > MAX_PENDING_TOOLS) {
+            const oldest = this.pendingTools.keys().next().value;
+            if (oldest !== undefined) this.pendingTools.delete(oldest);
+          }
+        }
+        console.log(`${time} ${agent} ${formatToolCall(toolName, evt.data.input)}`);
         break;
       }
 
       case 'tool.completed': {
-        const toolName = evt.data.name || evt.data.toolUseId || 'araç';
-        const isError = evt.data.isError;
-        const exitCode = evt.data.exitCode !== undefined ? ` [kod: ${evt.data.exitCode}]` : '';
-        const output = (evt.data.output || '').replace(/\s+/g, ' ').slice(0, 80);
-        const icon = isError ? paint('red', '✖ ARAÇ HATASI') : paint('green', '✔ ARAÇ BİTTİ');
-        console.log(`${time} ${agent} ${icon} ▶ ${paint('bold', toolName)}${exitCode}: ${paint('gray', output || '(tamamlandı)')}`);
+        const toolId = evt.data.toolUseId || evt.data.id;
+        let info = toolId ? this.pendingTools.get(String(toolId)) : undefined;
+        if (toolId) this.pendingTools.delete(String(toolId));
+        if (!info && evt.data.name) info = describeTool(evt.data.name, {});
+        console.log(`${time} ${agent} ${formatToolCompleted(info, evt.data.output, !!evt.data.isError, evt.data.exitCode)}`);
         break;
       }
 

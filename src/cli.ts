@@ -33,9 +33,10 @@ async function main(): Promise<void> {
       process.exit(1);
     }
   } else if (command === 'watch') {
+    const isHistory = args.includes('--history') || args.includes('--all');
     const tui = new TerminalUI(globalStore);
-    tui.startWatchMode(300);
-    console.log(paint('gray', 'Canlı olaylar SQLite WAL ve yerel kuyruktan dinleniyor...'));
+    tui.startWatchMode(300, !isHistory);
+    console.log(paint('gray', isHistory ? 'Tüm geçmiş olaylar ve canlı akış dinleniyor...' : 'Temiz oturum: Sadece yeni gelen canlı olaylar dinleniyor (Geçmiş için --history)...'));
   } else if (command === 'mcp') {
     const { startMcpServer } = await import('./mcp/mcp_server.ts');
     await startMcpServer();

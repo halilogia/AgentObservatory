@@ -9,6 +9,7 @@ import { ClaudeAdapter } from '../adapters/claude_adapter.ts';
 import { CodexAdapter } from '../adapters/codex_adapter.ts';
 import { AgyAdapter } from '../adapters/agy_adapter.ts';
 import { validateCwd } from '../core/paths.ts';
+import { autoLaunchTui } from './tui_launcher.ts';
 
 export interface RunTaskOptions {
   agent: string;
@@ -18,6 +19,7 @@ export interface RunTaskOptions {
   timeoutSeconds?: number;
   dangerouslySkipPermissions?: boolean;
   sandbox?: string;
+  parentTaskId?: string;
 }
 
 interface ActiveProcessEntry {
@@ -70,6 +72,8 @@ export class AgentRunner {
       cwd: validatedCwd
     });
 
+    autoLaunchTui();
+
     const promise = new Promise<TaskSummary>((resolve, reject) => {
       let child: ChildProcess;
       try {
@@ -98,7 +102,8 @@ export class AgentRunner {
         agent: adapter.name,
         tier: 1,
         type: 'task.started',
-        data: { prompt, cwd: cmd.cwd, timeoutSeconds, pid: child.pid }
+        data: { prompt, cwd: cmd.cwd, timeoutSeconds, pid: child.pid },
+        parentTaskId: options.parentTaskId
       }), child.pid);
 
       let stderr = '';

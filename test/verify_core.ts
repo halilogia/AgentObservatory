@@ -158,6 +158,40 @@ assert.strictEqual(parserEvents[1].type, 'tool.completed');
 assert.strictEqual(parserEvents[1].data.output, 'file content preview');
 console.log('✔ Codex protokol ayrıştırıcısı (item.started, aggregated_output) başarıyla doğrulandı!\n');
 
+// 6.5 DEDUP, HİYERARŞİ VE KIRPMA
+console.log('6.5 Olay Tekilleştirme, parentTaskId ve Kırpma Test Ediliyor...');
+{
+  const { MAX_FIELD_BYTES, MAX_ASSISTANT_TEXT_BYTES } = await import('../src/core/sqlite_store.ts');
+  const st = new SqliteStore(':memory:');
+  const tid = 'task_dedup_child';
+  const base = { taskId: tid, sessionId: null, agent: 'claude' as const, tier: 1 as const };
+  st.recordEvent({ ...base, id: 'e1', type: 'task.started', data: { prompt: 'p' }, timestamp: 1000, parentTaskId: 'task_parent_1' });
+  const delta = { ...base, id: 'e2', type: 'message.delta' as const, data: { text: 'abc' }, timestamp: 1001 };
+  st.recordEvent(delta);
+  st.recordEvent(delta);
+  st.recordEvent(delta);
+  const tool = { ...base, id: 'e3', type: 'tool.invoked' as const, data: { name: 'Bash', input: { cmd: 'x'.repeat(MAX_FIELD_BYTES + 500) } }, timestamp: 1002 };
+  st.recordEvent(tool);
+  st.recordEvent(tool);
+  let t = st.getTask(tid)!;
+  assert.strictEqual(t.assistantText, 'abc', 'Yinelenen olay metni iki kez biriktirmemeli');
+  assert.strictEqual(t.toolsUsed.length, 1, 'Yinelenen araç çağrısı tek sayılmalı');
+  assert.strictEqual(t.parentTaskId, 'task_parent_1');
+  assert.strictEqual(st.getEvents(tid).length, 3, 'Yinelenen olaylar tekrar eklenmemeli');
+  assert.strictEqual(st.getEvents(tid)[1].parentTaskId, 'task_parent_1');
+  assert.match(String(t.toolsUsed[0].input.cmd), /\.\.\.\[truncated 500 bytes\]$/);
+  const evtData = st.getEvents(tid)[2].data;
+  assert.match(String(evtData.input.cmd), /\.\.\.\[truncated 500 bytes\]$/);
+
+  st.recordEvent({ ...base, id: 'e4', type: 'message.delta', data: { text: 'y'.repeat(MAX_ASSISTANT_TEXT_BYTES + 100) }, timestamp: 1003 });
+  st.recordEvent({ ...base, id: 'e5', type: 'message.delta', data: { text: 'more' }, timestamp: 1004 });
+  t = st.getTask(tid)!;
+  assert.match(t.assistantText, /\.\.\.\[truncated \d+ bytes\]$/);
+  assert.ok(t.assistantText.length < MAX_ASSISTANT_TEXT_BYTES + 100);
+  st.close();
+}
+console.log('✔ Dedup, parentTaskId kalıcılığı ve kırpma doğrulandı!\n');
+
 // 7. RESMİ MCP SDK MODÜL DOĞRULAMASI
 console.log('7. Resmi MCP SDK (@modelcontextprotocol/sdk) Modül Yüklemesi Test Ediliyor...');
 const mcpModule = await import('../src/mcp/mcp_server.ts');

@@ -7,6 +7,39 @@ import type { TaskEvent, TaskSummary } from './types.ts';
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
+/** Max bytes kept per string field (tool input/output values, etc.) to prevent WAL bloat. */
+export const MAX_FIELD_BYTES = 50 * 1024;
+/** Max bytes kept for a whole serialized event payload. */
+export const MAX_EVENT_PAYLOAD_BYTES = 64 * 1024;
+/** Max bytes accumulated in a task's assistant_text. */
+export const MAX_ASSISTANT_TEXT_BYTES = 50 * 1024;
+
+const TRUNC_MARKER_RE = /\.\.\.\[truncated \d+ bytes\]$/;
+
+export function truncateText(text: string, maxBytes: number = MAX_FIELD_BYTES): string {
+  const total = Buffer.byteLength(text, 'utf8');
+  if (total <= maxBytes) return text;
+  const kept = Buffer.from(text, 'utf8').subarray(0, maxBytes).toString('utf8');
+  const keptBytes = Buffer.byteLength(kept, 'utf8');
+  return `${kept}...[truncated ${total - keptBytes} bytes]`;
+}
+
+/** Recursively truncates oversized string values inside arbitrary JSON-like data. */
+function boundValue(value: any, maxBytes: number = MAX_FIELD_BYTES, depth: number = 0): any {
+  if (typeof value === 'string') return truncateText(value, maxBytes);
+  if (value === null || typeof value !== 'object' || depth > 20) return value;
+  if (Array.isArray(value)) return value.map((v) => boundValue(v, maxBytes, depth + 1));
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(value)) out[k] = boundValue(v, maxBytes, depth + 1);
+  return out;
+}
+
+function boundPayload(data: any): string {
+  const json = JSON.stringify(boundValue(data || {}));
+  if (Buffer.byteLength(json, 'utf8') <= MAX_EVENT_PAYLOAD_BYTES) return json;
+  return JSON.stringify({ _truncated: truncateText(json, MAX_EVENT_PAYLOAD_BYTES) });
+}
+
 export class SqliteStore {
   private db: DatabaseSync;
 
@@ -63,6 +96,18 @@ export class SqliteStore {
       );
       CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
     `);
+
+    // Safe migrations: parent_task_id on tasks and events
+    for (const table of ['tasks', 'events']) {
+      const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+      if (!cols.some((c) => c.name === 'parent_task_id')) {
+        try {
+          this.db.exec(`ALTER TABLE ${table} ADD COLUMN parent_task_id TEXT`);
+        } catch {
+          // Column may have been added concurrently by another process
+        }
+      }
+    }
   }
 
   recordEvent(event: TaskEvent, pid?: number): void {
@@ -72,22 +117,35 @@ export class SqliteStore {
     try {
       // 1. Event Insert
       const insertEvt = this.db.prepare(`
-        INSERT OR IGNORE INTO events (id, task_id, session_id, agent, tier, type, data, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO events (id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      insertEvt.run(
+      let parentTaskId: string | null = event.parentTaskId || event.data?.parentTaskId || null;
+      if (!parentTaskId) {
+        const parentRow = this.db.prepare('SELECT parent_task_id FROM tasks WHERE task_id = ?').get(event.taskId) as any;
+        parentTaskId = parentRow?.parent_task_id || null;
+      }
+      const insertResult = insertEvt.run(
         event.id,
         event.taskId,
         event.sessionId,
         event.agent,
         event.tier,
         event.type,
-        JSON.stringify(event.data || {}),
-        event.timestamp
+        boundPayload(event.data),
+        event.timestamp,
+        parentTaskId
       );
+      const wasInserted = Number(insertResult.changes) > 0;
 
       // 2. Task Summary Upsert
       const existing = this.db.prepare('SELECT * FROM tasks WHERE task_id = ?').get(event.taskId) as any;
+
+      if (existing && !wasInserted) {
+        // Duplicate event: do not accumulate metrics a second time
+        this.db.exec('COMMIT;');
+        return;
+      }
 
       if (!existing) {
         const insertTask = this.db.prepare(`
@@ -95,8 +153,8 @@ export class SqliteStore {
             task_id, session_id, agent, status, prompt, model, pid,
             start_time, end_time, duration_ms, assistant_text,
             input_tokens, cached_tokens, output_tokens, reasoning_tokens,
-            tools_json, error
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            tools_json, error, parent_task_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         insertTask.run(
           event.taskId,
@@ -112,7 +170,8 @@ export class SqliteStore {
           '',
           0, 0, 0, 0,
           '[]',
-          null
+          null,
+          parentTaskId
         );
       } else {
         const isAlreadyTerminal = TERMINAL_STATUSES.has(existing.status);
@@ -131,6 +190,7 @@ export class SqliteStore {
         let tools: any[] = [];
         try { tools = JSON.parse(existing.tools_json || '[]'); } catch {}
         let error = existing.error;
+        const taskParentId = existing.parent_task_id || parentTaskId || null;
 
         switch (event.type) {
           case 'task.started':
@@ -142,13 +202,15 @@ export class SqliteStore {
           case 'tool.invoked':
             tools.push({
               name: event.data.name || 'tool',
-              input: event.data.input || {},
+              input: boundValue(event.data.input || {}),
               timestamp: event.timestamp
             });
             break;
 
           case 'message.delta':
-            assistantText += (event.data.text || '');
+            if (!TRUNC_MARKER_RE.test(assistantText)) {
+              assistantText = truncateText(assistantText + (event.data.text || ''), MAX_ASSISTANT_TEXT_BYTES);
+            }
             break;
 
           case 'usage.updated':
@@ -166,7 +228,7 @@ export class SqliteStore {
               status = 'completed';
               endTime = event.timestamp;
               durationMs = endTime - existing.start_time;
-              if (event.data.result && !assistantText) assistantText = event.data.result;
+              if (event.data.result && !assistantText) assistantText = truncateText(String(event.data.result), MAX_ASSISTANT_TEXT_BYTES);
             }
             break;
 
@@ -194,14 +256,14 @@ export class SqliteStore {
             session_id = ?, status = ?, prompt = ?, model = ?, pid = ?,
             end_time = ?, duration_ms = ?, assistant_text = ?,
             input_tokens = ?, cached_tokens = ?, output_tokens = ?, reasoning_tokens = ?,
-            tools_json = ?, error = ?
+            tools_json = ?, error = ?, parent_task_id = ?
           WHERE task_id = ?
         `);
         updateTask.run(
           sessionId, status, prompt, model, taskPid,
           endTime, durationMs, assistantText,
           inputTokens, cachedTokens, outputTokens, reasoningTokens,
-          JSON.stringify(tools), error,
+          JSON.stringify(tools), error, taskParentId,
           event.taskId
         );
       }
@@ -225,7 +287,7 @@ export class SqliteStore {
   }
 
   getEvents(taskId: string): TaskEvent[] {
-    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp FROM events WHERE task_id = ? ORDER BY rowid ASC').all(taskId) as any[];
+    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id FROM events WHERE task_id = ? ORDER BY rowid ASC').all(taskId) as any[];
     return rows.map((r) => ({
       id: r.id,
       taskId: r.task_id,
@@ -234,12 +296,22 @@ export class SqliteStore {
       tier: r.tier,
       type: r.type,
       data: JSON.parse(r.data || '{}'),
-      timestamp: r.timestamp
+      timestamp: r.timestamp,
+      ...(r.parent_task_id ? { parentTaskId: r.parent_task_id } : {})
     }));
   }
 
+  getMaxSeq(): number {
+    try {
+      const row = this.db.prepare('SELECT COALESCE(MAX(rowid), 0) AS maxSeq FROM events').get() as any;
+      return row ? Number(row.maxSeq) : 0;
+    } catch {
+      return 0;
+    }
+  }
+
   getEventsSinceSeq(lastSeq: number): Array<TaskEvent & { seq: number }> {
-    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp FROM events WHERE rowid > ? ORDER BY rowid ASC').all(lastSeq) as any[];
+    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id FROM events WHERE rowid > ? ORDER BY rowid ASC').all(lastSeq) as any[];
     return rows.map((r) => ({
       seq: r.seq,
       id: r.id,
@@ -249,12 +321,13 @@ export class SqliteStore {
       tier: r.tier,
       type: r.type,
       data: JSON.parse(r.data || '{}'),
-      timestamp: r.timestamp
+      timestamp: r.timestamp,
+      ...(r.parent_task_id ? { parentTaskId: r.parent_task_id } : {})
     }));
   }
 
   getEventsSince(lastTimestamp: number): TaskEvent[] {
-    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp FROM events WHERE timestamp > ? ORDER BY rowid ASC').all(lastTimestamp) as any[];
+    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id FROM events WHERE timestamp > ? ORDER BY rowid ASC').all(lastTimestamp) as any[];
     return rows.map((r) => ({
       id: r.id,
       taskId: r.task_id,
@@ -263,7 +336,8 @@ export class SqliteStore {
       tier: r.tier,
       type: r.type,
       data: JSON.parse(r.data || '{}'),
-      timestamp: r.timestamp
+      timestamp: r.timestamp,
+      ...(r.parent_task_id ? { parentTaskId: r.parent_task_id } : {})
     }));
   }
 
@@ -326,7 +400,8 @@ export class SqliteStore {
         reasoningTokens: row.reasoning_tokens || 0,
         totalTokens: inTok + outTok
       },
-      error: row.error || null
+      error: row.error || null,
+      ...(row.parent_task_id ? { parentTaskId: row.parent_task_id } : {})
     };
   }
 
