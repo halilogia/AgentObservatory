@@ -289,11 +289,31 @@ export function getSelectedIndex(): number {
 }
 
 // Seçimi delta kadar kaydırır (döngüsel); liste boşsa güvenli no-op.
-export function moveSelection(delta: number): void {
+// clamp=true ise uçlarda durur (PageUp/PageDown), aksi halde döngüsel.
+export function moveSelection(delta: number, clamp: boolean = false): void {
   const n = pickerTasks.length;
-  if (n === 0) return;
-  selectedIndex = (((selectedIndex + delta) % n) + n) % n;
+  if (n === 0 || !Number.isFinite(delta)) return;
+  if (clamp) {
+    selectedIndex = Math.min(Math.max(0, selectedIndex + delta), n - 1);
+  } else {
+    selectedIndex = (((selectedIndex + delta) % n) + n) % n;
+  }
   renderSessionPicker();
+}
+
+// Seçimi mutlak bir indekse (liste sınırlarına kırpılarak) taşır; liste boşsa no-op.
+export function jumpSelection(index: number): void {
+  const n = pickerTasks.length;
+  if (n === 0 || Number.isNaN(index)) return;
+  selectedIndex = Math.min(Math.max(0, index), n - 1);
+  renderSessionPicker();
+}
+
+// Yalnızca test için: seçici listesini doğrudan ayarlar (render etmez).
+export function setPickerTasksForTest(tasks: TaskSummary[]): void {
+  pickerTasks = tasks;
+  selectedIndex = 0;
+  scrollOffset = 0;
 }
 
 // Son görevleri yükler ve ok tuşlarıyla gezilebilir seçim moduna geçer.
@@ -379,8 +399,12 @@ export function openSelected(): boolean {
 // Ok tuşları yalnızca picker modunda çalışır.
 export function handlePickerKey(key: string): 'live' | 'handled' | null {
   if (viewMode === 'picker') {
-    if (key === '\u001b[A') { moveSelection(-1); return 'handled'; }
-    if (key === '\u001b[B') { moveSelection(1); return 'handled'; }
+    if (key === '\u001b[A' || key === '\u001bOA' || key === 'k' || key === 'K') { moveSelection(-1); return 'handled'; }
+    if (key === '\u001b[B' || key === '\u001bOB' || key === 'j' || key === 'J') { moveSelection(1); return 'handled'; }
+    if (key === '\u001b[5~') { moveSelection(-PAGE_SIZE, true); return 'handled'; }
+    if (key === '\u001b[6~') { moveSelection(PAGE_SIZE, true); return 'handled'; }
+    if (key === '\u001b[H' || key === '\u001b[1~') { jumpSelection(0); return 'handled'; }
+    if (key === '\u001b[F' || key === '\u001b[4~') { jumpSelection(pickerTasks.length - 1); return 'handled'; }
     if (key === '\r' || key === '\n') { openSelected(); return 'handled'; }
     if (/^[1-9]$/.test(key)) { selectSession(Number(key)); return 'handled'; }
     if (key === '\u001b' || key === 'c' || key === 'C') return 'live';

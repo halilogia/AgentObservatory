@@ -23,17 +23,18 @@ function startPickerInput(): void {
   };
   const onKey = (chunk: Buffer | string): void => {
     const key = chunk.toString();
-    if (key === '' || key === 'q' || key === 'Q' || key === '') {
+    if (key === '\u0003' || key === 'q' || key === 'Q') {
       release();
       process.exit(0);
-    } else if (handlePickerKey(key) === 'handled') {
-      // ok tuşları / Enter / 1-9 / inceleme modunda S veya Esc işlendi
-    } else if (key === 's' || key === 'S') {
-      showSessionPicker();
-    } else if (key === 'c' || key === 'C' || key === '\u001b') {
+    }
+    const action = handlePickerKey(key);
+    if (action === 'handled') return;
+    if (action === 'live' || key === 'c' || key === 'C') {
       release();
       resetViewMode();
       new TerminalUI(globalStore).startWatchMode(300, true);
+    } else if (key === 's' || key === 'S') {
+      showSessionPicker();
     }
   };
   stdin.on('data', onKey);

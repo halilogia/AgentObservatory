@@ -216,6 +216,64 @@ console.log('8. Oturum seçici ok tuşu mantığı Test Ediliyor...');
   assert.strictEqual(tui.computeWindow(2, 5, 15).offset, 2, 'Yukarı taşınca pencere seçiliye iner');
   assert.deepStrictEqual(tui.computeWindow(14, 8, 15), { offset: 8, end: 15, hasAbove: true, hasBelow: false });
   assert.deepStrictEqual(tui.computeWindow(0, 0, 3), { offset: 0, end: 3, hasAbove: false, hasBelow: false });
+
+  // Genişletilmiş tuşlar (picker modu)
+  const origWrite = process.stdout.write.bind(process.stdout);
+  (process.stdout as any).write = () => true; // render çıktısını sustur
+  try {
+    const mk = (i: number): any => ({
+      taskId: `t${i}`, agent: 'claude', status: 'completed', prompt: `p${i}`,
+      startTime: 0, durationMs: 0, sessionId: null, model: null
+    });
+    tui.showSessionPicker(); // viewMode = 'picker'
+    assert.strictEqual(tui.getViewMode(), 'picker');
+
+    // Boş liste: hiçbir tuş hata/negatif indeks üretmemeli
+    tui.setPickerTasksForTest([]);
+    for (const k of ['\u001b[A', '\u001bOA', 'k', 'j', '\u001b[5~', '\u001b[6~', '\u001b[H', '\u001b[F', '\u001b[1~', '\u001b[4~']) {
+      assert.strictEqual(tui.handlePickerKey(k), 'handled', `Boş listede ${JSON.stringify(k)} işlenmeli`);
+      assert.strictEqual(tui.getSelectedIndex(), 0, 'Boş listede indeks 0 kalmalı');
+    }
+
+    tui.setPickerTasksForTest(Array.from({ length: 15 }, (_, i) => mk(i)));
+    assert.strictEqual(tui.handlePickerKey('j'), 'handled');
+    assert.strictEqual(tui.getSelectedIndex(), 1);
+    assert.strictEqual(tui.handlePickerKey('\u001bOB'), 'handled');
+    assert.strictEqual(tui.getSelectedIndex(), 2);
+    assert.strictEqual(tui.handlePickerKey('K'), 'handled');
+    assert.strictEqual(tui.getSelectedIndex(), 1);
+    assert.strictEqual(tui.handlePickerKey('\u001bOA'), 'handled');
+    assert.strictEqual(tui.getSelectedIndex(), 0);
+
+    assert.strictEqual(tui.handlePickerKey('\u001b[6~'), 'handled');
+    assert.strictEqual(tui.getSelectedIndex(), tui.PAGE_SIZE, 'PageDown PAGE_SIZE kadar iner');
+    assert.strictEqual(tui.handlePickerKey('\u001b[5~'), 'handled');
+    assert.strictEqual(tui.getSelectedIndex(), 0);
+    assert.strictEqual(tui.handlePickerKey('\u001b[5~'), 'handled');
+    assert.strictEqual(tui.getSelectedIndex(), 0, 'PageUp başta 0da kenetlenmeli');
+
+    assert.strictEqual(tui.handlePickerKey('\u001b[F'), 'handled');
+    assert.strictEqual(tui.getSelectedIndex(), 14, 'End son öğeye gider');
+    assert.strictEqual(tui.handlePickerKey('\u001b[6~'), 'handled');
+    assert.strictEqual(tui.getSelectedIndex(), 14, 'PageDown sonda kenetlenmeli');
+    assert.strictEqual(tui.handlePickerKey('\u001b[H'), 'handled');
+    assert.strictEqual(tui.getSelectedIndex(), 0, 'Home ilk öğeye gider');
+    assert.strictEqual(tui.handlePickerKey('\u001b[4~'), 'handled');
+    assert.strictEqual(tui.getSelectedIndex(), 14);
+    assert.strictEqual(tui.handlePickerKey('\u001b[1~'), 'handled');
+    assert.strictEqual(tui.getSelectedIndex(), 0);
+
+    // Esc: picker'da canlı akışa; inspect'te listeye dönüş
+    assert.strictEqual(tui.handlePickerKey('\u001b'), 'live', 'Picker modunda Esc canlıya dönmeli');
+    assert.strictEqual(tui.handlePickerKey('\u001b[C'), null, 'Bilinmeyen kaçış dizisi yutulmamalı/işlenmemeli');
+    tui.inspectTask('yok-boyle-bir-gorev');
+    assert.strictEqual(tui.getViewMode(), 'inspect');
+    assert.strictEqual(tui.handlePickerKey('\u001b'), 'handled', 'Inspect modunda Esc listeye dönmeli');
+    assert.strictEqual(tui.getViewMode(), 'picker');
+  } finally {
+    (process.stdout as any).write = origWrite;
+    tui.resetViewMode();
+  }
 }
 console.log('✔ Oturum seçici boş liste/mod korumaları doğrulandı!\n');
 
