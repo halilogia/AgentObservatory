@@ -1,6 +1,6 @@
 import { EventStore, globalStore } from '../core/event_store.ts';
 import { globalSqlite } from '../core/sqlite_store.ts';
-import type { TaskEvent } from '../core/types.ts';
+import type { TaskEvent, TaskStatus, TaskSummary } from '../core/types.ts';
 
 export const COLORS = {
   reset: '\x1b[0m',
@@ -140,6 +140,214 @@ export function formatToolCompleted(
   return `${paint('green', `✔ ${head}`)}${code}${detail ? ': ' + paint('gray', detail) : ''}`;
 }
 
+// Tek bir olayı terminale basar (canlı akış ve oturum incelemesi ortak kullanır).
+function printEvent(evt: TaskEvent, pendingTools: Map<string, ToolInfo>): void {
+  const parentId = evt.data?.parentTaskId || evt.parentTaskId;
+  const childPrefix = parentId ? paint('yellow', '   └─ ') : '';
+  const time = childPrefix + paint('gray', hms(evt.timestamp));
+  const agent = paint('cyan', `[${evt.agent.toUpperCase()}]`);
+
+  switch (evt.type) {
+    case 'task.started':
+      console.log(`\n${time} ${agent} ${paint('green', '▶ GÖREV BAŞLADI')}: ${paint('bold', evt.data.prompt || '')}`);
+      if (evt.sessionId) {
+        console.log(`         ${paint('gray', '│')} Oturum ID: ${paint('yellow', evt.sessionId)}`);
+      }
+      if (evt.data.model) {
+        console.log(`         ${paint('gray', '│')} Model: ${evt.data.model}`);
+      }
+      break;
+
+    case 'tool.invoked': {
+      const toolName = evt.data.name || 'tool';
+      const toolId = evt.data.id || evt.data.toolUseId;
+      if (toolId) {
+        pendingTools.set(String(toolId), describeTool(toolName, evt.data.input));
+        if (pendingTools.size > MAX_PENDING_TOOLS) {
+          const oldest = pendingTools.keys().next().value;
+          if (oldest !== undefined) pendingTools.delete(oldest);
+        }
+      }
+      console.log(`${time} ${agent} ${formatToolCall(toolName, evt.data.input)}`);
+      break;
+    }
+
+    case 'tool.completed': {
+      const toolId = evt.data.toolUseId || evt.data.id;
+      let info = toolId ? pendingTools.get(String(toolId)) : undefined;
+      if (toolId) pendingTools.delete(String(toolId));
+      if (!info && evt.data.name) info = describeTool(evt.data.name, {});
+      console.log(`${time} ${agent} ${formatToolCompleted(info, evt.data.output, !!evt.data.isError, evt.data.exitCode)}`);
+      break;
+    }
+
+    case 'message.delta': {
+      const delta = evt.data.text || '';
+      const lines = delta.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim()) {
+          console.log(`${time} ${agent} ${paint('white', lines[i])}`);
+        }
+      }
+      break;
+    }
+
+    case 'usage.updated': {
+      const u = evt.data.usage || {};
+      console.log(`${time} ${agent} ${paint('magenta', '📊 TOKEN')}: Girdi: ${u.inputTokens || 0} · Önbellek: ${u.cachedTokens || 0} · Çıktı: ${u.outputTokens || 0}`);
+      break;
+    }
+
+    case 'task.completed':
+      console.log(`${time} ${agent} ${paint('green', '✔ GÖREV TAMAMLANDI')}`);
+      console.log(paint('gray', '─'.repeat(80)));
+      break;
+
+    case 'task.failed':
+      console.log(`${time} ${agent} ${paint('red', '✖ GÖREV BAŞARISIZ')}: ${evt.data.error}`);
+      console.log(paint('gray', '─'.repeat(80)));
+      break;
+
+    case 'task.cancelled':
+      console.log(`${time} ${agent} ${paint('yellow', '⏹ GÖREV İPTAL EDİLDİ')}: ${evt.data.reason}`);
+      console.log(paint('gray', '─'.repeat(80)));
+      break;
+  }
+}
+
+// Oturum seçici durumu: canlı akış / seçim listesi / görev incelemesi.
+type ViewMode = 'live' | 'picker' | 'inspect';
+let viewMode: ViewMode = 'live';
+let pickerTasks: TaskSummary[] = [];
+const PICKER_LIMIT = 15;
+const PICKER_SELECTABLE = 9;
+
+export function getViewMode(): ViewMode {
+  return viewMode;
+}
+
+function formatDuration(ms: number): string {
+  const sec = Math.max(0, Math.round(ms / 1000));
+  if (sec < 60) return `${sec}s`;
+  return `${Math.floor(sec / 60)}m${String(sec % 60).padStart(2, '0')}s`;
+}
+
+function statusLabel(status: TaskStatus): string {
+  switch (status) {
+    case 'completed': return paint('green', '✔ Tamamlandı');
+    case 'running':
+    case 'pending': return paint('yellow', '▶ Çalışıyor');
+    case 'cancelled': return paint('yellow', '⏹ İptal');
+    default: return paint('red', '✖ Hata');
+  }
+}
+
+function shortId(id: string | null | undefined, len: number): string {
+  if (!id) return '-';
+  return id.length > len ? id.slice(0, len) + '...' : id;
+}
+
+function clearScreen(): void {
+  try {
+    console.clear();
+  } catch {}
+}
+
+// Son görevleri numaralı bir liste olarak gösterir ve seçim moduna geçer.
+export function showSessionPicker(): TaskSummary[] {
+  clearScreen();
+  viewMode = 'picker';
+  try {
+    pickerTasks = globalSqlite.getRecentTasks(PICKER_LIMIT);
+  } catch {
+    pickerTasks = [];
+  }
+
+  console.log(paint('cyan', '═'.repeat(80)));
+  console.log(` ${paint('bold', '🔭 AGENT OBSERVATORY')} · ${paint('green', 'Oturum / Görev Seçici')} · ${paint('gray', `Son ${pickerTasks.length} görev`)}`);
+  console.log(paint('cyan', '═'.repeat(80)));
+
+  if (pickerTasks.length === 0) {
+    console.log(paint('gray', ' Kayıtlı görev bulunamadı.'));
+  }
+
+  pickerTasks.forEach((t, i) => {
+    const num = i < PICKER_SELECTABLE ? paint('bold', `[${i + 1}]`) : paint('gray', '[-]');
+    const running = t.status === 'running' || t.status === 'pending';
+    const duration = formatDuration(running ? Date.now() - t.startTime : t.durationMs);
+    console.log(`${num} ${paint('gray', hms(t.startTime))} ${paint('cyan', `[${t.agent.toUpperCase()}]`)} ${statusLabel(t.status)} ${paint('gray', duration)}`);
+    console.log(`     ${truncate(cleanText(t.prompt) || '(boş prompt)', 70)}`);
+    console.log(`     ${paint('gray', `${shortId(t.taskId, 11)} | sess: ${shortId(t.sessionId, 5)}`)}`);
+    console.log(paint('gray', '─'.repeat(80)));
+  });
+
+  const maxPick = Math.max(1, Math.min(PICKER_SELECTABLE, pickerTasks.length));
+  console.log(paint('yellow', `İncelemek istediğiniz oturum numarasını girin [1-${maxPick}] (veya [C] ile canlı akışa dön):`));
+  return pickerTasks;
+}
+
+// Seçici listesindeki n. (1 tabanlı) görevi açar; geçersizse false döner.
+export function selectSession(n: number): boolean {
+  if (n < 1 || n > PICKER_SELECTABLE || n > pickerTasks.length) return false;
+  inspectTask(pickerTasks[n - 1].taskId);
+  return true;
+}
+
+// Bir görevin özetini ve tüm olaylarını adım adım basar.
+export function inspectTask(taskId: string): void {
+  clearScreen();
+  viewMode = 'inspect';
+
+  let task: TaskSummary | null = null;
+  let events: TaskEvent[] = [];
+  try {
+    task = globalSqlite.getTask(taskId);
+    events = globalSqlite.getEvents(taskId);
+  } catch (err: any) {
+    console.log(paint('red', `Hata: ${err.message}`));
+  }
+
+  console.log(paint('cyan', '═'.repeat(80)));
+  console.log(` ${paint('bold', '🔍 GÖREV İNCELEME')} · ${paint('gray', taskId)}`);
+  console.log(paint('cyan', '═'.repeat(80)));
+
+  if (!task && events.length === 0) {
+    console.log(paint('red', ' Görev bulunamadı.'));
+  } else {
+    if (task) {
+      const running = task.status === 'running' || task.status === 'pending';
+      const duration = formatDuration(running ? Date.now() - task.startTime : task.durationMs);
+      console.log(` Ajan: ${paint('cyan', `[${task.agent.toUpperCase()}]`)} · Durum: ${statusLabel(task.status)} · Süre: ${duration} · Başlangıç: ${hms(task.startTime)}`);
+      console.log(` Oturum ID: ${paint('yellow', task.sessionId || '-')}${task.model ? ` · Model: ${task.model}` : ''}`);
+      if (task.parentTaskId) console.log(` Üst görev: ${paint('gray', task.parentTaskId)}`);
+      console.log(` Prompt: ${paint('bold', cleanText(task.prompt))}`);
+      if (task.usage) {
+        console.log(` ${paint('magenta', '📊 TOKEN')}: Girdi: ${task.usage.inputTokens || 0} · Önbellek: ${task.usage.cachedTokens || 0} · Çıktı: ${task.usage.outputTokens || 0}`);
+      }
+      if (task.error) console.log(` ${paint('red', 'Hata')}: ${task.error}`);
+    }
+    console.log(paint('gray', '─'.repeat(80)));
+    console.log(paint('bold', ` Olaylar (${events.length})`));
+
+    const pending = new Map<string, ToolInfo>();
+    for (const evt of events) printEvent(evt, pending);
+
+    if (task?.assistantText) {
+      console.log(paint('cyan', '\n' + '═'.repeat(80)));
+      console.log(paint('bold', ' Nihai Yanıt:'));
+      console.log(task.assistantText);
+    }
+  }
+
+  console.log(paint('cyan', '═'.repeat(80)));
+  console.log(paint('yellow', '[C] Canlı Akışa Dön · [S] Başka Oturum Seç'));
+}
+
+// Canlı moda dönüş: cli.ts gibi dış çağıranlar için.
+export function resetViewMode(): void {
+  viewMode = 'live';
+}
+
 export class TerminalUI {
   private store: EventStore;
   private pendingTools: Map<string, ToolInfo> = new Map();
@@ -199,13 +407,20 @@ export class TerminalUI {
       if (key === '\u0003' || key === 'q' || key === 'Q') {
         this.stop();
         process.exit(0);
-      } else if (key === 'h' || key === 'H') {
-        this.loadHistory();
-      } else if (key === 'c' || key === 'C') {
+      } else if (key === 's' || key === 'S') {
+        showSessionPicker();
+      } else if (viewMode === 'picker' && /^[1-9]$/.test(key)) {
+        selectSession(Number(key));
+      } else if (key === 'c' || key === 'C' || key === '\u001b') {
+        // Canlı akışa dön: seçici/inceleme modundan çık, ekranı temizle.
+        viewMode = 'live';
         try {
           console.clear();
         } catch {}
         this.renderHeader();
+      } else if (key === 'h' || key === 'H') {
+        viewMode = 'live';
+        this.loadHistory();
       }
     };
     stdin.on('data', this.keyListener);
@@ -228,6 +443,8 @@ export class TerminalUI {
   }
 
   private pollSqlite(): void {
+    // Seçici/inceleme açıkken ekranı bozmamak için bekle; canlı moda dönünce birikenler basılır.
+    if (viewMode !== 'live') return;
     try {
       const newEvents = globalSqlite.getEventsSinceSeq(this.lastSeq);
       for (const evt of newEvents) {
@@ -245,87 +462,18 @@ export class TerminalUI {
   renderHeader(): void {
     console.log(paint('cyan', '═'.repeat(80)));
     console.log(` ${paint('bold', '🔭 AGENT OBSERVATORY')} · ${paint('green', 'Canlı Olay Akışı')} · ${paint('gray', hms())}`);
-    console.log(` ${paint('gray', 'Kısayollar: [H] Geçmişi Yükle · [C] Ekranı Temizle · [Q] Çıkış')}`);
+    console.log(` ${paint('gray', 'Kısayollar: [S] Oturum Seç · [H] Tüm Geçmiş · [C] Canlı Akış / Temizle · [Q] Çıkış')}`);
     console.log(paint('cyan', '═'.repeat(80)));
   }
 
   onEvent(evt: TaskEvent): void {
+    if (viewMode !== 'live') return;
     if (this.seenEventIds.has(evt.id)) return;
     this.seenEventIds.add(evt.id);
     this.renderEvent(evt);
   }
 
   private renderEvent(evt: TaskEvent): void {
-    const parentId = evt.data?.parentTaskId || evt.parentTaskId;
-    const childPrefix = parentId ? paint('yellow', '   └─ ') : '';
-    const time = childPrefix + paint('gray', hms(evt.timestamp));
-    const agent = paint('cyan', `[${evt.agent.toUpperCase()}]`);
-
-    switch (evt.type) {
-      case 'task.started':
-        console.log(`\n${time} ${agent} ${paint('green', '▶ GÖREV BAŞLADI')}: ${paint('bold', evt.data.prompt || '')}`);
-        if (evt.sessionId) {
-          console.log(`         ${paint('gray', '│')} Oturum ID: ${paint('yellow', evt.sessionId)}`);
-        }
-        if (evt.data.model) {
-          console.log(`         ${paint('gray', '│')} Model: ${evt.data.model}`);
-        }
-        break;
-
-      case 'tool.invoked': {
-        const toolName = evt.data.name || 'tool';
-        const toolId = evt.data.id || evt.data.toolUseId;
-        if (toolId) {
-          this.pendingTools.set(String(toolId), describeTool(toolName, evt.data.input));
-          if (this.pendingTools.size > MAX_PENDING_TOOLS) {
-            const oldest = this.pendingTools.keys().next().value;
-            if (oldest !== undefined) this.pendingTools.delete(oldest);
-          }
-        }
-        console.log(`${time} ${agent} ${formatToolCall(toolName, evt.data.input)}`);
-        break;
-      }
-
-      case 'tool.completed': {
-        const toolId = evt.data.toolUseId || evt.data.id;
-        let info = toolId ? this.pendingTools.get(String(toolId)) : undefined;
-        if (toolId) this.pendingTools.delete(String(toolId));
-        if (!info && evt.data.name) info = describeTool(evt.data.name, {});
-        console.log(`${time} ${agent} ${formatToolCompleted(info, evt.data.output, !!evt.data.isError, evt.data.exitCode)}`);
-        break;
-      }
-
-      case 'message.delta': {
-        const delta = evt.data.text || '';
-        const lines = delta.split('\n');
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].trim()) {
-            console.log(`${time} ${agent} ${paint('white', lines[i])}`);
-          }
-        }
-        break;
-      }
-
-      case 'usage.updated': {
-        const u = evt.data.usage || {};
-        console.log(`${time} ${agent} ${paint('magenta', '📊 TOKEN')}: Girdi: ${u.inputTokens || 0} · Önbellek: ${u.cachedTokens || 0} · Çıktı: ${u.outputTokens || 0}`);
-        break;
-      }
-
-      case 'task.completed':
-        console.log(`${time} ${agent} ${paint('green', '✔ GÖREV TAMAMLANDI')}`);
-        console.log(paint('gray', '─'.repeat(80)));
-        break;
-
-      case 'task.failed':
-        console.log(`${time} ${agent} ${paint('red', '✖ GÖREV BAŞARISIZ')}: ${evt.data.error}`);
-        console.log(paint('gray', '─'.repeat(80)));
-        break;
-
-      case 'task.cancelled':
-        console.log(`${time} ${agent} ${paint('yellow', '⏹ GÖREV İPTAL EDİLDİ')}: ${evt.data.reason}`);
-        console.log(paint('gray', '─'.repeat(80)));
-        break;
-    }
+    printEvent(evt, this.pendingTools);
   }
 }
