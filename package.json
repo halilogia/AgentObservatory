@@ -11,7 +11,7 @@
     "watch": "node bin/observatory.js watch",
     "mcp": "node bin/observatory.js mcp",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types test/verify_core.ts",
+    "test": "node --experimental-strip-types test/verify_core.ts && node --experimental-strip-types test/verify_live_cancel.ts",
     "check": "npm run typecheck && npm run test"
   },
   "keywords": [
