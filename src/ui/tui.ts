@@ -109,7 +109,17 @@ export class TerminalUI {
         const toolName = evt.data.name || 'tool';
         const inputStr = JSON.stringify(evt.data.input || {});
         const preview = inputStr.length > 80 ? inputStr.slice(0, 77) + '...' : inputStr;
-        console.log(`${time} ${agent} ${paint('yellow', '⚡ ARAÇ ÇAĞRISI')} ▶ ${paint('bold', toolName)}: ${paint('gray', preview)}`);
+        console.log(`${time} ${agent} ${paint('yellow', '⚡ ARAÇ BAŞLADI')} ▶ ${paint('bold', toolName)}: ${paint('gray', preview)}`);
+        break;
+      }
+
+      case 'tool.completed': {
+        const toolName = evt.data.name || evt.data.toolUseId || 'araç';
+        const isError = evt.data.isError;
+        const exitCode = evt.data.exitCode !== undefined ? ` [kod: ${evt.data.exitCode}]` : '';
+        const output = (evt.data.output || '').replace(/\s+/g, ' ').slice(0, 80);
+        const icon = isError ? paint('red', '✖ ARAÇ HATASI') : paint('green', '✔ ARAÇ BİTTİ');
+        console.log(`${time} ${agent} ${icon} ▶ ${paint('bold', toolName)}${exitCode}: ${paint('gray', output || '(tamamlandı)')}`);
         break;
       }
 

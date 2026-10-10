@@ -91,6 +91,69 @@ export async function startMcpServer(): Promise<void> {
     }
   );
 
+  // Tool 1.5: start_task (Asynchronous task start)
+  server.tool(
+    'start_task',
+    'Starts an agent task in the background and returns the taskId immediately. Use get_task to poll status.',
+    {
+      agent: z.enum(['claude', 'codex', 'agy']).describe('The target CLI agent'),
+      prompt: z.string().describe('Instruction or task prompt'),
+      cwd: z.string().optional().describe('Optional working directory'),
+      session_id: z.string().optional().describe('Optional session ID to resume'),
+      dangerously_skip_permissions: z.boolean().optional().default(false).describe('Explicitly skip permission prompts (default: false)'),
+      sandbox: z.enum(['workspace-write', 'read-only', 'danger-full-access']).optional().default('workspace-write').describe('Codex sandbox mode'),
+      timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds')
+    },
+    async ({ agent, prompt, cwd, session_id, dangerously_skip_permissions, sandbox, timeout_seconds }) => {
+      try {
+        const validatedCwd = validateCwd(cwd);
+        const { taskId } = globalRunner.startTask({
+          agent,
+          prompt,
+          cwd: validatedCwd,
+          sessionId: session_id,
+          dangerouslySkipPermissions: dangerously_skip_permissions,
+          sandbox,
+          timeoutSeconds: timeout_seconds || 300
+        });
+
+        return {
+          content: [{
+            type: 'text',
+            text: `Görev başarıyla arka planda başlatıldı.\n- **Görev ID**: \`${taskId}\`\n- **Ajan**: \`${agent.toUpperCase()}\`\n- **Durum**: \`running\`\n\nDurumu sorgulamak için \`get_task\` aracını veya iptal etmek için \`cancel_task\` aracını kullanabilirsiniz.`
+          }]
+        };
+      } catch (err: any) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: `Görev başlatma hatası: ${err.message}` }]
+        };
+      }
+    }
+  );
+
+  // Tool 1.6: get_task (Query task status)
+  server.tool(
+    'get_task',
+    'Gets the current status, progress, tools used, and output of a running or completed task by task_id.',
+    {
+      task_id: z.string().describe('The task ID to query')
+    },
+    async ({ task_id }) => {
+      const summary = globalRunner.getTask(task_id) || globalSqlite.getTask(task_id);
+      if (!summary) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: `Görev \`${task_id}\` bulunamadı.` }]
+        };
+      }
+
+      return {
+        content: [{ type: 'text', text: formatTaskReport(summary) }]
+      };
+    }
+  );
+
   // Tool 2: run_claude (Specialized Claude Code shortcut)
   server.tool(
     'run_claude',

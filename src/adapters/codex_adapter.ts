@@ -73,6 +73,22 @@ export class CodexAdapter extends BaseAdapter {
         type: 'task.started',
         data: { model }
       }));
+    } else if (dtype === 'item.created') {
+      const item = event.item || {};
+      const itype = item.type;
+      if (itype === 'command_execution' || itype === 'tool_call') {
+        store.recordEvent(createEvent({
+          taskId,
+          sessionId: currentSession,
+          agent: 'codex',
+          tier: 1,
+          type: 'tool.invoked',
+          data: {
+            name: itype,
+            input: { command: item.command || item.name || '' }
+          }
+        }));
+      }
     } else if (dtype === 'item.completed') {
       const item = event.item || {};
       const itype = item.type;
@@ -92,10 +108,11 @@ export class CodexAdapter extends BaseAdapter {
           sessionId: currentSession,
           agent: 'codex',
           tier: 1,
-          type: 'tool.invoked',
+          type: 'tool.completed',
           data: {
-            name: item.type,
-            input: { command: item.command || item.name }
+            name: itype,
+            exitCode: item.exit_code,
+            output: (item.output || '').slice(0, 300)
           }
         }));
       } else if (itype === 'error' || itype === 'error_message') {

@@ -47,7 +47,7 @@ export class AgentRunner {
     return this.adapters.get(String(agentName).toLowerCase()) || null;
   }
 
-  async runTask(options: RunTaskOptions): Promise<TaskSummary> {
+  startTask(options: RunTaskOptions): { taskId: string; promise: Promise<TaskSummary> } {
     const {
       agent,
       prompt,
@@ -70,7 +70,7 @@ export class AgentRunner {
       cwd: validatedCwd
     });
 
-    return new Promise<TaskSummary>((resolve, reject) => {
+    const promise = new Promise<TaskSummary>((resolve, reject) => {
       let child: ChildProcess;
       try {
         child = spawn(cmd.exe, cmd.args, {
@@ -165,6 +165,16 @@ export class AgentRunner {
         }
       });
     });
+
+    return { taskId, promise };
+  }
+
+  async runTask(options: RunTaskOptions): Promise<TaskSummary> {
+    return this.startTask(options).promise;
+  }
+
+  getTask(taskId: string): TaskSummary | null {
+    return this.store.getTask(taskId);
   }
 
   cancelTask(taskId: string, reason: string = 'Kullanıcı tarafından iptal edildi'): boolean {

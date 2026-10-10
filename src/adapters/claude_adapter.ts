@@ -86,6 +86,28 @@ export class ClaudeAdapter extends BaseAdapter {
           }
         }
       }
+    } else if (etype === 'user') {
+      const msg = event.message || {};
+      const content = msg.content || [];
+      if (Array.isArray(content)) {
+        for (const item of content) {
+          if (item.type === 'tool_result') {
+            const rawContent = typeof item.content === 'string' ? item.content : JSON.stringify(item.content || '');
+            store.recordEvent(createEvent({
+              taskId,
+              sessionId: event.session_id,
+              agent: 'claude',
+              tier: 1,
+              type: 'tool.completed',
+              data: {
+                toolUseId: item.tool_use_id,
+                output: rawContent.slice(0, 300),
+                isError: !!item.is_error
+              }
+            }));
+          }
+        }
+      }
     } else if (etype === 'result') {
       const usage = event.usage || {};
       store.recordEvent(createEvent({
