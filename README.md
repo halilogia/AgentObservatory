@@ -50,5 +50,5 @@ node bin/observatory.js run codex "Unit testleri çalıştır"
 | [CHANGELOG.md](CHANGELOG.md) | Sürüm geçmişi (SemVer & Keep a Changelog) |
 | [KNOWLEDGE.md](KNOWLEDGE.md) | Kalıcı mühendislik hafızası, tuzaklar ve ADR kararları |
 | [TASKS.md](TASKS.md) | Aktif sprint görevleri ve backlog |
-| [AGENTS.md](AGENTS.md) | Ajan anayasası, dokunulmaz sınırlar ve kod kuralları |
+| [SKILLS.md](SKILLS.md) | Global ve workspace becerileri indeksi ve iş akışları |
 | [LICENSE](LICENSE) | GNU General Public License v3.0 (GPL-3.0) |
