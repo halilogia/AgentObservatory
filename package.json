@@ -1,0 +1,27 @@
+{
+  "name": "agent-observatory",
+  "version": "1.0.0-alpha",
+  "description": "Event-First Hybrid AI Agent Management and Observability System",
+  "main": "src/index.js",
+  "bin": {
+    "observatory": "bin/observatory.js"
+  },
+  "scripts": {
+    "start": "node bin/observatory.js",
+    "watch": "node bin/observatory.js watch",
+    "test": "node test/verify_core.js"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "observability",
+    "claude-code",
+    "codex",
+    "antigravity",
+    "mcp",
+    "telemetry"
+  ],
+  "author": "Halil Emre",
+  "license": "GPL-3.0-or-later",
+  "type": "module"
+}
