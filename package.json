@@ -9,7 +9,10 @@
   "scripts": {
     "start": "node bin/observatory.js",
     "watch": "node bin/observatory.js watch",
-    "test": "node test/verify_core.js"
+    "mcp": "node bin/observatory.js mcp",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types test/verify_core.ts",
+    "check": "npm run typecheck && npm run test"
   },
   "keywords": [
     "ai",
@@ -23,5 +26,13 @@
   ],
   "author": "Halil Emre",
   "license": "GPL-3.0-or-later",
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.6.5"
+  }
 }

@@ -4,15 +4,15 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["ES2024"],
+    "types": ["node"],
     "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "declaration": true,
-    "outDir": "./dist",
-    "rootDir": "./src"
+    "resolveJsonModule": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "test"]
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

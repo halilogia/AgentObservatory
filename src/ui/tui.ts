@@ -1,4 +1,5 @@
 import { EventStore, globalStore } from '../core/event_store.ts';
+import { globalSqlite } from '../core/sqlite_store.ts';
 import type { TaskEvent } from '../core/types.ts';
 
 export const COLORS = {
@@ -27,6 +28,9 @@ export function hms(date: Date | number = new Date()): string {
 export class TerminalUI {
   private store: EventStore;
   private boundOnEvent: (evt: TaskEvent) => void;
+  private pollInterval: NodeJS.Timeout | null = null;
+  private lastPollTimestamp: number = 0;
+  private seenEventIds: Set<string> = new Set();
 
   constructor(store: EventStore = globalStore) {
     this.store = store;
@@ -38,18 +42,57 @@ export class TerminalUI {
     this.store.on('event', this.boundOnEvent);
   }
 
+  startWatchMode(intervalMs: number = 300): void {
+    this.renderHeader();
+    this.store.on('event', this.boundOnEvent);
+
+    // Initial sync from SQLite (events from the last 10 seconds or newer)
+    this.lastPollTimestamp = Date.now() - 10000;
+    this.pollSqlite();
+
+    this.pollInterval = setInterval(() => {
+      this.pollSqlite();
+    }, intervalMs);
+  }
+
   stop(): void {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
     this.store.off('event', this.boundOnEvent);
+  }
+
+  private pollSqlite(): void {
+    try {
+      const newEvents = globalSqlite.getEventsSince(this.lastPollTimestamp);
+      for (const evt of newEvents) {
+        if (!this.seenEventIds.has(evt.id)) {
+          this.seenEventIds.add(evt.id);
+          this.lastPollTimestamp = Math.max(this.lastPollTimestamp, evt.timestamp);
+          this.renderEvent(evt);
+        }
+      }
+    } catch {
+      // Ignore concurrent file lock reads in SQLite WAL
+    }
   }
 
   renderHeader(): void {
     console.log(paint('cyan', '═'.repeat(80)));
     console.log(` ${paint('bold', '🔭 AGENT OBSERVATORY')} · ${paint('green', 'Canlı Olay Akışı')} · ${paint('gray', hms())}`);
-    console.log(` ${paint('gray', 'Mod: Event-First Hybrid (TS) · Stdio Stream + Hooks · Çıkış: Ctrl+C')}`);
+    console.log(` ${paint('gray', 'Mod: Event-First Hybrid (TS) · SQLite WAL Cross-Process · Çıkış: Ctrl+C')}`);
     console.log(paint('cyan', '═'.repeat(80)));
   }
 
   onEvent(evt: TaskEvent): void {
+    if (this.seenEventIds.has(evt.id)) return;
+    this.seenEventIds.add(evt.id);
+    this.lastPollTimestamp = Math.max(this.lastPollTimestamp, evt.timestamp);
+    this.renderEvent(evt);
+  }
+
+  private renderEvent(evt: TaskEvent): void {
     const time = paint('gray', hms(evt.timestamp));
     const agent = paint('cyan', `[${evt.agent.toUpperCase()}]`);
 

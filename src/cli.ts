@@ -34,12 +34,11 @@ async function main(): Promise<void> {
     }
   } else if (command === 'watch') {
     const tui = new TerminalUI(globalStore);
-    tui.start();
-    console.log(paint('gray', 'Canlı olaylar bekleniyor...'));
-    setInterval(() => {}, 10000);
+    tui.startWatchMode(300);
+    console.log(paint('gray', 'Canlı olaylar SQLite WAL ve yerel kuyruktan dinleniyor...'));
   } else if (command === 'mcp') {
     const { startMcpServer } = await import('./mcp/mcp_server.ts');
-    startMcpServer();
+    await startMcpServer();
   } else {
     console.log(paint('bold', '🔭 Agent Observatory CLI (TypeScript)'));
     console.log('Kullanım:');

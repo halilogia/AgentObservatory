@@ -92,6 +92,16 @@ export class AgentRunner {
         return reject(err);
       }
 
+      // Record task.started WITH child.pid for process tree tracking
+      this.store.recordEvent(createEvent({
+        taskId,
+        sessionId,
+        agent: adapter.name,
+        tier: 1,
+        type: 'task.started',
+        data: { prompt, cwd: cwd || process.cwd(), timeoutSeconds, pid: child.pid }
+      }), child.pid);
+
       let stderr = '';
 
       const timer = setTimeout(() => {
@@ -149,30 +159,33 @@ export class AgentRunner {
 
   cancelTask(taskId: string, reason: string = 'Kullanıcı tarafından iptal edildi'): boolean {
     const entry = this.activeProcesses.get(taskId);
-    if (!entry) return false;
-
-    clearTimeout(entry.timer);
-    try {
-      if (process.platform === 'win32' && entry.child.pid) {
-        spawn('taskkill', ['/pid', String(entry.child.pid), '/T', '/F']);
-      } else {
-        entry.child.kill('SIGTERM');
+    if (entry) {
+      clearTimeout(entry.timer);
+      try {
+        if (process.platform === 'win32' && entry.child.pid) {
+          spawn('taskkill', ['/pid', String(entry.child.pid), '/T', '/F'], { stdio: 'ignore' });
+        } else {
+          entry.child.kill('SIGTERM');
+        }
+      } catch {
+        entry.child.kill();
       }
-    } catch {
-      entry.child.kill();
+
+      this.activeProcesses.delete(taskId);
+
+      this.store.recordEvent(createEvent({
+        taskId,
+        agent: entry.options.agent as any,
+        tier: 1,
+        type: 'task.cancelled',
+        data: { reason }
+      }));
+
+      return true;
     }
 
-    this.activeProcesses.delete(taskId);
-
-    this.store.recordEvent(createEvent({
-      taskId,
-      agent: entry.options.agent as any,
-      tier: 1,
-      type: 'task.cancelled',
-      data: { reason }
-    }));
-
-    return true;
+    // Cross-process fallback via SQLite
+    return this.store.cancelTask ? this.store.cancelTask(taskId, reason) : false;
   }
 
   getActiveTasks(): string[] {

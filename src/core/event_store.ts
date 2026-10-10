@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { TaskEvent, TaskSummary } from './types.ts';
+import { globalSqlite } from './sqlite_store.ts';
 
 export interface EventStoreOptions {
   maxEvents?: number;
@@ -17,8 +18,15 @@ export class EventStore extends EventEmitter {
     this.maxEvents = options.maxEvents || 10000;
   }
 
-  recordEvent(event: TaskEvent): void {
+  recordEvent(event: TaskEvent, pid?: number): void {
     if (!event || !event.taskId) return;
+
+    // Persist to cross-process SQLite
+    try {
+      globalSqlite.recordEvent(event, pid);
+    } catch {
+      // Non-blocking fallback
+    }
 
     // Deduplication check
     const sig = `${event.taskId}:${event.type}:${event.tier}:${JSON.stringify(event.data)}`;
@@ -124,7 +132,7 @@ export class EventStore extends EventEmitter {
   }
 
   getTask(taskId: string): TaskSummary | null {
-    return this.tasks.get(taskId) || null;
+    return this.tasks.get(taskId) || globalSqlite.getTask(taskId);
   }
 
   getTaskBySession(sessionId: string): TaskSummary | null {
@@ -133,13 +141,21 @@ export class EventStore extends EventEmitter {
   }
 
   getRecentTasks(limit: number = 10): TaskSummary[] {
-    return Array.from(this.tasks.values())
-      .sort((a, b) => b.startTime - a.startTime)
-      .slice(0, limit);
+    const memTasks = Array.from(this.tasks.values());
+    if (memTasks.length > 0) {
+      return memTasks.sort((a, b) => b.startTime - a.startTime).slice(0, limit);
+    }
+    return globalSqlite.getRecentTasks(limit);
   }
 
   getEvents(taskId: string): TaskEvent[] {
-    return this.events.filter((e) => e.taskId === taskId);
+    const memEvents = this.events.filter((e) => e.taskId === taskId);
+    if (memEvents.length > 0) return memEvents;
+    return globalSqlite.getEvents(taskId);
+  }
+
+  cancelTask(taskId: string, reason: string = 'Kullanıcı tarafından iptal edildi'): boolean {
+    return globalSqlite.cancelTask(taskId, reason);
   }
 }
 

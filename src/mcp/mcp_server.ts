@@ -1,228 +1,287 @@
-import readline from 'node:readline';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
 import { spawn } from 'node:child_process';
 import { globalRunner } from '../runtime/agent_runner.ts';
-import { globalStore } from '../core/event_store.ts';
+import { globalSqlite } from '../core/sqlite_store.ts';
 
 const LAUNCH_GUI_PS1 = 'C:\\Users\\Halil Emre\\MasterBrain\\tools\\launch_gui.ps1';
 
-const TOOLS = [
-  {
-    name: 'run_agent',
-    description: 'Executes a task using a local CLI agent (claude, codex, agy) with real-time stream ingestion and session support.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        agent: {
-          type: 'string',
-          enum: ['claude', 'codex', 'agy'],
-          description: 'The target CLI agent'
-        },
-        prompt: {
-          type: 'string',
-          description: 'Instruction or task prompt'
-        },
-        cwd: {
-          type: 'string',
-          description: 'Optional working directory'
-        },
-        session_id: {
-          type: 'string',
-          description: 'Optional session / thread ID to resume (multi-turn context)'
-        },
-        timeout_seconds: {
-          type: 'number',
-          default: 300,
-          description: 'Execution timeout in seconds'
-        }
-      },
-      required: ['agent', 'prompt']
-    }
-  },
-  {
-    name: 'cancel_task',
-    description: 'Aborts a currently running agent task by task ID.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        task_id: {
-          type: 'string',
-          description: 'The task ID to cancel'
-        }
-      },
-      required: ['task_id']
-    }
-  },
-  {
-    name: 'list_tasks',
-    description: 'Lists recent agent tasks and active executions in the Observatory.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        limit: {
-          type: 'number',
-          default: 10
-        }
-      }
-    }
-  },
-  {
-    name: 'launch_observatory_tui',
-    description: 'Opens the live Agent Observatory telemetry dashboard in a visible console window on the physical desktop (WinSta0\\Default).',
-    inputSchema: {
-      type: 'object',
-      properties: {}
+function formatTaskReport(summary: any): string {
+  const report: string[] = [];
+  report.push(`### Agent Observatory Görev Raporu`);
+  report.push(`- **Ajan**: \`${summary.agent.toUpperCase()}\``);
+  report.push(`- **Durum**: ${summary.status === 'completed' ? 'Başarılı' : summary.status}`);
+  if (summary.sessionId) {
+    report.push(`- **Oturum / Thread ID**: \`${summary.sessionId}\``);
+  }
+  report.push(`- **Görev ID**: \`${summary.taskId}\``);
+  if (summary.model) {
+    report.push(`- **Model**: \`${summary.model}\``);
+  }
+  report.push(`- **Süre**: ${(summary.durationMs / 1000).toFixed(1)}s`);
+
+  if (summary.usage && summary.usage.totalTokens > 0) {
+    const u = summary.usage;
+    report.push(`- **Token**: Girdi: ${u.inputTokens} · Önbellek: ${u.cachedTokens} · Çıktı: ${u.outputTokens} · Akıl Yürütme: ${u.reasoningTokens}`);
+  }
+
+  if (summary.toolsUsed && summary.toolsUsed.length > 0) {
+    report.push(`\n#### Yürütülen Araçlar / Komutlar:`);
+    for (const t of summary.toolsUsed) {
+      report.push(`- **${t.name}**: \`${JSON.stringify(t.input || {}).slice(0, 100)}\``);
     }
   }
-];
 
-function sendJson(msg: any): void {
-  process.stdout.write(JSON.stringify(msg) + '\n');
+  report.push(`\n#### Yanıt:`);
+  report.push(summary.assistantText || '*(Çıktı üretilmedi)*');
+
+  if (summary.error) {
+    report.push(`\n> [!WARNING]\n> **Hata Detayı**: ${summary.error}`);
+  }
+
+  return report.join('\n');
 }
 
-function sendResult(id: any, result: any): void {
-  sendJson({ jsonrpc: '2.0', id, result });
-}
+export async function startMcpServer(): Promise<void> {
+  const server = new McpServer({
+    name: 'AgentObservatory',
+    version: '1.0.0-alpha'
+  });
 
-function sendError(id: any, code: number, message: string): void {
-  sendJson({ jsonrpc: '2.0', id, error: { code, message } });
-}
-
-export function startMcpServer(): void {
-  const rl = readline.createInterface({ input: process.stdin, terminal: false });
-
-  rl.on('line', async (line) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-
-    let req: any;
-    try {
-      req = JSON.parse(trimmed);
-    } catch {
-      return sendError(null, -32700, 'Parse error');
-    }
-
-    const { id, method, params } = req;
-
-    if (method === 'initialize') {
-      return sendResult(id, {
-        protocolVersion: '2024-11-05',
-        capabilities: { tools: {} },
-        serverInfo: {
-          name: 'AgentObservatory',
-          version: '1.0.0-alpha'
-        }
-      });
-    }
-
-    if (method === 'notifications/initialized') {
-      return;
-    }
-
-    if (method === 'tools/list') {
-      return sendResult(id, { tools: TOOLS });
-    }
-
-    if (method === 'tools/call') {
-      const toolName = params && params.name;
-      const args = (params && params.arguments) || {};
-
+  // Tool 1: run_agent
+  server.tool(
+    'run_agent',
+    'Executes a task using a local CLI agent (claude, codex, agy) with real-time stream ingestion and session support.',
+    {
+      agent: z.enum(['claude', 'codex', 'agy']).describe('The target CLI agent'),
+      prompt: z.string().describe('Instruction or task prompt'),
+      cwd: z.string().optional().describe('Optional working directory'),
+      session_id: z.string().optional().describe('Optional session / thread ID to resume (multi-turn context)'),
+      timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds')
+    },
+    async ({ agent, prompt, cwd, session_id, timeout_seconds }) => {
       try {
-        if (toolName === 'run_agent') {
-          const summary = await globalRunner.runTask({
-            agent: args.agent,
-            prompt: args.prompt,
-            cwd: args.cwd,
-            sessionId: args.session_id,
-            timeoutSeconds: args.timeout_seconds || 300
-          });
+        const summary = await globalRunner.runTask({
+          agent,
+          prompt,
+          cwd,
+          sessionId: session_id,
+          timeoutSeconds: timeout_seconds || 300
+        });
 
-          const report: string[] = [];
-          report.push(`### Agent Observatory Görev Raporu`);
-          report.push(`- **Ajan**: \`${summary.agent.toUpperCase()}\``);
-          report.push(`- **Durum**: ${summary.status === 'completed' ? 'Başarılı' : summary.status}`);
-          if (summary.sessionId) {
-            report.push(`- **Oturum / Thread ID**: \`${summary.sessionId}\``);
-          }
-          report.push(`- **Görev ID**: \`${summary.taskId}\``);
-          if (summary.model) {
-            report.push(`- **Model**: \`${summary.model}\``);
-          }
-          report.push(`- **Süre**: ${(summary.durationMs / 1000).toFixed(1)}s`);
-
-          if (summary.usage && summary.usage.totalTokens > 0) {
-            const u = summary.usage;
-            report.push(`- **Token**: Girdi: ${u.inputTokens} · Önbellek: ${u.cachedTokens} · Çıktı: ${u.outputTokens} · Akıl Yürütme: ${u.reasoningTokens}`);
-          }
-
-          if (summary.toolsUsed && summary.toolsUsed.length > 0) {
-            report.push(`\n#### Yürütülen Araçlar / Komutlar:`);
-            for (const t of summary.toolsUsed) {
-              report.push(`- **${t.name}**: \`${JSON.stringify(t.input || {}).slice(0, 100)}\``);
-            }
-          }
-
-          report.push(`\n#### Yanıt:`);
-          report.push(summary.assistantText || '*(Çıktı üretilmedi)*');
-
-          if (summary.error) {
-            report.push(`\n> [!WARNING]\n> **Hata Detayı**: ${summary.error}`);
-          }
-
-          return sendResult(id, {
-            content: [{ type: 'text', text: report.join('\n') }]
-          });
-        }
-
-        if (toolName === 'cancel_task') {
-          const success = globalRunner.cancelTask(args.task_id);
-          return sendResult(id, {
-            content: [{
-              type: 'text',
-              text: success ? `Görev \`${args.task_id}\` başarıyla iptal edildi.` : `Görev \`${args.task_id}\` bulunamadı veya zaten tamamlanmış.`
-            }]
-          });
-        }
-
-        if (toolName === 'list_tasks') {
-          const tasks = globalStore.getRecentTasks(args.limit || 10);
-          const lines = ['| Görev ID | Ajan | Durum | Oturum ID | Süre | İlk İstek |', '|---|---|---|---|---|---|'];
-          for (const t of tasks) {
-            const promptPreview = (t.prompt || '').slice(0, 30);
-            lines.push(`| \`${t.taskId}\` | ${t.agent} | ${t.status} | \`${t.sessionId ? t.sessionId.slice(0, 8) : '-'}\` | ${(t.durationMs / 1000).toFixed(1)}s | ${promptPreview} |`);
-          }
-          return sendResult(id, {
-            content: [{ type: 'text', text: lines.join('\n') }]
-          });
-        }
-
-        if (toolName === 'launch_observatory_tui') {
-          const tuiPath = 'C:\\Users\\Halil Emre\\Desktop\\GitHub\\Public\\AgentObservatory\\src\\cli.ts';
-          const psCmd = [
-            'pwsh',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-File',
-            LAUNCH_GUI_PS1,
-            '-ExePath',
-            'C:\\Windows\\System32\\cmd.exe',
-            '-Arguments',
-            `/c node --experimental-strip-types "${tuiPath}" watch`
-          ];
-          spawn(psCmd[0], psCmd.slice(1), { stdio: 'ignore', windowsHide: false });
-          return sendResult(id, {
-            content: [{
-              type: 'text',
-              text: 'Agent Observatory canlı terminali (TUI) fiziksel masaüstünde (WinSta0\\Default) açıldı.'
-            }]
-          });
-        }
-
-        return sendError(id, -32601, `Bilinmeyen araç: ${toolName}`);
+        return {
+          content: [{ type: 'text', text: formatTaskReport(summary) }]
+        };
       } catch (err: any) {
-        return sendError(id, -32000, err.message);
+        return {
+          isError: true,
+          content: [{ type: 'text', text: `Görev yürütme hatası: ${err.message}` }]
+        };
       }
     }
+  );
 
-    sendError(id, -32601, `Bilinmeyen metod: ${method}`);
-  });
+  // Tool 2: run_claude (Specialized Claude Code shortcut)
+  server.tool(
+    'run_claude',
+    'Executes a task directly using Claude Code CLI with local OAuth subscription.',
+    {
+      prompt: z.string().describe('Instruction or task prompt for Claude Code'),
+      cwd: z.string().optional().describe('Optional working directory'),
+      session_id: z.string().optional().describe('Optional session ID to resume'),
+      timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds')
+    },
+    async ({ prompt, cwd, session_id, timeout_seconds }) => {
+      try {
+        const summary = await globalRunner.runTask({
+          agent: 'claude',
+          prompt,
+          cwd,
+          sessionId: session_id,
+          timeoutSeconds: timeout_seconds || 300
+        });
+        return { content: [{ type: 'text', text: formatTaskReport(summary) }] };
+      } catch (err: any) {
+        return { isError: true, content: [{ type: 'text', text: `Claude görevi hatası: ${err.message}` }] };
+      }
+    }
+  );
+
+  // Tool 3: run_codex (Specialized Codex CLI shortcut)
+  server.tool(
+    'run_codex',
+    'Executes a task directly using OpenAI Codex CLI with JSON-RPC event stream.',
+    {
+      prompt: z.string().describe('Instruction or task prompt for Codex'),
+      cwd: z.string().optional().describe('Optional working directory'),
+      session_id: z.string().optional().describe('Optional session/thread ID to resume'),
+      timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds')
+    },
+    async ({ prompt, cwd, session_id, timeout_seconds }) => {
+      try {
+        const summary = await globalRunner.runTask({
+          agent: 'codex',
+          prompt,
+          cwd,
+          sessionId: session_id,
+          timeoutSeconds: timeout_seconds || 300
+        });
+        return { content: [{ type: 'text', text: formatTaskReport(summary) }] };
+      } catch (err: any) {
+        return { isError: true, content: [{ type: 'text', text: `Codex görevi hatası: ${err.message}` }] };
+      }
+    }
+  );
+
+  // Tool 4: run_agy (Specialized Antigravity CLI shortcut)
+  server.tool(
+    'run_agy',
+    'Executes a task directly using Google Antigravity CLI (agy).',
+    {
+      prompt: z.string().describe('Instruction or task prompt for Antigravity agy'),
+      cwd: z.string().optional().describe('Optional working directory'),
+      session_id: z.string().optional().describe('Optional session ID to resume'),
+      timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds')
+    },
+    async ({ prompt, cwd, session_id, timeout_seconds }) => {
+      try {
+        const summary = await globalRunner.runTask({
+          agent: 'agy',
+          prompt,
+          cwd,
+          sessionId: session_id,
+          timeoutSeconds: timeout_seconds || 300
+        });
+        return { content: [{ type: 'text', text: formatTaskReport(summary) }] };
+      } catch (err: any) {
+        return { isError: true, content: [{ type: 'text', text: `Agy görevi hatası: ${err.message}` }] };
+      }
+    }
+  );
+
+  // Tool 5: cancel_task
+  server.tool(
+    'cancel_task',
+    'Aborts a currently running agent task by task ID (terminates process tree via taskkill).',
+    {
+      task_id: z.string().describe('The task ID to cancel')
+    },
+    async ({ task_id }) => {
+      const success = globalRunner.cancelTask(task_id);
+      return {
+        content: [{
+          type: 'text',
+          text: success
+            ? `Görev \`${task_id}\` başarıyla iptal edildi (süreç ağacı sonlandırıldı).`
+            : `Görev \`${task_id}\` bulunamadı veya zaten tamamlanmış.`
+        }]
+      };
+    }
+  );
+
+  // Tool 6: list_tasks (also aliased for sessions)
+  server.tool(
+    'list_tasks',
+    'Lists recent agent tasks and active executions in the Observatory.',
+    {
+      limit: z.number().optional().default(10).describe('Maximum number of tasks to return')
+    },
+    async ({ limit }) => {
+      const tasks = globalSqlite.getRecentTasks(limit || 10);
+      if (tasks.length === 0) {
+        return {
+          content: [{ type: 'text', text: 'Kayıtlı görev bulunamadı.' }]
+        };
+      }
+
+      const lines = ['| Görev ID | Ajan | Durum | Oturum ID | Süre | İlk İstek |', '|---|---|---|---|---|---|'];
+      for (const t of tasks) {
+        const promptPreview = (t.prompt || '').slice(0, 30);
+        lines.push(`| \`${t.taskId}\` | ${t.agent} | ${t.status} | \`${t.sessionId ? t.sessionId.slice(0, 8) : '-'}\` | ${(t.durationMs / 1000).toFixed(1)}s | ${promptPreview} |`);
+      }
+      return {
+        content: [{ type: 'text', text: lines.join('\n') }]
+      };
+    }
+  );
+
+  server.tool(
+    'list_agent_sessions',
+    'Alias for list_tasks: Lists recent agent tasks and sessions.',
+    {
+      limit: z.number().optional().default(10).describe('Maximum number of tasks to return')
+    },
+    async ({ limit }) => {
+      const tasks = globalSqlite.getRecentTasks(limit || 10);
+      if (tasks.length === 0) {
+        return { content: [{ type: 'text', text: 'Kayıtlı oturum bulunamadı.' }] };
+      }
+      const lines = ['| Görev ID | Ajan | Durum | Oturum ID | Süre | İlk İstek |', '|---|---|---|---|---|---|'];
+      for (const t of tasks) {
+        const promptPreview = (t.prompt || '').slice(0, 30);
+        lines.push(`| \`${t.taskId}\` | ${t.agent} | ${t.status} | \`${t.sessionId ? t.sessionId.slice(0, 8) : '-'}\` | ${(t.durationMs / 1000).toFixed(1)}s | ${promptPreview} |`);
+      }
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    }
+  );
+
+  // Tool 7: launch_observatory_tui
+  server.tool(
+    'launch_observatory_tui',
+    'Opens the live Agent Observatory telemetry dashboard in a visible console window on the physical desktop (WinSta0\\Default).',
+    {},
+    async () => {
+      const tuiPath = 'C:\\Users\\Halil Emre\\Desktop\\GitHub\\Public\\AgentObservatory\\src\\cli.ts';
+      const psCmd = [
+        'pwsh',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        LAUNCH_GUI_PS1,
+        '-ExePath',
+        'C:\\Windows\\System32\\cmd.exe',
+        '-Arguments',
+        `/c node --experimental-strip-types "${tuiPath}" watch`
+      ];
+      spawn(psCmd[0], psCmd.slice(1), { stdio: 'ignore', windowsHide: false });
+      return {
+        content: [{
+          type: 'text',
+          text: 'Agent Observatory canlı terminali (TUI) fiziksel masaüstünde (WinSta0\\Default) açıldı.'
+        }]
+      };
+    }
+  );
+
+  server.tool(
+    'launch_agent_watch',
+    'Alias for launch_observatory_tui.',
+    {},
+    async () => {
+      const tuiPath = 'C:\\Users\\Halil Emre\\Desktop\\GitHub\\Public\\AgentObservatory\\src\\cli.ts';
+      const psCmd = [
+        'pwsh',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        LAUNCH_GUI_PS1,
+        '-ExePath',
+        'C:\\Windows\\System32\\cmd.exe',
+        '-Arguments',
+        `/c node --experimental-strip-types "${tuiPath}" watch`
+      ];
+      spawn(psCmd[0], psCmd.slice(1), { stdio: 'ignore', windowsHide: false });
+      return {
+        content: [{
+          type: 'text',
+          text: 'Agent Observatory canlı terminali (TUI) fiziksel masaüstünde (WinSta0\\Default) açıldı.'
+        }]
+      };
+    }
+  );
+
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error('[AgentObservatory] MCP Server initialized on stdio transport via official @modelcontextprotocol/sdk');
 }

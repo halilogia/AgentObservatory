@@ -4,23 +4,24 @@
 
 ## 🚀 Aktif Sprint (v1.0.0-alpha)
 
-- [/] **Core Engine & Architecture**
+- [x] **Core Engine & Architecture (TypeScript)**
   - [x] Eski araçları arşivle (`Archives/agent-watch-legacy`, `Archives/agent-bridge-prototype`).
   - [x] 8'li Core Docs dokümantasyonunu scaffold et.
-  - [ ] Node.js `package.json` ve dizin yapısını kur (`src/core`, `src/runtime`, `src/adapters`, `src/ui`, `src/mcp`).
-  - [ ] `src/core/types.js`: Ortak Olay Şeması (`TaskEvent`, `TaskState`).
-  - [ ] `src/core/event_store.js`: In-Memory olay havuzu ve EventEmitter motoru.
+  - [x] Node.js `package.json` ve saf TypeScript dizin yapısını kur (`src/core`, `src/runtime`, `src/adapters`, `src/ui`, `src/mcp`).
+  - [x] `src/core/types.ts`: Ortak Olay Şeması (`TaskEvent`, `TaskState`).
+  - [x] `src/core/event_store.ts`: In-Memory olay havuzu ve EventEmitter motoru.
+  - [x] `src/core/sqlite_store.ts`: Node 24 `node:sqlite` WAL kalıcı çapraz süreç veritabanı.
 
-- [ ] **Runtime & Adapters (Tier 1)**
-  - [ ] `src/adapters/claude_adapter.js`: Claude Code CLI stream ayrıştırıcı ve session resume.
-  - [ ] `src/adapters/codex_adapter.js`: Codex CLI JSONL ayrıştırıcı ve thread resume.
-  - [ ] `src/adapters/agy_adapter.js`: Antigravity CLI stream ayrıştırıcı.
-  - [ ] `src/runtime/agent_runner.js`: Süreç yaşam döngüsü, iptal (`kill`), timeout yönetimi.
+- [x] **Runtime & Adapters (Tier 1)**
+  - [x] `src/adapters/claude_adapter.ts`: Claude Code CLI stream ayrıştırıcı ve session resume.
+  - [x] `src/adapters/codex_adapter.ts`: Codex CLI JSONL ayrıştırıcı ve thread resume.
+  - [x] `src/adapters/agy_adapter.ts`: Antigravity CLI stream ayrıştırıcı.
+  - [x] `src/runtime/agent_runner.ts`: Süreç yaşam döngüsü, PID tabanlı `taskkill` iptal yönetimi.
 
-- [ ] **Presentation & Antigravity MCP**
-  - [ ] `src/ui/tui.js`: ANSI renkli, canlı yenilenen terminal dashboard.
-  - [ ] `src/mcp/mcp_server.js`: Antigravity 2.0 için yerel MCP sunucusu.
-  - [ ] `mcp_config.json` güncellemesi ve canlı E2E doğrulama.
+- [x] **Presentation & Antigravity MCP**
+  - [x] `src/ui/tui.ts`: ANSI renkli, canlı SQLite WAL polling destekli terminal dashboard.
+  - [x] `src/mcp/mcp_server.ts`: Resmi `@modelcontextprotocol/sdk` (StdioServerTransport + zod) MCP sunucusu.
+  - [x] Canlı E2E testleri (Claude ve Codex CLI gerçek görev ve token akışı doğrulaması).
 
 ---
 
@@ -28,7 +29,6 @@
 
 - [ ] Claude Code ve Antigravity için yerel HTTP/IPC Hook sunucusu (Tier 2).
 - [ ] Tier 3 Session File Fallback entegrasyonu.
-- [ ] SQLite kalıcı olay kaydı.
 - [ ] Hermes Agent ve Ollama adaptörleri.
 
 ---
