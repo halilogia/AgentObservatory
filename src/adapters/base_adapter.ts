@@ -2,6 +2,7 @@ import type { EventStore } from '../core/event_store.ts';
 import type { AgentType } from '../core/types.ts';
 
 export interface CommandOptions {
+  taskId?: string;
   prompt: string;
   cwd?: string;
   sessionId?: string | null;
@@ -16,6 +17,8 @@ export interface BuiltCommand {
   cwd: string;
   env: NodeJS.ProcessEnv;
 }
+
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
 export abstract class BaseAdapter {
   readonly name: AgentType;
@@ -32,7 +35,12 @@ export abstract class BaseAdapter {
     const task = store.getTask(taskId);
     if (!task) return;
 
-    if (code === 0 && task.status !== 'failed') {
+    // Do NOT overwrite immutable terminal states (e.g. if the task was already cancelled)
+    if (TERMINAL_STATUSES.has(task.status)) {
+      return;
+    }
+
+    if (code === 0) {
       store.recordEvent({
         id: `evt_exit_${taskId}`,
         taskId,

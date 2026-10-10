@@ -6,12 +6,14 @@ export interface EventStoreOptions {
   maxEvents?: number;
 }
 
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+
 export class EventStore extends EventEmitter {
   private maxEvents: number;
   private events: TaskEvent[] = [];
   private tasks: Map<string, TaskSummary> = new Map();
   private sessionToTask: Map<string, string> = new Map();
-  private seenSignatures: Set<string> = new Set();
+  private seenEventIds: Set<string> = new Set();
 
   constructor(options: EventStoreOptions = {}) {
     super();
@@ -24,18 +26,17 @@ export class EventStore extends EventEmitter {
     // Persist to cross-process SQLite
     try {
       globalSqlite.recordEvent(event, pid);
-    } catch {
-      // Non-blocking fallback
+    } catch (err: any) {
+      console.error(`[Observatory] SQLite record error: ${err.message}`);
     }
 
-    // Deduplication check
-    const sig = `${event.taskId}:${event.type}:${event.tier}:${JSON.stringify(event.data)}`;
-    if (this.seenSignatures.has(sig)) {
+    // Deduplication check by unique event ID (NOT by content hashing, which drops consecutive identical deltas)
+    if (this.seenEventIds.has(event.id)) {
       return;
     }
-    this.seenSignatures.add(sig);
-    if (this.seenSignatures.size > this.maxEvents * 2) {
-      this.seenSignatures.clear();
+    this.seenEventIds.add(event.id);
+    if (this.seenEventIds.size > this.maxEvents * 2) {
+      this.seenEventIds.clear();
     }
 
     this.events.push(event);
@@ -75,9 +76,13 @@ export class EventStore extends EventEmitter {
       this.sessionToTask.set(event.sessionId, event.taskId);
     }
 
+    const isAlreadyTerminal = TERMINAL_STATUSES.has(task.status);
+
     switch (event.type) {
       case 'task.started':
-        task.status = 'running';
+        if (!isAlreadyTerminal) {
+          task.status = 'running';
+        }
         task.prompt = event.data.prompt || task.prompt;
         task.model = event.data.model || task.model;
         break;
@@ -107,23 +112,32 @@ export class EventStore extends EventEmitter {
         break;
 
       case 'task.completed':
-        task.status = 'completed';
-        task.endTime = event.timestamp;
-        task.durationMs = task.endTime - task.startTime;
-        if (event.data.result) task.assistantText = event.data.result;
+        if (!isAlreadyTerminal) {
+          task.status = 'completed';
+          task.endTime = event.timestamp;
+          task.durationMs = task.endTime - task.startTime;
+          if (event.data.result && !task.assistantText) {
+            task.assistantText = event.data.result;
+          }
+        }
         break;
 
       case 'task.failed':
-        task.status = 'failed';
-        task.endTime = event.timestamp;
-        task.durationMs = task.endTime - task.startTime;
-        task.error = event.data.error || 'Bilinmeyen hata';
+        if (!isAlreadyTerminal) {
+          task.status = 'failed';
+          task.endTime = event.timestamp;
+          task.durationMs = task.endTime - task.startTime;
+          task.error = event.data.error || 'Bilinmeyen hata';
+        }
         break;
 
       case 'task.cancelled':
-        task.status = 'cancelled';
-        task.endTime = event.timestamp;
-        task.durationMs = task.endTime - task.startTime;
+        if (!isAlreadyTerminal) {
+          task.status = 'cancelled';
+          task.endTime = event.timestamp;
+          task.durationMs = task.endTime - task.startTime;
+          task.error = event.data.reason || 'İptal edildi';
+        }
         break;
     }
 

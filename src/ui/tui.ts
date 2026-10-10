@@ -29,7 +29,7 @@ export class TerminalUI {
   private store: EventStore;
   private boundOnEvent: (evt: TaskEvent) => void;
   private pollInterval: NodeJS.Timeout | null = null;
-  private lastPollTimestamp: number = 0;
+  private lastSeq: number = 0;
   private seenEventIds: Set<string> = new Set();
 
   constructor(store: EventStore = globalStore) {
@@ -46,8 +46,7 @@ export class TerminalUI {
     this.renderHeader();
     this.store.on('event', this.boundOnEvent);
 
-    // Initial sync from SQLite (events from the last 10 seconds or newer)
-    this.lastPollTimestamp = Date.now() - 10000;
+    this.lastSeq = 0;
     this.pollSqlite();
 
     this.pollInterval = setInterval(() => {
@@ -65,11 +64,11 @@ export class TerminalUI {
 
   private pollSqlite(): void {
     try {
-      const newEvents = globalSqlite.getEventsSince(this.lastPollTimestamp);
+      const newEvents = globalSqlite.getEventsSinceSeq(this.lastSeq);
       for (const evt of newEvents) {
         if (!this.seenEventIds.has(evt.id)) {
           this.seenEventIds.add(evt.id);
-          this.lastPollTimestamp = Math.max(this.lastPollTimestamp, evt.timestamp);
+          this.lastSeq = Math.max(this.lastSeq, evt.seq);
           this.renderEvent(evt);
         }
       }
@@ -88,7 +87,6 @@ export class TerminalUI {
   onEvent(evt: TaskEvent): void {
     if (this.seenEventIds.has(evt.id)) return;
     this.seenEventIds.add(evt.id);
-    this.lastPollTimestamp = Math.max(this.lastPollTimestamp, evt.timestamp);
     this.renderEvent(evt);
   }
 

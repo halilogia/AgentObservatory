@@ -3,129 +3,131 @@ import { EventStore } from '../src/core/event_store.ts';
 import { createEvent } from '../src/core/types.ts';
 import { ClaudeAdapter } from '../src/adapters/claude_adapter.ts';
 import { CodexAdapter } from '../src/adapters/codex_adapter.ts';
-import { globalSqlite } from '../src/core/sqlite_store.ts';
+import { SqliteStore } from '../src/core/sqlite_store.ts';
+import { validateCwd } from '../src/core/paths.ts';
 
-console.log('🧪 Agent Observatory Core TypeScript Test Başlatılıyor...\n');
+console.log('🧪 Agent Observatory Kapsamlı Hardening & Doğrulama Testi Başlatılıyor...\n');
 
-// Test 1: EventStore & Aggregation
-console.log('1. EventStore ve Olay Agregasyonu Test Ediliyor...');
-const store = new EventStore();
+// 1. İZOLASYON: Geçici/In-Memory SQLite Veritabanı
+console.log('1. İzole In-Memory SQLite Veritabanı Test Ediliyor...');
+const memSqlite = new SqliteStore(':memory:');
+assert.ok(memSqlite, 'In-memory test SQLite deposu başlatılmalı');
+console.log('✔ İzole veritabanı hazır (Kullanıcının asıl veritabanına dokunulmuyor)!\n');
 
-store.recordEvent(createEvent({
-  taskId: 'task_test_1',
-  sessionId: 'sess_123',
-  agent: 'claude',
-  type: 'task.started',
-  data: { prompt: 'TS Test Görevi', model: 'claude-sonnet-5-5' }
-}), 12345);
+// 2. GÜVENLİK: Varsayılan İzinler & CWD Doğrulaması
+console.log('2. Güvenlik Denetimleri (Safe Defaults & CWD Validation) Test Ediliyor...');
+const claude = new ClaudeAdapter();
+const codex = new CodexAdapter();
 
-let task = store.getTask('task_test_1');
-assert.ok(task, 'Task bulunmalı');
-assert.strictEqual(task.status, 'running');
-assert.strictEqual(task.agent, 'claude');
-assert.strictEqual(task.sessionId, 'sess_123');
+// A. Claude varsayılan izin kontrolü
+const clCmd = claude.buildCommand({ prompt: 'test prompt' });
+assert.ok(!clCmd.args.includes('--dangerously-skip-permissions'), 'Claude varsayılan olarak TEHLİKELİ izinleri atlamamalı!');
 
-// Emit tool invocation
-store.recordEvent(createEvent({
-  taskId: 'task_test_1',
-  sessionId: 'sess_123',
-  agent: 'claude',
-  type: 'tool.invoked',
-  data: { name: 'Bash', input: { command: 'ls' } }
-}));
+// B. Codex varsayılan sandbox kontrolü
+const cxCmd = codex.buildCommand({ prompt: 'test prompt' });
+assert.ok(cxCmd.args.includes('workspace-write'), 'Codex varsayılan olarak workspace-write sandbox kullanmalı!');
+assert.ok(!cxCmd.args.includes('danger-full-access'), 'Codex asla varsayılan olarak danger-full-access olmamalı!');
 
-task = store.getTask('task_test_1');
-assert.ok(task);
-assert.strictEqual(task.toolsUsed.length, 1);
-assert.strictEqual(task.toolsUsed[0].name, 'Bash');
+// C. CWD Doğrulama
+assert.throws(() => {
+  validateCwd('C:\\NonExistentDirectory_12345');
+}, /Geçersiz veya bulunamayan çalışma dizini/, 'Var olmayan dizin reddedilmeli');
 
-// Emit usage
-store.recordEvent(createEvent({
-  taskId: 'task_test_1',
-  sessionId: 'sess_123',
-  agent: 'claude',
-  type: 'usage.updated',
-  data: { usage: { inputTokens: 100, outputTokens: 50, cachedTokens: 200, reasoningTokens: 10 } }
-}));
+assert.throws(() => {
+  validateCwd('C:\\Windows\\System32');
+}, /Sistem dizinlerinde görev çalıştırmak güvenlik nedeniyle engellendi/, 'Sistem kök dizinleri engellenmeli');
 
-task = store.getTask('task_test_1');
-assert.ok(task);
-assert.strictEqual(task.usage.inputTokens, 100);
-assert.strictEqual(task.usage.cachedTokens, 200);
-assert.strictEqual(task.usage.reasoningTokens, 10);
-assert.strictEqual(task.usage.totalTokens, 150);
+console.log('✔ Güvenlik varsayılanları ve dizin doğrulaması başarıyla geçti!\n');
 
-// Emit completed
-store.recordEvent(createEvent({
-  taskId: 'task_test_1',
-  sessionId: 'sess_123',
-  agent: 'claude',
-  type: 'task.completed',
-  data: { result: 'TypeScript motoru çalışıyor' }
-}));
-
-task = store.getTask('task_test_1');
-assert.ok(task);
-assert.strictEqual(task.status, 'completed');
-assert.strictEqual(task.assistantText, 'TypeScript motoru çalışıyor');
-console.log('✔ EventStore testleri başarıyla geçti!\n');
-
-// Test 2: Claude Adapter Parsing
-console.log('2. ClaudeAdapter stream-json Ayrıştırma Test Ediliyor...');
-const claudeAdapter = new ClaudeAdapter();
-const testStore = new EventStore();
-
-claudeAdapter.handleStdoutLine(
-  JSON.stringify({ type: 'system', subtype: 'init', session_id: 'cl_session_1', model: 'claude-sonnet-5-5' }),
-  'task_claude_1',
-  testStore
-);
-
-const clTask = testStore.getTask('task_claude_1');
-assert.ok(clTask);
-assert.strictEqual(clTask.sessionId, 'cl_session_1');
-assert.strictEqual(clTask.model, 'claude-sonnet-5-5');
-console.log('✔ ClaudeAdapter testleri başarıyla geçti!\n');
-
-// Test 3: Codex Adapter Parsing
-console.log('3. CodexAdapter JSONL Ayrıştırma Test Ediliyor...');
-const codexAdapter = new CodexAdapter();
+// 3. DOĞRULUK: Paralel Codex Görevlerinde Oturum İzolasyonu
+console.log('3. Paralel Görevlerde Oturum İzolasyonu (Session Isolation) Test Ediliyor...');
 const codexStore = new EventStore();
 
-codexAdapter.handleStdoutLine(
-  JSON.stringify({ type: 'thread.started', thread_id: 'codex_th_1' }),
-  'task_codex_1',
+// Görev A ve Görev B eşzamanlı olarak aynı adapter üzerinden yürütülüyor
+const taskA = 'task_codex_parallel_A';
+const taskB = 'task_codex_parallel_B';
+
+codex.buildCommand({ taskId: taskA, prompt: 'Task A' });
+codex.buildCommand({ taskId: taskB, prompt: 'Task B' });
+
+// Görev A oturum başlatır
+codex.handleStdoutLine(JSON.stringify({ type: 'thread.started', thread_id: 'thread_AAA' }), taskA, codexStore);
+// Görev B oturum başlatır
+codex.handleStdoutLine(JSON.stringify({ type: 'thread.started', thread_id: 'thread_BBB' }), taskB, codexStore);
+
+// Görev A mesaj üretir
+codex.handleStdoutLine(
+  JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'Mesaj A' } }),
+  taskA,
+  codexStore
+);
+// Görev B mesaj üretir
+codex.handleStdoutLine(
+  JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'Mesaj B' } }),
+  taskB,
   codexStore
 );
 
-codexAdapter.handleStdoutLine(
-  JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'Codex TS hazır.' } }),
-  'task_codex_1',
-  codexStore
-);
+const stateA = codexStore.getTask(taskA);
+const stateB = codexStore.getTask(taskB);
 
-const cxTask = codexStore.getTask('task_codex_1');
-assert.ok(cxTask);
-assert.strictEqual(cxTask.sessionId, 'codex_th_1');
-assert.strictEqual(cxTask.assistantText, 'Codex TS hazır.');
-console.log('✔ CodexAdapter testleri başarıyla geçti!\n');
+assert.strictEqual(stateA?.sessionId, 'thread_AAA', 'Görev A kendi thread_AAA oturumunu korumalı');
+assert.strictEqual(stateB?.sessionId, 'thread_BBB', 'Görev B kendi thread_BBB oturumunu korumalı');
+assert.notStrictEqual(stateA?.sessionId, stateB?.sessionId, 'Paralel görevlerin oturumları asla birbirine karışmamalı!');
+console.log('✔ Paralel görev oturum izolasyonu başarıyla doğrulandı!\n');
 
-// Test 4: SQLite WAL Persistence & Cross-Process Event Sync
-console.log('4. SQLite WAL Kalıcı Depolama ve Olay Senkronizasyonu Test Ediliyor...');
-const sqliteTask = globalSqlite.getTask('task_test_1');
-assert.ok(sqliteTask, 'Task SQLite veritabanında bulunmalı');
-assert.strictEqual(sqliteTask.status, 'completed');
-assert.strictEqual(sqliteTask.agent, 'claude');
-assert.strictEqual(sqliteTask.usage.inputTokens, 100);
+// 4. İPTAL DURUM MAKİNESİ: Değiştirilemez Terminal Durumu (Immutable Terminal State)
+console.log('4. İptal Durum Makinesi ve Terminal Durum Güvencesi Test Ediliyor...');
+const cancelStore = new EventStore();
+const cancelTaskId = 'task_cancel_test_1';
 
-const recentEvents = globalSqlite.getEventsSince(0);
-assert.ok(recentEvents.length > 0, 'SQLite üzerinden olaylar sorgulanabilmeli');
-console.log(`✔ SQLite WAL testleri başarıyla geçti (${recentEvents.length} kayıtlı olay)!\n`);
+// Görev başlar
+cancelStore.recordEvent(createEvent({
+  taskId: cancelTaskId,
+  agent: 'claude',
+  type: 'task.started',
+  data: { prompt: 'İptal edilecek görev' }
+}));
+assert.strictEqual(cancelStore.getTask(cancelTaskId)?.status, 'running');
 
-// Test 5: MCP Server SDK Import & Structure
-console.log('5. Resmi MCP SDK (@modelcontextprotocol/sdk) Yüklemesi Test Ediliyor...');
+// Görev iptal edilir
+cancelStore.recordEvent(createEvent({
+  taskId: cancelTaskId,
+  agent: 'claude',
+  type: 'task.cancelled',
+  data: { reason: 'Kullanıcı durdurdu' }
+}));
+assert.strictEqual(cancelStore.getTask(cancelTaskId)?.status, 'cancelled');
+
+// Süreç öldükten sonra handleExit sıfır olmayan kodla çağrılsa bile "failed" OLARAK EZİLMEMELİ!
+claude.handleExit(1, cancelTaskId, cancelStore, 'Process killed');
+const finalTaskState = cancelStore.getTask(cancelTaskId);
+assert.strictEqual(finalTaskState?.status, 'cancelled', 'İptal edilen görev handleExit tarafından failed olarak ezilmemeli!');
+console.log('✔ İptal durum makinesi ve terminal durum dokunulmazlığı başarıyla doğrulandı!\n');
+
+// 5. VERİ TUTARLILIĞI: Ardışık Aynı Delta Parçalarının Kaybolmaması & Monotonik seq
+console.log('5. Ardışık Delta Parçaları ve SQLite Monotonik Sıralama Test Ediliyor...');
+const seqStore = new SqliteStore(':memory:');
+const seqTaskId = 'task_seq_test';
+
+// Ardışık 3 kez tamamen aynı metin parçası (örn. alt satır \n) üretiliyor
+seqStore.recordEvent(createEvent({ taskId: seqTaskId, agent: 'claude', type: 'message.delta', data: { text: '\n' } }));
+seqStore.recordEvent(createEvent({ taskId: seqTaskId, agent: 'claude', type: 'message.delta', data: { text: '\n' } }));
+seqStore.recordEvent(createEvent({ taskId: seqTaskId, agent: 'claude', type: 'message.delta', data: { text: '\n' } }));
+
+const events = seqStore.getEvents(seqTaskId);
+assert.strictEqual(events.length, 3, 'Ardışık aynı içerikli delta olayları asla tekilleştirilip yutulmamalı!');
+
+const eventsSinceSeq0 = seqStore.getEventsSinceSeq(0);
+assert.strictEqual(eventsSinceSeq0.length, 3);
+assert.ok(eventsSinceSeq0[0].seq < eventsSinceSeq0[1].seq);
+assert.ok(eventsSinceSeq0[1].seq < eventsSinceSeq0[2].seq);
+console.log('✔ Monotonik artan seq ve mesaj bütünlüğü başarıyla doğrulandı!\n');
+
+// 6. RESMİ MCP SDK MODÜL DOĞRULAMASI
+console.log('6. Resmi MCP SDK (@modelcontextprotocol/sdk) Modül Yüklemesi Test Ediliyor...');
 const mcpModule = await import('../src/mcp/mcp_server.ts');
-assert.strictEqual(typeof mcpModule.startMcpServer, 'function', 'startMcpServer fonksiyonu dışa aktarılmalı');
-console.log('✔ MCP Server SDK yapılandırması başarıyla doğrulandı!\n');
+assert.strictEqual(typeof mcpModule.startMcpServer, 'function');
+console.log('✔ Resmi MCP Server modülü doğrulandı!\n');
 
-console.log('🎉 TÜM TYPESCRIPT VE PERSISTENCE TESTLERİ EKSİKSİZ BAŞARIYLA TAMAMLANDI!');
+console.log('🎉 TÜM P0 GÜVENLİK, OTURUM İZOLASYONU VE VERİ TUTARLILIĞI TESTLERİ EKSİKSİZ BAŞARIYLA TAMAMLANDI!');

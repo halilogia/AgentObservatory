@@ -2,10 +2,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { spawn } from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
 import { globalRunner } from '../runtime/agent_runner.ts';
 import { globalSqlite } from '../core/sqlite_store.ts';
+import { validateCwd } from '../core/paths.ts';
 
-const LAUNCH_GUI_PS1 = 'C:\\Users\\Halil Emre\\MasterBrain\\tools\\launch_gui.ps1';
+const LAUNCH_GUI_PS1 = process.env.OBSERVATORY_LAUNCH_GUI || path.join(os.homedir(), 'MasterBrain', 'tools', 'launch_gui.ps1');
 
 function formatTaskReport(summary: any): string {
   const report: string[] = [];
@@ -56,17 +60,22 @@ export async function startMcpServer(): Promise<void> {
     {
       agent: z.enum(['claude', 'codex', 'agy']).describe('The target CLI agent'),
       prompt: z.string().describe('Instruction or task prompt'),
-      cwd: z.string().optional().describe('Optional working directory'),
+      cwd: z.string().optional().describe('Optional working directory (validated)'),
       session_id: z.string().optional().describe('Optional session / thread ID to resume (multi-turn context)'),
+      dangerously_skip_permissions: z.boolean().optional().default(false).describe('Explicitly skip permission prompts (default: false, safe)'),
+      sandbox: z.enum(['workspace-write', 'read-only', 'danger-full-access']).optional().default('workspace-write').describe('Codex sandbox mode'),
       timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds')
     },
-    async ({ agent, prompt, cwd, session_id, timeout_seconds }) => {
+    async ({ agent, prompt, cwd, session_id, dangerously_skip_permissions, sandbox, timeout_seconds }) => {
       try {
+        const validatedCwd = validateCwd(cwd);
         const summary = await globalRunner.runTask({
           agent,
           prompt,
-          cwd,
+          cwd: validatedCwd,
           sessionId: session_id,
+          dangerouslySkipPermissions: dangerously_skip_permissions,
+          sandbox,
           timeoutSeconds: timeout_seconds || 300
         });
 
@@ -90,15 +99,18 @@ export async function startMcpServer(): Promise<void> {
       prompt: z.string().describe('Instruction or task prompt for Claude Code'),
       cwd: z.string().optional().describe('Optional working directory'),
       session_id: z.string().optional().describe('Optional session ID to resume'),
+      dangerously_skip_permissions: z.boolean().optional().default(false).describe('Explicitly bypass tool prompts (default: false)'),
       timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds')
     },
-    async ({ prompt, cwd, session_id, timeout_seconds }) => {
+    async ({ prompt, cwd, session_id, dangerously_skip_permissions, timeout_seconds }) => {
       try {
+        const validatedCwd = validateCwd(cwd);
         const summary = await globalRunner.runTask({
           agent: 'claude',
           prompt,
-          cwd,
+          cwd: validatedCwd,
           sessionId: session_id,
+          dangerouslySkipPermissions: dangerously_skip_permissions,
           timeoutSeconds: timeout_seconds || 300
         });
         return { content: [{ type: 'text', text: formatTaskReport(summary) }] };
@@ -116,15 +128,18 @@ export async function startMcpServer(): Promise<void> {
       prompt: z.string().describe('Instruction or task prompt for Codex'),
       cwd: z.string().optional().describe('Optional working directory'),
       session_id: z.string().optional().describe('Optional session/thread ID to resume'),
+      sandbox: z.enum(['workspace-write', 'read-only', 'danger-full-access']).optional().default('workspace-write').describe('Codex sandbox mode'),
       timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds')
     },
-    async ({ prompt, cwd, session_id, timeout_seconds }) => {
+    async ({ prompt, cwd, session_id, sandbox, timeout_seconds }) => {
       try {
+        const validatedCwd = validateCwd(cwd);
         const summary = await globalRunner.runTask({
           agent: 'codex',
           prompt,
-          cwd,
+          cwd: validatedCwd,
           sessionId: session_id,
+          sandbox,
           timeoutSeconds: timeout_seconds || 300
         });
         return { content: [{ type: 'text', text: formatTaskReport(summary) }] };
@@ -142,15 +157,18 @@ export async function startMcpServer(): Promise<void> {
       prompt: z.string().describe('Instruction or task prompt for Antigravity agy'),
       cwd: z.string().optional().describe('Optional working directory'),
       session_id: z.string().optional().describe('Optional session ID to resume'),
+      dangerously_skip_permissions: z.boolean().optional().default(false).describe('Explicitly bypass permissions (default: false)'),
       timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds')
     },
-    async ({ prompt, cwd, session_id, timeout_seconds }) => {
+    async ({ prompt, cwd, session_id, dangerously_skip_permissions, timeout_seconds }) => {
       try {
+        const validatedCwd = validateCwd(cwd);
         const summary = await globalRunner.runTask({
           agent: 'agy',
           prompt,
-          cwd,
+          cwd: validatedCwd,
           sessionId: session_id,
+          dangerouslySkipPermissions: dangerously_skip_permissions,
           timeoutSeconds: timeout_seconds || 300
         });
         return { content: [{ type: 'text', text: formatTaskReport(summary) }] };
@@ -232,19 +250,23 @@ export async function startMcpServer(): Promise<void> {
     'Opens the live Agent Observatory telemetry dashboard in a visible console window on the physical desktop (WinSta0\\Default).',
     {},
     async () => {
-      const tuiPath = 'C:\\Users\\Halil Emre\\Desktop\\GitHub\\Public\\AgentObservatory\\src\\cli.ts';
-      const psCmd = [
-        'pwsh',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        LAUNCH_GUI_PS1,
-        '-ExePath',
-        'C:\\Windows\\System32\\cmd.exe',
-        '-Arguments',
-        `/c node --experimental-strip-types "${tuiPath}" watch`
-      ];
-      spawn(psCmd[0], psCmd.slice(1), { stdio: 'ignore', windowsHide: false });
+      const tuiPath = path.resolve(__dirnameOrCwd(), 'cli.ts');
+      if (fs.existsSync(LAUNCH_GUI_PS1)) {
+        const psCmd = [
+          'pwsh',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          LAUNCH_GUI_PS1,
+          '-ExePath',
+          'C:\\Windows\\System32\\cmd.exe',
+          '-Arguments',
+          `/c node --experimental-strip-types "${tuiPath}" watch`
+        ];
+        spawn(psCmd[0], psCmd.slice(1), { stdio: 'ignore', windowsHide: false });
+      } else {
+        spawn('cmd.exe', ['/c', 'start', 'node', '--experimental-strip-types', tuiPath, 'watch'], { stdio: 'ignore', windowsHide: false });
+      }
       return {
         content: [{
           type: 'text',
@@ -259,19 +281,23 @@ export async function startMcpServer(): Promise<void> {
     'Alias for launch_observatory_tui.',
     {},
     async () => {
-      const tuiPath = 'C:\\Users\\Halil Emre\\Desktop\\GitHub\\Public\\AgentObservatory\\src\\cli.ts';
-      const psCmd = [
-        'pwsh',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        LAUNCH_GUI_PS1,
-        '-ExePath',
-        'C:\\Windows\\System32\\cmd.exe',
-        '-Arguments',
-        `/c node --experimental-strip-types "${tuiPath}" watch`
-      ];
-      spawn(psCmd[0], psCmd.slice(1), { stdio: 'ignore', windowsHide: false });
+      const tuiPath = path.resolve(__dirnameOrCwd(), 'cli.ts');
+      if (fs.existsSync(LAUNCH_GUI_PS1)) {
+        const psCmd = [
+          'pwsh',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          LAUNCH_GUI_PS1,
+          '-ExePath',
+          'C:\\Windows\\System32\\cmd.exe',
+          '-Arguments',
+          `/c node --experimental-strip-types "${tuiPath}" watch`
+        ];
+        spawn(psCmd[0], psCmd.slice(1), { stdio: 'ignore', windowsHide: false });
+      } else {
+        spawn('cmd.exe', ['/c', 'start', 'node', '--experimental-strip-types', tuiPath, 'watch'], { stdio: 'ignore', windowsHide: false });
+      }
       return {
         content: [{
           type: 'text',
@@ -284,4 +310,9 @@ export async function startMcpServer(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('[AgentObservatory] MCP Server initialized on stdio transport via official @modelcontextprotocol/sdk');
+}
+
+function __dirnameOrCwd(): string {
+  const current = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/i, '$1'));
+  return fs.existsSync(path.join(current, 'cli.ts')) ? current : path.join(process.cwd(), 'src');
 }

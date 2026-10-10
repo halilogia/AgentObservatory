@@ -13,7 +13,7 @@
 
 ### 1. Kurulum
 ```bash
-git clone https://github.com/halilemre/AgentObservatory.git
+git clone https://github.com/halilogia/AgentObservatory.git
 cd AgentObservatory
 npm install
 ```

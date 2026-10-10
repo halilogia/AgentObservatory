@@ -1,21 +1,25 @@
-import fs from 'node:fs';
 import { BaseAdapter } from './base_adapter.ts';
 import type { BuiltCommand, CommandOptions } from './base_adapter.ts';
 import type { EventStore } from '../core/event_store.ts';
 import { createEvent } from '../core/types.ts';
-
-const CODEX_BIN = 'C:\\Users\\Halil Emre\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe';
+import { resolveBinary, validateCwd } from '../core/paths.ts';
 
 export class CodexAdapter extends BaseAdapter {
-  private currentSessionId: string | null = null;
+  // Task-level session isolation to prevent cross-task collision in parallel runs
+  private taskSessions: Map<string, string> = new Map();
 
   constructor() {
     super('codex');
   }
 
   buildCommand(opts: CommandOptions): BuiltCommand {
-    const { prompt, cwd, sessionId, sandbox = 'danger-full-access' } = opts;
-    this.currentSessionId = sessionId || null;
+    const { taskId, prompt, cwd, sessionId, sandbox = 'workspace-write' } = opts;
+
+    if (taskId && sessionId) {
+      this.taskSessions.set(taskId, sessionId);
+    }
+
+    const validatedCwd = validateCwd(cwd);
 
     let args: string[];
     if (sessionId) {
@@ -25,9 +29,9 @@ export class CodexAdapter extends BaseAdapter {
     }
 
     return {
-      exe: fs.existsSync(CODEX_BIN) ? CODEX_BIN : 'codex',
+      exe: resolveBinary('codex'),
       args,
-      cwd: (cwd && fs.existsSync(cwd)) ? cwd : process.cwd(),
+      cwd: validatedCwd,
       env: Object.assign({}, process.env)
     };
   }
@@ -44,22 +48,26 @@ export class CodexAdapter extends BaseAdapter {
     }
 
     const dtype = event.type;
+    const currentSession = this.taskSessions.get(taskId) || null;
 
     if (dtype === 'thread.started') {
-      this.currentSessionId = event.thread_id;
+      const threadId = event.thread_id;
+      if (threadId) {
+        this.taskSessions.set(taskId, threadId);
+      }
       store.recordEvent(createEvent({
         taskId,
-        sessionId: this.currentSessionId,
+        sessionId: threadId,
         agent: 'codex',
         tier: 1,
         type: 'task.started',
-        data: { threadId: this.currentSessionId }
+        data: { threadId }
       }));
     } else if (dtype === 'turn_context') {
       const model = event.model || 'gpt-6-astra';
       store.recordEvent(createEvent({
         taskId,
-        sessionId: this.currentSessionId,
+        sessionId: currentSession,
         agent: 'codex',
         tier: 1,
         type: 'task.started',
@@ -72,7 +80,7 @@ export class CodexAdapter extends BaseAdapter {
       if (itype === 'agent_message') {
         store.recordEvent(createEvent({
           taskId,
-          sessionId: this.currentSessionId,
+          sessionId: currentSession,
           agent: 'codex',
           tier: 1,
           type: 'message.delta',
@@ -81,7 +89,7 @@ export class CodexAdapter extends BaseAdapter {
       } else if (itype === 'command_execution' || itype === 'tool_call') {
         store.recordEvent(createEvent({
           taskId,
-          sessionId: this.currentSessionId,
+          sessionId: currentSession,
           agent: 'codex',
           tier: 1,
           type: 'tool.invoked',
@@ -93,7 +101,7 @@ export class CodexAdapter extends BaseAdapter {
       } else if (itype === 'error' || itype === 'error_message') {
         store.recordEvent(createEvent({
           taskId,
-          sessionId: this.currentSessionId,
+          sessionId: currentSession,
           agent: 'codex',
           tier: 1,
           type: 'task.failed',
@@ -104,7 +112,7 @@ export class CodexAdapter extends BaseAdapter {
       const err = (event.error && event.error.message) || event.reason || 'Codex turn failed';
       store.recordEvent(createEvent({
         taskId,
-        sessionId: this.currentSessionId,
+        sessionId: currentSession,
         agent: 'codex',
         tier: 1,
         type: 'task.failed',
@@ -114,7 +122,7 @@ export class CodexAdapter extends BaseAdapter {
       const usage = event.usage || {};
       store.recordEvent(createEvent({
         taskId,
-        sessionId: this.currentSessionId,
+        sessionId: currentSession,
         agent: 'codex',
         tier: 1,
         type: 'usage.updated',
@@ -128,5 +136,10 @@ export class CodexAdapter extends BaseAdapter {
         }
       }));
     }
+  }
+
+  override handleExit(code: number | null, taskId: string, store: EventStore, stderr: string): void {
+    super.handleExit(code, taskId, store, stderr);
+    this.taskSessions.delete(taskId);
   }
 }

@@ -1,0 +1,56 @@
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
+
+export function resolveBinary(name: 'claude' | 'codex' | 'agy'): string {
+  const envKey = `${name.toUpperCase()}_BIN`;
+  if (process.env[envKey] && fs.existsSync(process.env[envKey]!)) {
+    return process.env[envKey]!;
+  }
+
+  const home = os.homedir();
+  const candidates: Record<string, string[]> = {
+    claude: [
+      path.join(home, '.local', 'bin', 'claude.exe'),
+      path.join(home, 'AppData', 'Roaming', 'npm', 'claude.cmd'),
+      path.join(home, 'AppData', 'Local', 'Programs', 'claude', 'claude.exe'),
+      'claude'
+    ],
+    codex: [
+      path.join(home, 'AppData', 'Local', 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe'),
+      'codex'
+    ],
+    agy: [
+      path.join(home, 'AppData', 'Local', 'agy', 'bin', 'agy.exe'),
+      'agy'
+    ]
+  };
+
+  for (const candidate of candidates[name] || []) {
+    if (path.isAbsolute(candidate)) {
+      if (fs.existsSync(candidate)) return candidate;
+    } else {
+      return candidate; // System PATH fallback
+    }
+  }
+
+  return name;
+}
+
+export function validateCwd(cwd?: string): string {
+  if (!cwd) return process.cwd();
+
+  const resolved = path.resolve(cwd);
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    throw new Error(`Geçersiz veya bulunamayan çalışma dizini (cwd): "${cwd}"`);
+  }
+
+  // Deny execution directly in sensitive root system directories
+  const normalized = resolved.toLowerCase().replace(/\\/g, '/');
+  const blockedPrefixes = ['c:/windows', 'c:/windows/system32', 'c:/program files/windows'];
+  if (blockedPrefixes.some((b) => normalized === b || normalized.startsWith(b + '/'))) {
+    throw new Error(`Sistem dizinlerinde görev çalıştırmak güvenlik nedeniyle engellendi: "${resolved}"`);
+  }
+
+  return resolved;
+}

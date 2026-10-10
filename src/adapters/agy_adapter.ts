@@ -1,10 +1,8 @@
-import fs from 'node:fs';
 import { BaseAdapter } from './base_adapter.ts';
 import type { BuiltCommand, CommandOptions } from './base_adapter.ts';
 import type { EventStore } from '../core/event_store.ts';
 import { createEvent } from '../core/types.ts';
-
-const AGY_BIN = 'C:\\Users\\Halil Emre\\AppData\\Local\\agy\\bin\\agy.exe';
+import { resolveBinary, validateCwd } from '../core/paths.ts';
 
 export class AgyAdapter extends BaseAdapter {
   constructor() {
@@ -12,10 +10,13 @@ export class AgyAdapter extends BaseAdapter {
   }
 
   buildCommand(opts: CommandOptions): BuiltCommand {
-    const { prompt, cwd, sessionId, dangerouslySkipPermissions = true } = opts;
+    const { prompt, cwd, sessionId, dangerouslySkipPermissions = false } = opts;
+    const validatedCwd = validateCwd(cwd);
+
     const args: string[] = ['-p', prompt, '--output-format', 'stream-json'];
 
-    if (dangerouslySkipPermissions) {
+    // Only grant dangerous skip permissions if explicitly set to true
+    if (dangerouslySkipPermissions === true) {
       args.push('--dangerously-skip-permissions');
     }
 
@@ -24,9 +25,9 @@ export class AgyAdapter extends BaseAdapter {
     }
 
     return {
-      exe: fs.existsSync(AGY_BIN) ? AGY_BIN : 'agy',
+      exe: resolveBinary('agy'),
       args,
-      cwd: (cwd && fs.existsSync(cwd)) ? cwd : process.cwd(),
+      cwd: validatedCwd,
       env: Object.assign({}, process.env)
     };
   }

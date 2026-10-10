@@ -2,20 +2,25 @@ import { DatabaseSync } from 'node:sqlite';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import { spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import type { TaskEvent, TaskSummary } from './types.ts';
+
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
 export class SqliteStore {
   private db: DatabaseSync;
 
   constructor(dbPath?: string) {
-    const targetPath = dbPath || path.join(os.homedir(), '.observatory', 'observatory.sqlite');
-    const dir = path.dirname(targetPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (dbPath === ':memory:') {
+      this.db = new DatabaseSync(':memory:');
+    } else {
+      const targetPath = dbPath || path.join(os.homedir(), '.observatory', 'observatory.sqlite');
+      const dir = path.dirname(targetPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      this.db = new DatabaseSync(targetPath);
     }
-
-    this.db = new DatabaseSync(targetPath);
     this.initSchema();
   }
 
@@ -63,133 +68,148 @@ export class SqliteStore {
   recordEvent(event: TaskEvent, pid?: number): void {
     if (!event || !event.taskId) return;
 
-    // 1. Insert event
-    const insertEvt = this.db.prepare(`
-      INSERT OR IGNORE INTO events (id, task_id, session_id, agent, tier, type, data, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    insertEvt.run(
-      event.id,
-      event.taskId,
-      event.sessionId,
-      event.agent,
-      event.tier,
-      event.type,
-      JSON.stringify(event.data || {}),
-      event.timestamp
-    );
-
-    // 2. Upsert task summary
-    const existing = this.db.prepare('SELECT * FROM tasks WHERE task_id = ?').get(event.taskId) as any;
-
-    if (!existing) {
-      const insertTask = this.db.prepare(`
-        INSERT INTO tasks (
-          task_id, session_id, agent, status, prompt, model, pid,
-          start_time, end_time, duration_ms, assistant_text,
-          input_tokens, cached_tokens, output_tokens, reasoning_tokens,
-          tools_json, error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    this.db.exec('BEGIN IMMEDIATE;');
+    try {
+      // 1. Event Insert
+      const insertEvt = this.db.prepare(`
+        INSERT OR IGNORE INTO events (id, task_id, session_id, agent, tier, type, data, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      insertTask.run(
+      insertEvt.run(
+        event.id,
         event.taskId,
-        event.sessionId || null,
+        event.sessionId,
         event.agent,
-        'running',
-        event.data.prompt || '',
-        event.data.model || '',
-        pid || null,
-        event.timestamp,
-        null,
-        0,
-        '',
-        0, 0, 0, 0,
-        '[]',
-        null
+        event.tier,
+        event.type,
+        JSON.stringify(event.data || {}),
+        event.timestamp
       );
-    } else {
-      let status = existing.status;
-      let prompt = existing.prompt || event.data.prompt || '';
-      let model = existing.model || event.data.model || '';
-      let sessionId = existing.session_id || event.sessionId || null;
-      let taskPid = existing.pid || pid || null;
-      let endTime = existing.end_time;
-      let durationMs = existing.duration_ms;
-      let assistantText = existing.assistant_text || '';
-      let inputTokens = existing.input_tokens || 0;
-      let cachedTokens = existing.cached_tokens || 0;
-      let outputTokens = existing.output_tokens || 0;
-      let reasoningTokens = existing.reasoning_tokens || 0;
-      let tools: any[] = [];
-      try { tools = JSON.parse(existing.tools_json || '[]'); } catch {}
-      let error = existing.error;
 
-      switch (event.type) {
-        case 'task.started':
-          status = 'running';
-          if (event.data.prompt) prompt = event.data.prompt;
-          if (event.data.model) model = event.data.model;
-          break;
+      // 2. Task Summary Upsert
+      const existing = this.db.prepare('SELECT * FROM tasks WHERE task_id = ?').get(event.taskId) as any;
 
-        case 'tool.invoked':
-          tools.push({
-            name: event.data.name || 'tool',
-            input: event.data.input || {},
-            timestamp: event.timestamp
-          });
-          break;
+      if (!existing) {
+        const insertTask = this.db.prepare(`
+          INSERT INTO tasks (
+            task_id, session_id, agent, status, prompt, model, pid,
+            start_time, end_time, duration_ms, assistant_text,
+            input_tokens, cached_tokens, output_tokens, reasoning_tokens,
+            tools_json, error
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        insertTask.run(
+          event.taskId,
+          event.sessionId || null,
+          event.agent,
+          'running',
+          event.data.prompt || '',
+          event.data.model || '',
+          pid || null,
+          event.timestamp,
+          null,
+          0,
+          '',
+          0, 0, 0, 0,
+          '[]',
+          null
+        );
+      } else {
+        const isAlreadyTerminal = TERMINAL_STATUSES.has(existing.status);
+        let status = existing.status;
+        let prompt = existing.prompt || event.data.prompt || '';
+        let model = existing.model || event.data.model || '';
+        let sessionId = existing.session_id || event.sessionId || null;
+        let taskPid = existing.pid || pid || null;
+        let endTime = existing.end_time;
+        let durationMs = existing.duration_ms;
+        let assistantText = existing.assistant_text || '';
+        let inputTokens = existing.input_tokens || 0;
+        let cachedTokens = existing.cached_tokens || 0;
+        let outputTokens = existing.output_tokens || 0;
+        let reasoningTokens = existing.reasoning_tokens || 0;
+        let tools: any[] = [];
+        try { tools = JSON.parse(existing.tools_json || '[]'); } catch {}
+        let error = existing.error;
 
-        case 'message.delta':
-          assistantText += (event.data.text || '');
-          break;
+        switch (event.type) {
+          case 'task.started':
+            if (!isAlreadyTerminal) status = 'running';
+            if (event.data.prompt) prompt = event.data.prompt;
+            if (event.data.model) model = event.data.model;
+            break;
 
-        case 'usage.updated':
-          if (event.data.usage) {
-            const u = event.data.usage;
-            inputTokens = u.inputTokens || inputTokens;
-            cachedTokens = u.cachedTokens || cachedTokens;
-            outputTokens = u.outputTokens || outputTokens;
-            reasoningTokens = u.reasoningTokens || reasoningTokens;
-          }
-          break;
+          case 'tool.invoked':
+            tools.push({
+              name: event.data.name || 'tool',
+              input: event.data.input || {},
+              timestamp: event.timestamp
+            });
+            break;
 
-        case 'task.completed':
-          status = 'completed';
-          endTime = event.timestamp;
-          durationMs = endTime - existing.start_time;
-          if (event.data.result) assistantText = event.data.result;
-          break;
+          case 'message.delta':
+            assistantText += (event.data.text || '');
+            break;
 
-        case 'task.failed':
-          status = 'failed';
-          endTime = event.timestamp;
-          durationMs = endTime - existing.start_time;
-          error = event.data.error || 'Bilinmeyen hata';
-          break;
+          case 'usage.updated':
+            if (event.data.usage) {
+              const u = event.data.usage;
+              inputTokens = u.inputTokens || inputTokens;
+              cachedTokens = u.cachedTokens || cachedTokens;
+              outputTokens = u.outputTokens || outputTokens;
+              reasoningTokens = u.reasoningTokens || reasoningTokens;
+            }
+            break;
 
-        case 'task.cancelled':
-          status = 'cancelled';
-          endTime = event.timestamp;
-          durationMs = endTime - existing.start_time;
-          error = event.data.reason || 'İptal edildi';
-          break;
+          case 'task.completed':
+            if (!isAlreadyTerminal) {
+              status = 'completed';
+              endTime = event.timestamp;
+              durationMs = endTime - existing.start_time;
+              if (event.data.result && !assistantText) assistantText = event.data.result;
+            }
+            break;
+
+          case 'task.failed':
+            if (!isAlreadyTerminal) {
+              status = 'failed';
+              endTime = event.timestamp;
+              durationMs = endTime - existing.start_time;
+              error = event.data.error || 'Bilinmeyen hata';
+            }
+            break;
+
+          case 'task.cancelled':
+            if (!isAlreadyTerminal) {
+              status = 'cancelled';
+              endTime = event.timestamp;
+              durationMs = endTime - existing.start_time;
+              error = event.data.reason || 'İptal edildi';
+            }
+            break;
+        }
+
+        const updateTask = this.db.prepare(`
+          UPDATE tasks SET
+            session_id = ?, status = ?, prompt = ?, model = ?, pid = ?,
+            end_time = ?, duration_ms = ?, assistant_text = ?,
+            input_tokens = ?, cached_tokens = ?, output_tokens = ?, reasoning_tokens = ?,
+            tools_json = ?, error = ?
+          WHERE task_id = ?
+        `);
+        updateTask.run(
+          sessionId, status, prompt, model, taskPid,
+          endTime, durationMs, assistantText,
+          inputTokens, cachedTokens, outputTokens, reasoningTokens,
+          JSON.stringify(tools), error,
+          event.taskId
+        );
       }
 
-      const updateTask = this.db.prepare(`
-        UPDATE tasks SET
-          session_id = ?, status = ?, prompt = ?, model = ?, pid = ?,
-          end_time = ?, duration_ms = ?, assistant_text = ?,
-          input_tokens = ?, cached_tokens = ?, output_tokens = ?, reasoning_tokens = ?,
-          tools_json = ?, error = ?
-        WHERE task_id = ?
-      `);
-      updateTask.run(
-        sessionId, status, prompt, model, taskPid,
-        endTime, durationMs, assistantText,
-        inputTokens, cachedTokens, outputTokens, reasoningTokens,
-        JSON.stringify(tools), error,
-        event.taskId
-      );
+      this.db.exec('COMMIT;');
+    } catch (err) {
+      this.db.exec('ROLLBACK;');
+      throw err;
     }
   }
 
@@ -205,7 +225,7 @@ export class SqliteStore {
   }
 
   getEvents(taskId: string): TaskEvent[] {
-    const rows = this.db.prepare('SELECT * FROM events WHERE task_id = ? ORDER BY timestamp ASC').all(taskId) as any[];
+    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp FROM events WHERE task_id = ? ORDER BY rowid ASC').all(taskId) as any[];
     return rows.map((r) => ({
       id: r.id,
       taskId: r.task_id,
@@ -218,8 +238,23 @@ export class SqliteStore {
     }));
   }
 
+  getEventsSinceSeq(lastSeq: number): Array<TaskEvent & { seq: number }> {
+    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp FROM events WHERE rowid > ? ORDER BY rowid ASC').all(lastSeq) as any[];
+    return rows.map((r) => ({
+      seq: r.seq,
+      id: r.id,
+      taskId: r.task_id,
+      sessionId: r.session_id,
+      agent: r.agent,
+      tier: r.tier,
+      type: r.type,
+      data: JSON.parse(r.data || '{}'),
+      timestamp: r.timestamp
+    }));
+  }
+
   getEventsSince(lastTimestamp: number): TaskEvent[] {
-    const rows = this.db.prepare('SELECT * FROM events WHERE timestamp > ? ORDER BY timestamp ASC').all(lastTimestamp) as any[];
+    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp FROM events WHERE timestamp > ? ORDER BY rowid ASC').all(lastTimestamp) as any[];
     return rows.map((r) => ({
       id: r.id,
       taskId: r.task_id,
@@ -235,12 +270,13 @@ export class SqliteStore {
   cancelTask(taskId: string, reason: string = 'Kullanıcı tarafından iptal edildi'): boolean {
     const row = this.db.prepare('SELECT * FROM tasks WHERE task_id = ?').get(taskId) as any;
     if (!row) return false;
+    if (TERMINAL_STATUSES.has(row.status)) return false; // Already finished or cancelled
 
-    // Terminate process tree via Windows taskkill
+    // Synchronously terminate process tree via Windows taskkill
     if (row.pid) {
       try {
         if (process.platform === 'win32') {
-          spawn('taskkill', ['/pid', String(row.pid), '/T', '/F'], { stdio: 'ignore' });
+          execFileSync('taskkill', ['/pid', String(row.pid), '/T', '/F'], { stdio: 'ignore' });
         } else {
           process.kill(row.pid, 'SIGTERM');
         }

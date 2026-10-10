@@ -1,10 +1,8 @@
-import fs from 'node:fs';
 import { BaseAdapter } from './base_adapter.ts';
 import type { BuiltCommand, CommandOptions } from './base_adapter.ts';
 import type { EventStore } from '../core/event_store.ts';
 import { createEvent } from '../core/types.ts';
-
-const CLAUDE_BIN = 'C:\\Users\\Halil Emre\\.local\\bin\\claude.exe';
+import { resolveBinary, validateCwd } from '../core/paths.ts';
 
 export class ClaudeAdapter extends BaseAdapter {
   constructor() {
@@ -12,10 +10,13 @@ export class ClaudeAdapter extends BaseAdapter {
   }
 
   buildCommand(opts: CommandOptions): BuiltCommand {
-    const { prompt, cwd, sessionId, dangerouslySkipPermissions = true } = opts;
+    const { prompt, cwd, sessionId, dangerouslySkipPermissions = false } = opts;
+    const validatedCwd = validateCwd(cwd);
+
     const args: string[] = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
 
-    if (dangerouslySkipPermissions) {
+    // Only grant dangerous skip permissions if explicitly set to true
+    if (dangerouslySkipPermissions === true) {
       args.push('--dangerously-skip-permissions');
     }
 
@@ -24,9 +25,9 @@ export class ClaudeAdapter extends BaseAdapter {
     }
 
     return {
-      exe: CLAUDE_BIN,
+      exe: resolveBinary('claude'),
       args,
-      cwd: (cwd && fs.existsSync(cwd)) ? cwd : process.cwd(),
+      cwd: validatedCwd,
       env: Object.assign({}, process.env)
     };
   }
@@ -103,16 +104,8 @@ export class ClaudeAdapter extends BaseAdapter {
         }
       }));
 
-      if (event.result) {
-        store.recordEvent(createEvent({
-          taskId,
-          sessionId: event.session_id,
-          agent: 'claude',
-          tier: 1,
-          type: 'message.delta',
-          data: { text: event.result }
-        }));
-      }
+      // NOTE: event.result is already streamed incrementally in 'assistant' content.
+      // We do not re-emit message.delta here to prevent duplicate response text.
     }
   }
 }

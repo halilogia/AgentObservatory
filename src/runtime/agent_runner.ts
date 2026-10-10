@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import readline from 'node:readline';
 import { EventStore, globalStore } from '../core/event_store.ts';
@@ -8,6 +8,7 @@ import { BaseAdapter } from '../adapters/base_adapter.ts';
 import { ClaudeAdapter } from '../adapters/claude_adapter.ts';
 import { CodexAdapter } from '../adapters/codex_adapter.ts';
 import { AgyAdapter } from '../adapters/agy_adapter.ts';
+import { validateCwd } from '../core/paths.ts';
 
 export interface RunTaskOptions {
   agent: string;
@@ -16,12 +17,14 @@ export interface RunTaskOptions {
   sessionId?: string | null;
   timeoutSeconds?: number;
   dangerouslySkipPermissions?: boolean;
+  sandbox?: string;
 }
 
 interface ActiveProcessEntry {
   child: ChildProcess;
   timer: NodeJS.Timeout;
   options: RunTaskOptions;
+  isCancelled: boolean;
 }
 
 export class AgentRunner {
@@ -59,17 +62,13 @@ export class AgentRunner {
     }
 
     const taskId = 'task_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+    const validatedCwd = validateCwd(cwd);
 
-    this.store.recordEvent(createEvent({
+    const cmd = adapter.buildCommand({
+      ...options,
       taskId,
-      sessionId,
-      agent: adapter.name,
-      tier: 1,
-      type: 'task.started',
-      data: { prompt, cwd: cwd || process.cwd(), timeoutSeconds }
-    }));
-
-    const cmd = adapter.buildCommand(options);
+      cwd: validatedCwd
+    });
 
     return new Promise<TaskSummary>((resolve, reject) => {
       let child: ChildProcess;
@@ -99,7 +98,7 @@ export class AgentRunner {
         agent: adapter.name,
         tier: 1,
         type: 'task.started',
-        data: { prompt, cwd: cwd || process.cwd(), timeoutSeconds, pid: child.pid }
+        data: { prompt, cwd: cmd.cwd, timeoutSeconds, pid: child.pid }
       }), child.pid);
 
       let stderr = '';
@@ -108,7 +107,13 @@ export class AgentRunner {
         this.cancelTask(taskId, `Zaman aşımı (${timeoutSeconds}s)`);
       }, timeoutSeconds * 1000);
 
-      this.activeProcesses.set(taskId, { child, timer, options });
+      const entry: ActiveProcessEntry = {
+        child,
+        timer,
+        options,
+        isCancelled: false
+      };
+      this.activeProcesses.set(taskId, entry);
 
       if (child.stdout) {
         const rl = readline.createInterface({ input: child.stdout, terminal: false });
@@ -130,14 +135,16 @@ export class AgentRunner {
       child.on('error', (err) => {
         clearTimeout(timer);
         this.activeProcesses.delete(taskId);
-        this.store.recordEvent(createEvent({
-          taskId,
-          sessionId,
-          agent: adapter.name,
-          tier: 1,
-          type: 'task.failed',
-          data: { error: err.message }
-        }));
+        if (!entry.isCancelled) {
+          this.store.recordEvent(createEvent({
+            taskId,
+            sessionId,
+            agent: adapter.name,
+            tier: 1,
+            type: 'task.failed',
+            data: { error: err.message }
+          }));
+        }
         reject(err);
       });
 
@@ -145,7 +152,10 @@ export class AgentRunner {
         clearTimeout(timer);
         this.activeProcesses.delete(taskId);
 
-        adapter.handleExit(code, taskId, this.store, stderr);
+        // If the task was cancelled, do NOT let handleExit overwrite with task.failed
+        if (!entry.isCancelled) {
+          adapter.handleExit(code, taskId, this.store, stderr);
+        }
 
         const summary = this.store.getTask(taskId);
         if (summary) {
@@ -160,19 +170,10 @@ export class AgentRunner {
   cancelTask(taskId: string, reason: string = 'Kullanıcı tarafından iptal edildi'): boolean {
     const entry = this.activeProcesses.get(taskId);
     if (entry) {
+      entry.isCancelled = true;
       clearTimeout(entry.timer);
-      try {
-        if (process.platform === 'win32' && entry.child.pid) {
-          spawn('taskkill', ['/pid', String(entry.child.pid), '/T', '/F'], { stdio: 'ignore' });
-        } else {
-          entry.child.kill('SIGTERM');
-        }
-      } catch {
-        entry.child.kill();
-      }
 
-      this.activeProcesses.delete(taskId);
-
+      // Record cancellation FIRST so any subsequent exit code is ignored
       this.store.recordEvent(createEvent({
         taskId,
         agent: entry.options.agent as any,
@@ -181,6 +182,18 @@ export class AgentRunner {
         data: { reason }
       }));
 
+      // Synchronously terminate full process tree on Windows
+      if (process.platform === 'win32' && entry.child.pid) {
+        try {
+          execFileSync('taskkill', ['/pid', String(entry.child.pid), '/T', '/F'], { stdio: 'ignore' });
+        } catch {
+          try { entry.child.kill('SIGTERM'); } catch {}
+        }
+      } else {
+        try { entry.child.kill('SIGTERM'); } catch {}
+      }
+
+      this.activeProcesses.delete(taskId);
       return true;
     }
 

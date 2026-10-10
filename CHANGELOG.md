@@ -16,4 +16,12 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/) standardına day
 - **CLI Doğrulama:** Claude Code ve OpenAI Codex gerçek canlı oturum akışı ve token telemetrisi doğrulandı.
 - **Dokümantasyon:** 8 Çekirdek Doküman (README, ARCHITECTURE, ROADMAP, CHANGELOG, KNOWLEDGE, TASKS, AGENTS, LICENSE) kuruldu.
 - **Lisans:** GNU General Public License v3.0 (GPL-3.0) eklendi.
-- **Arşivleme:** Eski `agent-watch` ve prototip `agent-bridge` kodları `Desktop/GitHub/Archives` altına arşivlendi.
+### Güvenlik & Doğruluk İyileştirmeleri (Hardening)
+- **P0 Güvenlik Varsayılanları:** `dangerouslySkipPermissions` tüm adaptörlerde varsayılan olarak `false` yapıldı. Codex varsayılan sandbox'ı `workspace-write` olarak kısıtlandı.
+- **P0 CWD Doğrulaması:** `validateCwd` eklenerek geçersiz ve sistem kök dizinleri (`C:\Windows` vb.) engellendi.
+- **P0 Oturum İzolasyonu:** `CodexAdapter` içindeki paylaşılan `currentSessionId` durumu kaldırıldı; görev bazlı `taskSessions` Map yapısına geçilerek paralel oturum çakışması önlendi.
+- **P0 İptal Durum Makinesi:** İptal edilen görevlerin süreç kapandıktan sonra `handleExit` tarafından `failed` olarak ezilmesini engelleyen değiştirilemez terminal durum koruması (`isCancelled` & immutable terminal state) eklendi.
+- **Süreç Ağacı Sonlandırma:** `taskkill /pid <PID> /T /F` senkron (`execFileSync`) çalıştırılarak alt süreçlerin yetim kalması önlendi.
+- **Veri Tutarlılığı & Olay Sıralaması:** SQLite olayları yerleşik `rowid` üzerinden kesin monotonik artan sıra (`getEventsSinceSeq`) ile dinleniyor. Ardışık aynı içerikli `message.delta` parçaları artık yutulmuyor.
+- **İzole Test Paketi:** `test/verify_core.ts` in-memory SQLite (`:memory:`) kullanarak kullanıcı veritabanını kirletmeden 6 aşamalı kapsamlı test icra ediyor.
+- **Taşınabilirlik:** Sabit Windows yolları yerine dinamik `resolveBinary` ve çevre değişkeni desteği eklendi. README GitHub repo linki `halilogia` olarak düzeltildi.
