@@ -6,6 +6,9 @@ import { CodexAdapter } from '../src/adapters/codex_adapter.ts';
 import { SqliteStore } from '../src/core/sqlite_store.ts';
 import { validateCwd } from '../src/core/paths.ts';
 import { formatTaskReport } from '../src/mcp/mcp_server.ts';
+import { WorktreeManager } from '../src/runtime/worktree_manager.ts';
+import { ResourceBroker } from '../src/runtime/resource_broker.ts';
+import { FleetOrchestrator } from '../src/runtime/fleet_orchestrator.ts';
 
 console.log('🧪 Agent Observatory Kapsamlı Hardening & Doğrulama Testi Başlatılıyor...\n');
 
@@ -343,5 +346,135 @@ console.log('MCP formatTaskReport (compact / detailed) Test Ediliyor...');
   assert.ok(errReport.includes('boom'), 'Hata bloğu korunmalı');
 }
 console.log('✔ formatTaskReport doğrulandı!\n');
+
+// 9. FLEET & WORKTREE ORCHESTRATION TESTLERİ
+console.log('9. Fleet, Worktree & ResourceBroker Mimarisi Test Ediliyor...');
+
+// A. WorktreeManager Temel Metodları
+const wtManager = new WorktreeManager();
+const currentRepo = process.cwd();
+assert.ok(wtManager.isGitRepo(currentRepo), 'Mevcut dizin Git repository olarak algılanmalı');
+const activeWts = wtManager.listWorktrees(currentRepo);
+assert.ok(Array.isArray(activeWts) && activeWts.length >= 1, 'En az ana worktree listelenmeli');
+assert.ok(activeWts[0].worktreePath, 'Worktree nesnesi geçerli bir yola sahip olmalı');
+const headSha = wtManager.getHeadSha(currentRepo);
+assert.ok(headSha && headSha.length >= 40, 'Geçerli 40 karakterlik Git HEAD SHA dönmeli');
+console.log('✔ WorktreeManager temel metodları başarıyla doğrulandı!');
+
+// B. ResourceBroker: Eşzamanlılık Semaforu (Concurrency Semaphore)
+{
+  const broker = new ResourceBroker({ maxConcurrentTasks: 2 });
+  assert.strictEqual(broker.getMaxSlots(), 2, 'Kapasite 2 olmalı');
+
+  let activeCount = 0;
+  const executionOrder: number[] = [];
+
+  const job = async (id: number, delayMs: number) => {
+    const release = await broker.acquireSlot();
+    activeCount++;
+    assert.ok(activeCount <= 2, `Aynı anda 2'den fazla iş çalışamaz! (Şu an: ${activeCount})`);
+    executionOrder.push(id);
+    await new Promise((res) => setTimeout(res, delayMs));
+    activeCount--;
+    release();
+  };
+
+  await Promise.all([
+    job(1, 40),
+    job(2, 40),
+    job(3, 10),
+    job(4, 10)
+  ]);
+
+  assert.strictEqual(executionOrder.length, 4, '4 iş de sırayla tamamlanmalı');
+  const stats = broker.getStats();
+  assert.strictEqual(stats.activeSlots, 0, 'Tüm slotlar serbest bırakılmalı');
+  assert.strictEqual(stats.queuedSlots, 0, 'Kuyruk boş olmalı');
+  console.log('✔ ResourceBroker eşzamanlılık semaforu başarıyla doğrulandı!');
+}
+
+// C. ResourceBroker: Tekil Entegrasyon Yazıcı Kilidi (Single Integration Writer Mutex)
+{
+  const broker = new ResourceBroker();
+  let integrationRunning = false;
+  const results: number[] = [];
+
+  const integrationTask = async (id: number) => {
+    return broker.acquireIntegrationLock(async () => {
+      assert.strictEqual(integrationRunning, false, 'İki entegrasyon işlemi aynı anda çalışamaz!');
+      integrationRunning = true;
+      await new Promise((res) => setTimeout(res, 20));
+      results.push(id);
+      integrationRunning = false;
+      return id;
+    });
+  };
+
+  const tasksPromise = Promise.all([
+    integrationTask(10),
+    integrationTask(20),
+    integrationTask(30)
+  ]);
+
+  const output = await tasksPromise;
+  assert.deepStrictEqual(output, [10, 20, 30], 'Tüm entegrasyon görevleri kilit sırasıyla tamamlanmalı');
+  console.log('✔ ResourceBroker tekil entegrasyon mutex kilidi doğrulandı!');
+}
+
+// D. ResourceBroker: Task Lease Fencing (Stale Worker Koruması)
+{
+  const broker = new ResourceBroker();
+  const lease1 = broker.issueLease('task_abc');
+  assert.ok(broker.isLeaseValid('task_abc', lease1), 'Aktif lease geçerli olmalı');
+
+  const lease2 = broker.issueLease('task_abc');
+  assert.ok(broker.isLeaseValid('task_abc', lease2), 'Yeni lease geçerli olmalı');
+  assert.ok(!broker.isLeaseValid('task_abc', lease1), 'Eski epoch lease geçersiz kılınmalı (Fencing)');
+
+  broker.revokeLease('task_abc');
+  assert.ok(!broker.isLeaseValid('task_abc', lease2), 'İptal edilen lease geçersiz olmalı');
+  console.log('✔ ResourceBroker task lease fencing doğrulandı!');
+}
+
+// E. FleetOrchestrator: DAG Doğrulama ve Döngü (Cycle) Tespiti
+{
+  const orchestrator = new FleetOrchestrator();
+
+  // 1. Yinelenen ID hatası
+  assert.throws(() => {
+    orchestrator.validateDag([
+      { id: 'dup', agent: 'claude', prompt: 'a' },
+      { id: 'dup', agent: 'codex', prompt: 'b' }
+    ]);
+  }, /Yinelenen görev ID/, 'Yinelenen ID tespit edilmeli');
+
+  // 2. Olmayan bağımlılık referansı
+  assert.throws(() => {
+    orchestrator.validateDag([
+      { id: 't1', agent: 'claude', prompt: 'a', dependsOn: ['ghost'] }
+    ]);
+  }, /bulunmayan bir bağımlılığa referans/, 'Eksik bağımlılık tespit edilmeli');
+
+  // 3. Döngüsel bağımlılık (Cycle) tespiti
+  assert.throws(() => {
+    orchestrator.validateDag([
+      { id: 'A', agent: 'claude', prompt: 'a', dependsOn: ['B'] },
+      { id: 'B', agent: 'codex', prompt: 'b', dependsOn: ['C'] },
+      { id: 'C', agent: 'agy', prompt: 'c', dependsOn: ['A'] }
+    ]);
+  }, /döngüsel bağımlılık/, 'A -> B -> C -> A döngüsü tespit edilmeli');
+
+  // 4. Geçerli DAG başarıyla geçmeli
+  assert.doesNotThrow(() => {
+    orchestrator.validateDag([
+      { id: 'schema', agent: 'claude', prompt: 'DB schema' },
+      { id: 'api', agent: 'claude', prompt: 'Backend API', dependsOn: ['schema'] },
+      { id: 'ui', agent: 'codex', prompt: 'Frontend UI', dependsOn: ['schema'] },
+      { id: 'e2e', agent: 'agy', prompt: 'E2E Tests', dependsOn: ['api', 'ui'] }
+    ]);
+  }, 'Geçerli DAG doğrulamasını hatasız geçmeli');
+
+  console.log('✔ FleetOrchestrator DAG doğrulama ve döngü tespiti başarıyla doğrulandı!\n');
+}
 
 console.log('🎉 TÜM P0 GÜVENLİK, TAM TEST İZOLASYONU VE VERİ TUTARLILIĞI TESTLERİ EKSİKSİZ BAŞARIYLA TAMAMLANDI!');

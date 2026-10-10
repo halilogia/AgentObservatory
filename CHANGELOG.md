@@ -11,6 +11,11 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/) standardına day
   - Claude adaptörüne `--effort` ve `--model` eklendi (varsayılan `medium`).
   - OpenAI Codex adaptörüne `--model`, `-c model_reasoning_effort="..."` ve `--dangerously-bypass-approvals-and-sandbox` parametreleri eklendi.
   - Antigravity Agy adaptörüne `--model` parametresi eklendi.
+- **Multi-Agent Fleet & Git Worktree Orchestrator (Ajan Ordusu Mimarisi):**
+  - `WorktreeManager`: Ajanların birbirlerinin dosyalarını ezmesini önleyen Git Worktree yaşam döngüsü (`createWorktree`, `removeWorktree`, `listWorktrees`, `mergeBranch`).
+  - `ResourceBroker`: Donanım ve API kaynaklarını denetleyen eşzamanlılık semaforu (`acquireSlot`), tekil entegrasyon yazıcı mutex kilidi (`acquireIntegrationLock`) ve bayat işçi koruması (`lease fencing`).
+  - `FleetOrchestrator`: Kahn algoritmasıyla döngü korumalı DAG görev ağacı planlayıcı, paralel worktree yürütme ve otomatik candidate branch (`fleet/integration/*`) hakemlik motoru.
+  - MCP Araçları: `run_fleet`, `list_worktrees`, `cleanup_worktree` eklendi.
 - **Demo Modülü:** `src/demo_obligation.ts` ve ilişkili `test/demo_obligation.test.ts` eklendi (`calculateMetrics`, `divideMetrics`).
 
 

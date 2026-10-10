@@ -9,6 +9,8 @@ import { globalRunner } from '../runtime/agent_runner.ts';
 import { globalSqlite } from '../core/sqlite_store.ts';
 import { validateCwd } from '../core/paths.ts';
 import { launchTuiWindow } from '../runtime/tui_launcher.ts';
+import { globalFleetOrchestrator } from '../runtime/fleet_orchestrator.ts';
+import { globalWorktreeManager } from '../runtime/worktree_manager.ts';
 
 function formatTokens(n: any): string {
   const v = Number(n) || 0;
@@ -413,6 +415,141 @@ export async function startMcpServer(): Promise<void> {
           text: 'Agent Observatory canlı terminali (TUI) fiziksel masaüstünde (WinSta0\\Default) açıldı.'
         }]
       };
+    }
+  );
+
+  // Tool 8: run_fleet
+  server.tool(
+    'run_fleet',
+    'Executes a multi-agent fleet/swarm with Git worktree isolation, DAG task dependencies, and single-writer reconciliation merge.',
+    {
+      repo_path: z.string().describe('Repository root path where worktrees and agents will operate'),
+      tasks: z.array(z.object({
+        id: z.string().describe('Unique task identifier (e.g. "task-api", "task-ui")'),
+        agent: z.enum(['claude', 'codex', 'agy']).describe('The target CLI agent'),
+        prompt: z.string().describe('Task prompt or instruction'),
+        depends_on: z.array(z.string()).optional().describe('List of task IDs this task depends on (DAG dependencies)'),
+        effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().describe('Reasoning effort level'),
+        model: z.string().optional().describe('Model override (e.g. sonnet, opus)'),
+        timeout_seconds: z.number().optional().default(300).describe('Task timeout in seconds')
+      })).describe('List of tasks to execute'),
+      isolate_worktrees: z.boolean().optional().default(true).describe('Whether to run each task in an isolated Git worktree (default: true)'),
+      auto_integrate: z.boolean().optional().default(true).describe('Whether to merge successful task branches into an integration candidate branch (default: true)'),
+      verification_command: z.string().optional().describe('Optional verification command to run on integration branch (e.g. "npm run check")'),
+      cleanup_on_success: z.boolean().optional().default(true).describe('Whether to clean up worktrees if all tasks succeed (default: true)'),
+      max_concurrency: z.number().optional().default(4).describe('Maximum concurrent worker processes (default: 4)')
+    },
+    async ({ repo_path, tasks, isolate_worktrees, auto_integrate, verification_command, cleanup_on_success, max_concurrency }) => {
+      try {
+        const result = await globalFleetOrchestrator.runFleet({
+          repoPath: repo_path,
+          tasks: tasks.map(t => ({
+            id: t.id,
+            agent: t.agent,
+            prompt: t.prompt,
+            dependsOn: t.depends_on,
+            effort: t.effort,
+            model: t.model,
+            timeoutSeconds: t.timeout_seconds
+          })),
+          isolateWorktrees: isolate_worktrees,
+          autoIntegrate: auto_integrate,
+          integrationVerificationCommand: verification_command,
+          cleanupWorktreesOnSuccess: cleanup_on_success,
+          maxConcurrency: max_concurrency
+        });
+
+        const lines = [
+          `### 🚀 Fleet Orchestration Raporu (\`${result.fleetId}\`)`,
+          `- **Durum**: ${result.status === 'completed' ? '✅ Başarılı' : result.status === 'partial' ? '⚠️ Kısmi Başarılı' : '❌ Başarısız'}`,
+          `- **Süre**: ${(result.durationMs / 1000).toFixed(1)}s · **Temel SHA**: \`${result.baseSha.slice(0, 8)}\``
+        ];
+
+        if (result.integrationBranch) {
+          lines.push(`- **Entegrasyon Dalı**: \`${result.integrationBranch}\` ${result.integrationVerified ? '(✔ Doğrulandı)' : '(Doğrulama Yapılmadı / Başarısız)'}`);
+        }
+
+        if (result.conflictFiles && result.conflictFiles.length > 0) {
+          lines.push(`\n> [!WARNING]\n> **Birleştirme Çakışmaları**: ${result.conflictFiles.map(f => `\`${f}\``).join(', ')}`);
+        }
+
+        lines.push('\n#### Görev Dağılımı ve Sonuçları:');
+        lines.push('| Görev ID | Ajan | Durum | Dal / Worktree | Çıktı / Hata |');
+        lines.push('|---|---|---|---|---|');
+
+        for (const [id, exec] of result.tasks.entries()) {
+          const statusIcon = exec.status === 'completed' ? '✔' : exec.status === 'failed' ? '❌' : exec.status === 'skipped' ? '⏭' : '⏳';
+          const branchInfo = exec.branch ? `\`${exec.branch}\`` : '-';
+          const detail = exec.error ? `Hata: ${exec.error.slice(0, 50)}` : (exec.summary ? `Tamamlandı (${(exec.summary.durationMs / 1000).toFixed(1)}s)` : '-');
+          lines.push(`| \`${id}\` | ${exec.definition.agent} | ${statusIcon} ${exec.status} | ${branchInfo} | ${detail} |`);
+        }
+
+        return { content: [{ type: 'text', text: lines.join('\n') }] };
+      } catch (err: any) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: `❌ Fleet çalıştırma hatası: ${err.message}` }]
+        };
+      }
+    }
+  );
+
+  // Tool 9: list_worktrees
+  server.tool(
+    'list_worktrees',
+    'Lists all active Git worktrees in a repository.',
+    {
+      repo_path: z.string().describe('Repository root path')
+    },
+    async ({ repo_path }) => {
+      try {
+        const validated = validateCwd(repo_path);
+        const worktrees = globalWorktreeManager.listWorktrees(validated);
+        if (worktrees.length === 0) {
+          return { content: [{ type: 'text', text: 'Aktif worktree bulunamadı.' }] };
+        }
+
+        const lines = [
+          `### 🌲 Aktif Git Worktree Listesi (${validated})`,
+          '| Dizin | Dal | HEAD SHA | Kilitli |',
+          '|---|---|---|---|'
+        ];
+        for (const wt of worktrees) {
+          lines.push(`| \`${wt.worktreePath}\` | \`${wt.branch || '(detached)'}\` | \`${wt.headSha.slice(0, 8)}\` | ${wt.isLocked ? '🔒 Evet' : 'Hayır'} |`);
+        }
+
+        return { content: [{ type: 'text', text: lines.join('\n') }] };
+      } catch (err: any) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: `Worktree listeleme hatası: ${err.message}` }]
+        };
+      }
+    }
+  );
+
+  // Tool 10: cleanup_worktree
+  server.tool(
+    'cleanup_worktree',
+    'Safely removes a Git worktree directory and prunes worktree tracking.',
+    {
+      repo_path: z.string().describe('Repository root path'),
+      worktree_path: z.string().describe('Worktree path to remove'),
+      force: z.boolean().optional().default(true).describe('Force remove uncommitted changes (default: true)')
+    },
+    async ({ repo_path, worktree_path, force }) => {
+      try {
+        const root = validateCwd(repo_path);
+        globalWorktreeManager.removeWorktree(root, worktree_path, force);
+        return {
+          content: [{ type: 'text', text: `Worktree başarıyla temizlendi: \`${worktree_path}\`` }]
+        };
+      } catch (err: any) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: `Worktree temizleme hatası: ${err.message}` }]
+        };
+      }
     }
   );
 
