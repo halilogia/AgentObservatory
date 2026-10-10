@@ -209,6 +209,13 @@ console.log('8. Oturum seçici ok tuşu mantığı Test Ediliyor...');
   assert.strictEqual(tui.getSelectedIndex(), 0, 'Boş listede ok tuşu no-op olmalı');
   assert.strictEqual(tui.openSelected(), false, 'Boş listede Enter no-op olmalı');
   assert.strictEqual(tui.selectSession(10), false);
+
+  // Saf pencereleme mantığı (PAGE_SIZE = 7, 15 görev)
+  assert.deepStrictEqual(tui.computeWindow(0, 0, 15), { offset: 0, end: 7, hasAbove: false, hasBelow: true });
+  assert.strictEqual(tui.computeWindow(7, 0, 15).offset, 1, 'Aşağı taşınca pencere kayar');
+  assert.strictEqual(tui.computeWindow(2, 5, 15).offset, 2, 'Yukarı taşınca pencere seçiliye iner');
+  assert.deepStrictEqual(tui.computeWindow(14, 8, 15), { offset: 8, end: 15, hasAbove: true, hasBelow: false });
+  assert.deepStrictEqual(tui.computeWindow(0, 0, 3), { offset: 0, end: 3, hasAbove: false, hasBelow: false });
 }
 console.log('✔ Oturum seçici boş liste/mod korumaları doğrulandı!\n');
 

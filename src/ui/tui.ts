@@ -249,8 +249,30 @@ function shortId(id: string | null | undefined, len: number): string {
 
 function clearScreen(): void {
   try {
-    console.clear();
+    process.stdout.write('\x1b[H\x1b[2J');
   } catch {}
+}
+
+export const PAGE_SIZE = 7;
+let scrollOffset = 0;
+
+// Saf pencereleme: seçili öğeyi görünür tutan en küçük kaydırmayı hesaplar.
+export function computeWindow(
+  selected: number,
+  offset: number,
+  total: number,
+  pageSize: number = PAGE_SIZE
+): { offset: number; end: number; hasAbove: boolean; hasBelow: boolean } {
+  let off = Math.max(0, offset);
+  if (selected < off) off = selected;
+  if (selected >= off + pageSize) off = selected - pageSize + 1;
+  off = Math.max(0, Math.min(off, Math.max(0, total - pageSize)));
+  const end = Math.min(total, off + pageSize);
+  return { offset: off, end, hasAbove: off > 0, hasBelow: end < total };
+}
+
+export function getScrollOffset(): number {
+  return scrollOffset;
 }
 
 // Seçili satırın indeksini liste sınırları içinde tutar (boş listede 0).
@@ -286,33 +308,55 @@ export function showSessionPicker(): TaskSummary[] {
   return pickerTasks;
 }
 
-// Yüklü görev listesini çizer; seçili satır ▶ ve parlak vurguyla gösterilir.
+// Yüklü görev listesini sabit yükseklikte (en fazla 15 satır) çizer.
 function renderSessionPicker(): void {
-  clearScreen();
   clampSelection();
+  const width = Math.max(40, (process.stdout.columns || 80) - 1);
+  const total = pickerTasks.length;
+  const win = computeWindow(selectedIndex, scrollOffset, total);
+  scrollOffset = win.offset;
+  const rule = (label = ''): string => {
+    const head = label ? `─── ${label} ` : '';
+    return paint('gray', head + '─'.repeat(Math.max(0, width - head.length)));
+  };
+  const lines: string[] = [];
 
-  console.log(paint('cyan', '═'.repeat(80)));
-  console.log(` ${paint('bold', '🔭 AGENT OBSERVATORY')} · ${paint('green', 'Oturum / Görev Seçici')} · ${paint('gray', `Son ${pickerTasks.length} görev`)}`);
-  console.log(paint('cyan', '═'.repeat(80)));
+  lines.push(truncate(` 🔭 AGENT OBSERVATORY · Oturum / Görev Seçici · Son ${total} görev`, width));
+  lines.push(paint('cyan', '═'.repeat(width)));
+  lines.push(win.hasAbove ? paint('gray', `   ▲ daha fazla (${win.offset} görev yukarıda)`) : '');
 
-  if (pickerTasks.length === 0) {
-    console.log(paint('gray', ' Kayıtlı görev bulunamadı.'));
-  }
-
-  pickerTasks.forEach((t, i) => {
+  if (total === 0) lines.push(paint('gray', ' Kayıtlı görev bulunamadı.'));
+  for (let i = win.offset; i < win.end; i++) {
+    const t = pickerTasks[i];
     const selected = i === selectedIndex;
-    const marker = selected ? paint('bold', paint('cyan', ' ▶ ')) : '    ';
-    const num = selected ? paint('bold', paint('cyan', `[${i + 1}]`)) : paint('bold', `[${i + 1}]`);
     const running = t.status === 'running' || t.status === 'pending';
     const duration = formatDuration(running ? Date.now() - t.startTime : t.durationMs);
-    const prompt = truncate(cleanText(t.prompt) || '(boş prompt)', 70);
-    console.log(`${marker}${num} ${paint('gray', hms(t.startTime))} ${paint('cyan', `[${t.agent.toUpperCase()}]`)} ${statusLabel(t.status)} ${paint('gray', duration)}`);
-    console.log(`      ${selected ? paint('bold', paint('white', prompt)) : prompt}`);
-    console.log(`      ${paint('gray', `${shortId(t.taskId, 11)} | sess: ${shortId(t.sessionId, 5)}`)}`);
-    console.log(paint('gray', '─'.repeat(80)));
-  });
+    const icon = t.status === 'completed' ? '✔' : running ? '▶' : t.status === 'cancelled' ? '⏹' : '✖';
+    const prefix = `${selected ? ' ▶ ' : '   '}[${String(i + 1).padStart(2)}] ${hms(t.startTime).slice(0, 5)} [${t.agent.toUpperCase()}] ${icon} ${duration} │ `;
+    const prompt = cleanText(t.prompt) || '(boş prompt)';
+    const row = prefix + truncate(prompt, Math.max(4, width - prefix.length));
+    if (selected) {
+      lines.push(paint('bold', paint('cyan', row)));
+    } else {
+      const color = t.status === 'completed' ? 'green' : running ? 'yellow' : t.status === 'cancelled' ? 'yellow' : 'red';
+      lines.push(row.replace(icon, paint(color, icon)));
+    }
+  }
 
-  console.log(paint('yellow', '[↑ / ↓] Seçim Yap · [Enter] İncele · [1-9] Hızlı Seç · [C / Esc] Canlı Akış · [Q] Çıkış'));
+  lines.push(win.hasBelow
+    ? paint('gray', `   ▼ daha fazla (${total} görevden ${selectedIndex + 1}'üncüsü)`)
+    : (total > 0 ? paint('gray', `   (${total} görevden ${selectedIndex + 1}'üncüsü)`) : ''));
+
+  const sel = total > 0 ? pickerTasks[selectedIndex] : null;
+  lines.push(rule('Seçili Görev Detayı'));
+  lines.push(sel
+    ? truncate(` ID: ${shortId(sel.taskId, 14)} │ Oturum: ${shortId(sel.sessionId, 8)} │ Model: ${sel.model || '-'}`, width)
+    : ' -');
+  lines.push(sel ? truncate(` Prompt: ${cleanText(sel.prompt) || '(boş prompt)'}`, width) : ' -');
+  lines.push(paint('yellow', truncate('[↑ / ↓] Gezin · [Enter] İncele · [Esc / C] Canlı Akış · [Q] Çıkış', width)));
+
+  clearScreen();
+  process.stdout.write(lines.join('\n') + '\n');
 }
 
 // Seçici listesindeki n. (1 tabanlı) görevi açar; geçersizse false döner.
@@ -349,8 +393,8 @@ export function handlePickerKey(key: string): 'live' | 'handled' | null {
 
 // Bir görevin özetini ve tüm olaylarını adım adım basar.
 export function inspectTask(taskId: string): void {
-  clearScreen();
   viewMode = 'inspect';
+  clearScreen();
 
   let task: TaskSummary | null = null;
   let events: TaskEvent[] = [];
@@ -394,7 +438,7 @@ export function inspectTask(taskId: string): void {
   }
 
   console.log(paint('cyan', '═'.repeat(80)));
-  console.log(paint('yellow', '[S / Esc] Oturum Listesi · [C] Canlı Akışa Dön · [Q] Çıkış'));
+  console.log(paint('yellow', '[Esc / S] Oturum Listesine Dön · [C] Canlı Akış'));
 }
 
 // Canlı moda dönüş: cli.ts gibi dış çağıranlar için.
