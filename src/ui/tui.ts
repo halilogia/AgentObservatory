@@ -220,7 +220,7 @@ type ViewMode = 'live' | 'picker' | 'inspect';
 let viewMode: ViewMode = 'live';
 let pickerTasks: TaskSummary[] = [];
 const PICKER_LIMIT = 15;
-const PICKER_SELECTABLE = 9;
+let selectedIndex = 0;
 
 export function getViewMode(): ViewMode {
   return viewMode;
@@ -253,15 +253,43 @@ function clearScreen(): void {
   } catch {}
 }
 
-// Son görevleri numaralı bir liste olarak gösterir ve seçim moduna geçer.
+// Seçili satırın indeksini liste sınırları içinde tutar (boş listede 0).
+function clampSelection(): void {
+  if (pickerTasks.length === 0) {
+    selectedIndex = 0;
+    return;
+  }
+  selectedIndex = Math.min(Math.max(0, selectedIndex), pickerTasks.length - 1);
+}
+
+export function getSelectedIndex(): number {
+  return selectedIndex;
+}
+
+// Seçimi delta kadar kaydırır (döngüsel); liste boşsa güvenli no-op.
+export function moveSelection(delta: number): void {
+  const n = pickerTasks.length;
+  if (n === 0) return;
+  selectedIndex = (((selectedIndex + delta) % n) + n) % n;
+  renderSessionPicker();
+}
+
+// Son görevleri yükler ve ok tuşlarıyla gezilebilir seçim moduna geçer.
 export function showSessionPicker(): TaskSummary[] {
-  clearScreen();
   viewMode = 'picker';
   try {
     pickerTasks = globalSqlite.getRecentTasks(PICKER_LIMIT);
   } catch {
     pickerTasks = [];
   }
+  renderSessionPicker();
+  return pickerTasks;
+}
+
+// Yüklü görev listesini çizer; seçili satır ▶ ve parlak vurguyla gösterilir.
+function renderSessionPicker(): void {
+  clearScreen();
+  clampSelection();
 
   console.log(paint('cyan', '═'.repeat(80)));
   console.log(` ${paint('bold', '🔭 AGENT OBSERVATORY')} · ${paint('green', 'Oturum / Görev Seçici')} · ${paint('gray', `Son ${pickerTasks.length} görev`)}`);
@@ -272,25 +300,51 @@ export function showSessionPicker(): TaskSummary[] {
   }
 
   pickerTasks.forEach((t, i) => {
-    const num = i < PICKER_SELECTABLE ? paint('bold', `[${i + 1}]`) : paint('gray', '[-]');
+    const selected = i === selectedIndex;
+    const marker = selected ? paint('bold', paint('cyan', ' ▶ ')) : '    ';
+    const num = selected ? paint('bold', paint('cyan', `[${i + 1}]`)) : paint('bold', `[${i + 1}]`);
     const running = t.status === 'running' || t.status === 'pending';
     const duration = formatDuration(running ? Date.now() - t.startTime : t.durationMs);
-    console.log(`${num} ${paint('gray', hms(t.startTime))} ${paint('cyan', `[${t.agent.toUpperCase()}]`)} ${statusLabel(t.status)} ${paint('gray', duration)}`);
-    console.log(`     ${truncate(cleanText(t.prompt) || '(boş prompt)', 70)}`);
-    console.log(`     ${paint('gray', `${shortId(t.taskId, 11)} | sess: ${shortId(t.sessionId, 5)}`)}`);
+    const prompt = truncate(cleanText(t.prompt) || '(boş prompt)', 70);
+    console.log(`${marker}${num} ${paint('gray', hms(t.startTime))} ${paint('cyan', `[${t.agent.toUpperCase()}]`)} ${statusLabel(t.status)} ${paint('gray', duration)}`);
+    console.log(`      ${selected ? paint('bold', paint('white', prompt)) : prompt}`);
+    console.log(`      ${paint('gray', `${shortId(t.taskId, 11)} | sess: ${shortId(t.sessionId, 5)}`)}`);
     console.log(paint('gray', '─'.repeat(80)));
   });
 
-  const maxPick = Math.max(1, Math.min(PICKER_SELECTABLE, pickerTasks.length));
-  console.log(paint('yellow', `İncelemek istediğiniz oturum numarasını girin [1-${maxPick}] (veya [C] ile canlı akışa dön):`));
-  return pickerTasks;
+  console.log(paint('yellow', '[↑ / ↓] Seçim Yap · [Enter] İncele · [1-9] Hızlı Seç · [C / Esc] Canlı Akış · [Q] Çıkış'));
 }
 
 // Seçici listesindeki n. (1 tabanlı) görevi açar; geçersizse false döner.
 export function selectSession(n: number): boolean {
-  if (n < 1 || n > PICKER_SELECTABLE || n > pickerTasks.length) return false;
+  if (!Number.isInteger(n) || n < 1 || n > pickerTasks.length) return false;
+  selectedIndex = n - 1;
   inspectTask(pickerTasks[n - 1].taskId);
   return true;
+}
+
+// Enter: vurgulanan görevi inceler; liste boşsa no-op.
+export function openSelected(): boolean {
+  clampSelection();
+  if (pickerTasks.length === 0) return false;
+  inspectTask(pickerTasks[selectedIndex].taskId);
+  return true;
+}
+
+// Seçici/inceleme modu tuş işleyicisi. 'live': canlı akışa dönülmeli, 'handled': işlendi, null: ilgisiz tuş.
+// Ok tuşları yalnızca picker modunda çalışır.
+export function handlePickerKey(key: string): 'live' | 'handled' | null {
+  if (viewMode === 'picker') {
+    if (key === '\u001b[A') { moveSelection(-1); return 'handled'; }
+    if (key === '\u001b[B') { moveSelection(1); return 'handled'; }
+    if (key === '\r' || key === '\n') { openSelected(); return 'handled'; }
+    if (/^[1-9]$/.test(key)) { selectSession(Number(key)); return 'handled'; }
+    if (key === '\u001b' || key === 'c' || key === 'C') return 'live';
+  } else if (viewMode === 'inspect') {
+    if (key === 's' || key === 'S' || key === '\u001b') { showSessionPicker(); return 'handled'; }
+    if (key === 'c' || key === 'C') return 'live';
+  }
+  return null;
 }
 
 // Bir görevin özetini ve tüm olaylarını adım adım basar.
@@ -340,7 +394,7 @@ export function inspectTask(taskId: string): void {
   }
 
   console.log(paint('cyan', '═'.repeat(80)));
-  console.log(paint('yellow', '[C] Canlı Akışa Dön · [S] Başka Oturum Seç'));
+  console.log(paint('yellow', '[S / Esc] Oturum Listesi · [C] Canlı Akışa Dön · [Q] Çıkış'));
 }
 
 // Canlı moda dönüş: cli.ts gibi dış çağıranlar için.
@@ -407,10 +461,10 @@ export class TerminalUI {
       if (key === '\u0003' || key === 'q' || key === 'Q') {
         this.stop();
         process.exit(0);
+      } else if (viewMode !== 'live' && handlePickerKey(key) === 'handled') {
+        // seçici/inceleme tuşu işlendi
       } else if (key === 's' || key === 'S') {
         showSessionPicker();
-      } else if (viewMode === 'picker' && /^[1-9]$/.test(key)) {
-        selectSession(Number(key));
       } else if (key === 'c' || key === 'C' || key === '\u001b') {
         // Canlı akışa dön: seçici/inceleme modundan çık, ekranı temizle.
         viewMode = 'live';

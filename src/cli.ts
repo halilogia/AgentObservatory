@@ -1,6 +1,6 @@
 import { globalRunner } from './runtime/agent_runner.ts';
 import { globalStore } from './core/event_store.ts';
-import { TerminalUI, paint, showSessionPicker, selectSession, inspectTask, resetViewMode } from './ui/tui.ts';
+import { TerminalUI, paint, showSessionPicker, handlePickerKey, inspectTask, resetViewMode } from './ui/tui.ts';
 
 const args = process.argv.slice(2);
 const command = args[0] || 'watch';
@@ -26,11 +26,11 @@ function startPickerInput(): void {
     if (key === '' || key === 'q' || key === 'Q' || key === '') {
       release();
       process.exit(0);
+    } else if (handlePickerKey(key) === 'handled') {
+      // ok tuşları / Enter / 1-9 / inceleme modunda S veya Esc işlendi
     } else if (key === 's' || key === 'S') {
       showSessionPicker();
-    } else if (/^[1-9]$/.test(key)) {
-      selectSession(Number(key));
-    } else if (key === 'c' || key === 'C') {
+    } else if (key === 'c' || key === 'C' || key === '\u001b') {
       release();
       resetViewMode();
       new TerminalUI(globalStore).startWatchMode(300, true);

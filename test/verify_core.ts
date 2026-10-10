@@ -198,4 +198,18 @@ const mcpModule = await import('../src/mcp/mcp_server.ts');
 assert.strictEqual(typeof mcpModule.startMcpServer, 'function');
 console.log('✔ Resmi MCP Server modülü doğrulandı!\n');
 
+// 8. TUI OTURUM SEÇİCİ: ok tuşu/seçim mantığı güvenli no-op doğrulaması
+console.log('8. Oturum seçici ok tuşu mantığı Test Ediliyor...');
+{
+  const tui = await import('../src/ui/tui.ts');
+  assert.strictEqual(tui.getViewMode(), 'live');
+  assert.strictEqual(tui.getSelectedIndex(), 0);
+  assert.strictEqual(tui.handlePickerKey('\u001b[A'), null, 'Canlı modda ok tuşu işlenmemeli');
+  tui.moveSelection(1);
+  assert.strictEqual(tui.getSelectedIndex(), 0, 'Boş listede ok tuşu no-op olmalı');
+  assert.strictEqual(tui.openSelected(), false, 'Boş listede Enter no-op olmalı');
+  assert.strictEqual(tui.selectSession(10), false);
+}
+console.log('✔ Oturum seçici boş liste/mod korumaları doğrulandı!\n');
+
 console.log('🎉 TÜM P0 GÜVENLİK, TAM TEST İZOLASYONU VE VERİ TUTARLILIĞI TESTLERİ EKSİKSİZ BAŞARIYLA TAMAMLANDI!');
