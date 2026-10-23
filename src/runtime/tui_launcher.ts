@@ -8,6 +8,9 @@ const LAUNCH_GUI_PS1 = process.env.OBSERVATORY_LAUNCH_GUI || path.join(os.homedi
 const LOCK_FILE = path.join(os.tmpdir(), 'agent_observatory_tui.lock');
 const DEBOUNCE_MS = 15000;
 
+// Açılan pencere: varsayılan "chat" = oturumu ajanın CLI görünümünde canlı gösterir (skins). Eski pano için OBSERVATORY_TUI_MODE=watch.
+const VIEW_ARGS = process.env.OBSERVATORY_TUI_MODE === 'watch' ? 'watch' : 'chat latest --follow';
+
 let lastLaunchAt = 0;
 
 function resolveCliPath(): string {
@@ -23,10 +26,10 @@ export function launchTuiWindow(): void {
       '-ExecutionPolicy', 'Bypass',
       '-File', LAUNCH_GUI_PS1,
       '-ExePath', 'C:\\Windows\\System32\\cmd.exe',
-      '-Arguments', `/c node --experimental-strip-types "${tuiPath}" watch`
+      '-Arguments', `/c node --experimental-strip-types "${tuiPath}" ${VIEW_ARGS}`
     ], { stdio: 'ignore', windowsHide: false });
   } else {
-    spawn('cmd.exe', ['/c', 'start', 'node', '--experimental-strip-types', tuiPath, 'watch'], { stdio: 'ignore', windowsHide: false });
+    spawn('cmd.exe', ['/c', 'start', 'node', '--experimental-strip-types', tuiPath, ...VIEW_ARGS.split(' ')], { stdio: 'ignore', windowsHide: false });
   }
 }
 
@@ -61,7 +64,7 @@ export function autoLaunchTui(): void {
     try { fs.writeFileSync(LOCK_FILE, String(process.pid)); } catch {}
 
     // Detect an already running watcher process (async, so the task path is never blocked)
-    const query = "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match 'cli\\.ts\"?\\s+watch' } | Measure-Object | Select-Object -ExpandProperty Count";
+    const query = "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match 'cli\\.ts\"?\\s+(watch|chat)' } | Measure-Object | Select-Object -ExpandProperty Count";
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', query], { windowsHide: true, timeout: 8000 }, (err, stdout) => {
       try {
         if (!err && parseInt(String(stdout).trim(), 10) > 0) return;

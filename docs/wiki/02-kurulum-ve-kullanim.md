@@ -60,5 +60,17 @@ claude mcp list
 
 Yeni bir Claude Code oturumunda araçlar `mcp__agent-observatory__*` adıyla görünür. Ayrıntı: [MCP araçları](03-mcp-araclari.md).
 
+## Otomatik izleme penceresi
+Bir görev **Observatory üzerinden** başlatılınca (MCP `start_task` / `run_agent`, `observatory run`) ve açık bir izleyici yoksa, `src/runtime/tui_launcher.ts` yeni bir konsol penceresi açar. Pencere `observatory chat latest --follow` çalıştırır: oturumu ajanın CLI görünümünde ([sayfa 11](11-oturum-gorunumu.md)) canlı gösterir ve sonradan gelen görevleri de akıtır.
+
+Gerçek denemeyle doğrulandı (2026-10-23, MCP `start_task`, OpenCode):
+- İzleyici yokken görev başlayınca pencere yaklaşık 6 sn içinde açıldı.
+- Açık bir izleyici varken ikinci görev başlayınca ikinci pencere **açılmadı**.
+- `OBSERVATORY_NO_AUTO_TUI=1` ile hiç açılmadı.
+
+Kurallar: aynı anda en çok bir pencere (15 sn'lik kilit + çalışan işlem denetimi); testlerde (`NODE_ENV=test` veya `test/` altından çalışan betikler) ve Windows dışında kapalı. Eski pano için `OBSERVATORY_TUI_MODE=watch`.
+
+**Sınır:** Yalnızca Observatory üzerinden başlatılan görevler pencere açar. Terminalde doğrudan `codex` veya `opencode` yazıp başlattığın oturumu Observatory görmez (kanca ile izleme, Tier 2, henüz yapılmadı: [öneri 7](07-gelistirme-onerileri.md)).
+
 ## Veri nerede?
 `~/.observatory/observatory.sqlite` (WAL kipi). Silmek geçmişi sıfırlar; program yeniden oluşturur.

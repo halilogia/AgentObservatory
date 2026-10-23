@@ -22,7 +22,7 @@ Sunucu adı: `AgentObservatory`. Başlatma: `node --experimental-strip-types src
 
 | Parametre | Değer | Not |
 |---|---|---|
-| `agent` | `claude`, `codex`, `agy`, `opencode`, `aider`, `freebuff` | zorunlu |
+| `agent` | `claude`, `codex`, `agy`, `opencode`, `freebuff` | zorunlu |
 | `prompt` | metin | zorunlu |
 | `cwd` | klasör yolu | doğrulanır, yoksa hata |
 | `session_id` | oturum / thread kimliği | önceki oturuma devam |

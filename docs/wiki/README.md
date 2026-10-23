@@ -1,6 +1,6 @@
 # Agent Observatory Wiki
 
-Agent Observatory, yerel yapay zekâ CLI ajanlarını (Claude Code, Codex, Antigravity `agy`, OpenCode, Aider, Freebuff) **başlatır, izler ve kaydeder**.
+Agent Observatory, yerel yapay zekâ CLI ajanlarını (Claude Code, Codex, Antigravity `agy`, OpenCode, Freebuff) **başlatır, izler ve kaydeder**.
 
 Benzetme: şantiyedeki kamera ve kayıt cihazı. Ustalar (ajanlar) işini yapar; kamera (Observatory) kimin ne zaman ne yaptığını kaydeder ve canlı gösterir.
 

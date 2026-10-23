@@ -10,7 +10,6 @@ import { ClaudeAdapter } from '../adapters/claude_adapter.ts';
 import { CodexAdapter } from '../adapters/codex_adapter.ts';
 import { AgyAdapter } from '../adapters/agy_adapter.ts';
 import { OpenCodeAdapter } from '../adapters/opencode_adapter.ts';
-import { AiderAdapter } from '../adapters/aider_adapter.ts';
 import { FreebuffAdapter } from '../adapters/freebuff_adapter.ts';
 import { validateCwd } from '../core/paths.ts';
 import { autoLaunchTui } from './tui_launcher.ts';
@@ -48,7 +47,6 @@ export class AgentRunner {
     this.registerAdapter(new CodexAdapter());
     this.registerAdapter(new AgyAdapter());
     this.registerAdapter(new OpenCodeAdapter());
-    this.registerAdapter(new AiderAdapter());
     this.registerAdapter(new FreebuffAdapter());
   }
 

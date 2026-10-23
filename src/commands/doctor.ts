@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { resolveBinary } from '../core/paths.ts';
 import { classifyFailure } from '../core/failure.ts';
 
-const ENGINES = ['claude', 'codex', 'agy', 'opencode', 'aider', 'freebuff'] as const;
+const ENGINES = ['claude', 'codex', 'agy', 'opencode', 'freebuff'] as const;
 
 function versionOf(exe: string): string {
   // .cmd dosyaları Node'da kabuk olmadan çalışmaz

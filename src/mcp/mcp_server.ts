@@ -105,9 +105,9 @@ export async function startMcpServer(): Promise<void> {
   // Tool 1: run_agent
   server.tool(
     'run_agent',
-    'Executes a task using a local CLI agent (claude, codex, agy, opencode, aider) with real-time stream ingestion and session support.',
+    'Executes a task using a local CLI agent (claude, codex, agy, opencode, freebuff) with real-time stream ingestion and session support.',
     {
-      agent: z.enum(['claude', 'codex', 'agy', 'opencode', 'aider', 'freebuff']).describe('The target CLI agent'),
+      agent: z.enum(['claude', 'codex', 'agy', 'opencode', 'freebuff']).describe('The target CLI agent'),
       prompt: z.string().describe('Instruction or task prompt'),
       cwd: z.string().optional().describe('Optional working directory (validated)'),
       session_id: z.string().optional().describe('Optional session / thread ID to resume (multi-turn context)'),
@@ -150,7 +150,7 @@ export async function startMcpServer(): Promise<void> {
     'start_task',
     'Starts an agent task in the background and returns the taskId immediately. Use get_task to poll status.',
     {
-      agent: z.enum(['claude', 'codex', 'agy', 'opencode', 'aider', 'freebuff']).describe('The target CLI agent'),
+      agent: z.enum(['claude', 'codex', 'agy', 'opencode', 'freebuff']).describe('The target CLI agent'),
       prompt: z.string().describe('Instruction or task prompt'),
       cwd: z.string().optional().describe('Optional working directory'),
       session_id: z.string().optional().describe('Optional session ID to resume'),

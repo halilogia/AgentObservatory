@@ -31,11 +31,6 @@ export function resolveBinary(name: string): string {
       path.join(home, 'AppData', 'Roaming', 'npm', 'opencode.cmd'),
       'opencode'
     ],
-    aider: [
-      path.join(home, 'AppData', 'Local', 'Programs', 'Python', 'Python311', 'Scripts', 'aider.exe'),
-      path.join(home, 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'Scripts', 'aider.exe'),
-      'aider'
-    ],
     freebuff: [
       path.join(home, 'AppData', 'Roaming', 'npm', 'freebuff.cmd'),
       path.join(home, '.freebuff', 'bin', 'freebuff.exe'),
