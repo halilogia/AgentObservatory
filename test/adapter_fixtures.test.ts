@@ -44,3 +44,14 @@ assert.strictEqual(classifyFailure("The 'gpt-6.1-sol' model is not supported whe
 assert.strictEqual(classifyFailure('No active credentials for provider: codex').kind, 'auth');
 assert.strictEqual(classifyFailure('hello').kind, 'unknown');
 console.log('✔ hata sınıflandırma: rate_limit / model_unsupported / auth / unknown');
+
+// OpenCode izin politikası: read-only => plan ajanı; yazma => edit açık, bash kapalı; otomatik onay bayrağı YOK
+const oc = new OpenCodeAdapter();
+const ocRead = oc.buildCommand({ prompt: 'x', sandbox: 'read-only' });
+assert.ok(ocRead.args.includes('--agent') && ocRead.args.includes('plan'), 'read-only OpenCode plan ajanını kullanmalı');
+assert.ok(!ocRead.env.OPENCODE_CONFIG_CONTENT, 'read-only için izin yapılandırması gerekmez');
+const ocWrite = oc.buildCommand({ prompt: 'x', sandbox: 'workspace-write', dangerouslySkipPermissions: true });
+assert.ok(!ocWrite.args.includes('--auto') && !ocWrite.args.includes('--dangerously-skip-permissions'), 'OpenCode otomatik onay bayrağı almamalı');
+const ocPerm = JSON.parse(ocWrite.env.OPENCODE_CONFIG_CONTENT as string).permission;
+assert.deepStrictEqual(ocPerm, { edit: 'allow', bash: 'deny', webfetch: 'deny' }, 'yazma kipinde edit açık, bash/webfetch kapalı');
+console.log('✔ opencode izin politikası');

@@ -10,14 +10,20 @@ export class OpenCodeAdapter extends BaseAdapter {
   }
 
   buildCommand(opts: CommandOptions): BuiltCommand {
-    const { prompt, cwd, sessionId, dangerouslySkipPermissions = false } = opts;
+    const { prompt, cwd, sessionId, sandbox = 'workspace-write' } = opts;
     const validatedCwd = validateCwd(cwd);
 
     // OpenCode headless execution mode
-    const args: string[] = ['run', prompt, '--format', 'json'];
+    // --dir açık verilir: yalnızca süreç cwd'sine güvenince dosya üst klasöre yazıldı (gözlendi)
+    const args: string[] = ['run', prompt, '--format', 'json', '--dir', validatedCwd];
 
-    if (dangerouslySkipPermissions === true) {
-      args.push('--dangerously-skip-permissions');
+    // İzin politikası (gerçek denemeyle doğrulandı, 2026-10-23):
+    //  - read-only: yerleşik `plan` ajanı hiçbir dosyayı değiştiremez.
+    //  - diğerleri: dosya düzenleme açık, kabuk komutu ve web erişimi kapalı (OPENCODE_CONFIG_CONTENT).
+    // `dangerouslySkipPermissions` OpenCode'da KARŞILIKSIZ: otomatik onay bayrağı bilinçli olarak eklenmedi.
+    const readOnly = sandbox === 'read-only';
+    if (readOnly) {
+      args.push('--agent', 'plan');
     }
 
     if (sessionId) {
@@ -31,7 +37,11 @@ export class OpenCodeAdapter extends BaseAdapter {
       exe: resolveBinary('opencode'),
       args,
       cwd: validatedCwd,
-      env: Object.assign({}, process.env)
+      env: Object.assign(
+        {},
+        process.env,
+        readOnly ? {} : { OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: { edit: 'allow', bash: 'deny', webfetch: 'deny' } }) }
+      )
     };
   }
 
@@ -77,6 +87,10 @@ export class OpenCodeAdapter extends BaseAdapter {
         }));
       }
     } else if (parsed.type === 'tool_use' || parsed.type === 'tool_call' || parsed.tool) {
+      // Gerçek biçim: {type:'tool_use', part:{tool:'write', state:{status, input, output}}}
+      const part = parsed.part || {};
+      const state = part.state || {};
+      const toolName = parsed.name || parsed.tool || part.tool || 'unknown';
       store.recordEvent(createEvent({
         taskId,
         sessionId,
@@ -84,10 +98,20 @@ export class OpenCodeAdapter extends BaseAdapter {
         tier: 1,
         type: 'tool.invoked',
         data: {
-          name: parsed.name || parsed.tool || 'unknown',
-          input: parsed.input || parsed.args || {}
+          name: toolName,
+          input: parsed.input || parsed.args || state.input || {}
         }
       }));
+      if (state.status === 'completed' || state.status === 'error') {
+        store.recordEvent(createEvent({
+          taskId,
+          sessionId,
+          agent: 'opencode',
+          tier: 1,
+          type: 'tool.completed',
+          data: { name: toolName, result: state.output || '', ...(state.status === 'error' ? { error: true } : {}) }
+        }));
+      }
     } else if (parsed.type === 'tool_result' || parsed.type === 'tool_response') {
       store.recordEvent(createEvent({
         taskId,
