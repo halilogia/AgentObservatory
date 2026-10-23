@@ -87,6 +87,16 @@ async function main(): Promise<void> {
   } else if (command === 'mcp') {
     const { startMcpServer } = await import('./mcp/mcp_server.ts');
     await startMcpServer();
+  } else if (command === 'doctor') {
+    const { runDoctor } = await import('./commands/doctor.ts');
+    await runDoctor(args.slice(1));
+    process.exit(0);
+  } else if (command === 'serve') {
+    const { startServer } = await import('./commands/serve.ts');
+    const pIdx = args.indexOf('--port');
+    const port = pIdx >= 0 ? Number(args[pIdx + 1]) : Number(process.env.OBSERVATORY_PORT) || 8787;
+    startServer({ port });
+    console.log(paint('gray', `Observatory API: http://127.0.0.1:${port}  (/health, /tasks, /events, /stream)`));
   } else {
     console.log(paint('bold', '🔭 Agent Observatory CLI (TypeScript)'));
     console.log('Kullanım:');
@@ -95,6 +105,8 @@ async function main(): Promise<void> {
     console.log('  node --experimental-strip-types src/cli.ts sessions                - Son oturumları listeler, seçileni inceler');
     console.log('  node --experimental-strip-types src/cli.ts inspect <taskId>        - Tek bir görevin tüm olaylarını gösterir');
     console.log('  node --experimental-strip-types src/cli.ts mcp                     - Antigravity MCP sunucu modu');
+    console.log('  node --experimental-strip-types src/cli.ts doctor [--live]         - Kurulu ajanları ve (--live) gerçek yanıtı denetler');
+    console.log('  node --experimental-strip-types src/cli.ts serve [--port 8787]     - Olayları HTTP + SSE ile yayınlar');
   }
 }
 

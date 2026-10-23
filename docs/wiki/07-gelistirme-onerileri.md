@@ -2,6 +2,8 @@
 
 Öncelik sırasıyla. Her madde "neden" ve "kabul ölçütü" içerir.
 
+**Durum (2026-10-23):** 1 (`serve`), 3 (gerçek çıktı testleri), 4 (`doctor`) ve 6'nın hata türü kısmı (`errorKind: rate_limit`) yapıldı. Robotun dinlenme odasına gitmesi gibi sonuçlar tüketici tarafında yapılacak.
+
 | # | Öneri | Neden | Kabul ölçütü |
 |---|---|---|---|
 | 1 | **`observatory serve`**: SQLite'tan okuyan HTTP + SSE uç noktası (`/events`, `/tasks`) | Tarayıcı SQLite okuyamaz; 3D sahne ve web panel olayları canlı alamıyor | `curl -N localhost:PORT/events` görev başlatınca satır akıtır |

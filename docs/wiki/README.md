@@ -17,6 +17,7 @@ Benzetme: şantiyedeki kamera ve kayıt cihazı. Ustalar (ajanlar) işini yapar;
 | 7 | [Geliştirme önerileri](07-gelistirme-onerileri.md) | Öncelikli yol haritası önerisi |
 | 8 | [3D ofis ve izleme bağlantısı](08-3d-ve-izleme-baglantisi.md) | Olayları 3D sahneye ve Claude Code paneline taşıma |
 | 9 | [Öğrenme kaynakları](09-ogrenme-kaynaklari.md) | Benzer GitHub projeleri |
+| 10 | [HTTP + SSE API](10-http-sse-api.md) | `observatory serve` uç noktaları, güvenlik, örnekler |
 
 ## Tek cümlede
 Bir ajanı başlat → çıktısını satır satır oku → ortak "olay" biçimine çevir → SQLite dosyasına yaz → ekran, MCP ve 3D aynı dosyadan oku.

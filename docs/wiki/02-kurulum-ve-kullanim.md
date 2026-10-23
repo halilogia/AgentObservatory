@@ -20,6 +20,9 @@ npm test
 | `node bin/observatory.js sessions` | Son oturumlar listesi. Yukarı/aşağı ok ile seç, `C` canlı, `S` liste, `Q` çıkış |
 | `node bin/observatory.js inspect <taskId>` | Tek görevin tüm olayları |
 | `node bin/observatory.js mcp` | MCP sunucusunu stdio üzerinde başlatır |
+| `node bin/observatory.js doctor` | Hangi ajan kurulu, sürümü ne |
+| `node bin/observatory.js doctor --live` | Her ajana kısa bir "OK" görevi verip gerçekten yanıt veriyor mu bakar |
+| `node bin/observatory.js serve [--port 8787]` | Olayları HTTP + SSE ile yayınlar ([API](10-http-sse-api.md)) |
 
 Masaüstünde `Agent Observatory.bat` aynı TUI'yi açan bir kısayoldur (1: canlı, 2: oturum listesi, 3: geçmiş).
 

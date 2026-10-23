@@ -1,5 +1,6 @@
 import type { EventStore } from '../core/event_store.ts';
 import type { AgentType } from '../core/types.ts';
+import { classifyFailure } from '../core/failure.ts';
 
 export interface CommandOptions {
   taskId?: string;
@@ -54,6 +55,8 @@ export abstract class BaseAdapter {
         timestamp: Date.now()
       });
     } else {
+      // Kota / kimlik / model hatası ayrımı: orkestratör ve 3D ofis "bozuk" ile "bekliyor"u ayırt eder
+      const failure = classifyFailure(`${stderr}\n${task.assistantText || ''}`);
       store.recordEvent({
         id: `evt_err_${taskId}`,
         taskId,
@@ -61,7 +64,7 @@ export abstract class BaseAdapter {
         agent: this.name,
         tier: 1,
         type: 'task.failed',
-        data: { exitCode: code, error: stderr.trim() || `Süreç çıkış kodu: ${code}` },
+        data: { exitCode: code, error: stderr.trim() || `Süreç çıkış kodu: ${code}`, errorKind: failure.kind, ...(failure.cooldownMs ? { cooldownMs: failure.cooldownMs } : {}) },
         timestamp: Date.now()
       });
     }

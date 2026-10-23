@@ -15,11 +15,22 @@
 | agy `-p` hiç dönmüyor | Bazı sürümlerde TTY yoksa takıldığı bildirildi ([google-antigravity/antigravity-cli#318](https://github.com/google-antigravity/antigravity-cli/issues/318)) | Bu makinede Observatory üzerinden denendiğinde çalıştı; takılırsa zaman aşımıyla iptal et |
 | `watch` boş görünüyor | Varsayılan olarak yalnızca yeni olayları gösterir | `watch --history` |
 
+## Hata türü (`errorKind`)
+Bir görev `task.failed` olduğunda olayın `data.errorKind` alanı nedenini söyler (`src/core/failure.ts`):
+
+| `errorKind` | Anlamı | Orkestratör ne yapmalı |
+|---|---|---|
+| `rate_limit` | Kota / hız sınırı (`data.cooldownMs` bekleme tahmini, ipucu yoksa 30 dk) | Başka motora geç, bunu bekletme |
+| `model_unsupported` | Hesap bu modeli desteklemiyor | Model değiştir |
+| `auth` | Giriş yok / kimlik bilgisi eksik | Kullanıcıdan giriş iste |
+| `permission` | Headless modda izin sorulamadı | Salt-okunur görev ver veya izni bilinçli aç |
+| `unknown` | Diğer | Hata metnine bak |
+
 ## Test
 ```bash
 npm test
 ```
-Bu testler adaptörlerin ürettiği komutları ve olay işlemeyi doğrular. **Gerçek CLI çalıştırmaz.** Üç adaptörün bu wiki'nin yazıldığı gün bozuk çıkması bundandır: gerçek çıktı örneğiyle test eklemek önerilir (madde 6).
+`verify_core.ts` komut kurma ve olay işlemeyi, `adapter_fixtures.test.ts` ise `test/fixtures/` altındaki **gerçek CLI çıktılarını** (agy, codex, opencode: "Reply with exactly: OK") adaptörlerden geçirip yanıtın `OK` çıktığını doğrular. Hata sınıflandırması da burada sınanır. Gerçek CLI'ı çalıştırmak için `doctor --live` kullan.
 
 ## Hızlı canlı doğrulama
 MCP üzerinden her motora salt-okunur "Reply with exactly: OK" göndermek, üç motorun da yaklaşık 16-25 saniyede `OK` döndürdüğünü gösterdi (2026-10-23).
