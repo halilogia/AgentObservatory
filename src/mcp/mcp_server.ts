@@ -105,15 +105,15 @@ export async function startMcpServer(): Promise<void> {
   // Tool 1: run_agent
   server.tool(
     'run_agent',
-    'Executes a task using a local CLI agent (claude, codex, agy) with real-time stream ingestion and session support.',
+    'Executes a task using a local CLI agent (claude, codex, agy, opencode, aider) with real-time stream ingestion and session support.',
     {
-      agent: z.enum(['claude', 'codex', 'agy']).describe('The target CLI agent'),
+      agent: z.enum(['claude', 'codex', 'agy', 'opencode', 'aider', 'freebuff']).describe('The target CLI agent'),
       prompt: z.string().describe('Instruction or task prompt'),
       cwd: z.string().optional().describe('Optional working directory (validated)'),
       session_id: z.string().optional().describe('Optional session / thread ID to resume (multi-turn context)'),
       dangerously_skip_permissions: z.boolean().optional().default(false).describe('Explicitly skip permission prompts (default: false, safe)'),
       sandbox: z.enum(['workspace-write', 'read-only', 'danger-full-access']).optional().default('workspace-write').describe('Codex sandbox mode'),
-      timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds'),
+      timeout_seconds: z.number().optional().default(1800).describe('Execution timeout in seconds (default 1800s / 30m; 0 for unlimited)'),
       detailed: z.boolean().optional().default(false).describe('Return verbose tool logs and full output (default false)'),
       effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().describe('Reasoning effort level (low, medium, high, xhigh, max). Used by Claude.'),
       model: z.string().optional().describe('Model override (e.g. sonnet, opus, haiku). Used by Claude.')
@@ -128,7 +128,7 @@ export async function startMcpServer(): Promise<void> {
           sessionId: session_id,
           dangerouslySkipPermissions: dangerously_skip_permissions,
           sandbox,
-          timeoutSeconds: timeout_seconds || 300,
+          timeoutSeconds: typeof timeout_seconds === 'number' ? timeout_seconds : 1800,
           effort,
           model
         });
@@ -150,13 +150,13 @@ export async function startMcpServer(): Promise<void> {
     'start_task',
     'Starts an agent task in the background and returns the taskId immediately. Use get_task to poll status.',
     {
-      agent: z.enum(['claude', 'codex', 'agy']).describe('The target CLI agent'),
+      agent: z.enum(['claude', 'codex', 'agy', 'opencode', 'aider', 'freebuff']).describe('The target CLI agent'),
       prompt: z.string().describe('Instruction or task prompt'),
       cwd: z.string().optional().describe('Optional working directory'),
       session_id: z.string().optional().describe('Optional session ID to resume'),
       dangerously_skip_permissions: z.boolean().optional().default(false).describe('Explicitly skip permission prompts (default: false)'),
       sandbox: z.enum(['workspace-write', 'read-only', 'danger-full-access']).optional().default('workspace-write').describe('Codex sandbox mode'),
-      timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds'),
+      timeout_seconds: z.number().optional().default(1800).describe('Execution timeout in seconds (default 1800s / 30m; 0 for unlimited)'),
       parent_task_id: z.string().optional().describe('Optional parent task ID (hierarchy)'),
       effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().describe('Reasoning effort level (low, medium, high, xhigh, max). Used by Claude.'),
       model: z.string().optional().describe('Model override (e.g. sonnet, opus, haiku). Used by Claude.')
@@ -172,7 +172,7 @@ export async function startMcpServer(): Promise<void> {
           parentTaskId: parent_task_id,
           dangerouslySkipPermissions: dangerously_skip_permissions,
           sandbox,
-          timeoutSeconds: timeout_seconds || 300,
+          timeoutSeconds: typeof timeout_seconds === 'number' ? timeout_seconds : 1800,
           effort,
           model
         });
@@ -228,7 +228,7 @@ export async function startMcpServer(): Promise<void> {
       cwd: z.string().optional().describe('Optional working directory'),
       session_id: z.string().optional().describe('Optional session ID to resume'),
       dangerously_skip_permissions: z.boolean().optional().default(false).describe('Explicitly bypass tool prompts (default: false)'),
-      timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds'),
+      timeout_seconds: z.number().optional().default(1800).describe('Execution timeout in seconds (default 1800s / 30m; 0 for unlimited)'),
       detailed: z.boolean().optional().default(false).describe('Return verbose tool logs and full output (default false)'),
       effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().default('medium').describe('Reasoning effort level (low, medium, high, xhigh, max). Default: medium.'),
       model: z.string().optional().describe('Model override (e.g. sonnet, opus, haiku). Default: sonnet.')
@@ -242,7 +242,7 @@ export async function startMcpServer(): Promise<void> {
           cwd: validatedCwd,
           sessionId: session_id,
           dangerouslySkipPermissions: dangerously_skip_permissions,
-          timeoutSeconds: timeout_seconds || 300,
+          timeoutSeconds: typeof timeout_seconds === 'number' ? timeout_seconds : 1800,
           effort,
           model
         });
@@ -262,7 +262,7 @@ export async function startMcpServer(): Promise<void> {
       cwd: z.string().optional().describe('Optional working directory'),
       session_id: z.string().optional().describe('Optional session/thread ID to resume'),
       sandbox: z.enum(['workspace-write', 'read-only', 'danger-full-access']).optional().default('workspace-write').describe('Codex sandbox mode'),
-      timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds'),
+      timeout_seconds: z.number().optional().default(1800).describe('Execution timeout in seconds (default 1800s / 30m; 0 for unlimited)'),
       detailed: z.boolean().optional().default(false).describe('Return verbose tool logs and full output (default false)'),
       effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().describe('Reasoning effort level (mapped to model_reasoning_effort in Codex).'),
       model: z.string().optional().describe('Model override for Codex (e.g. o3, o3-mini, gpt-4o, gpt-6-astra).'),
@@ -278,7 +278,7 @@ export async function startMcpServer(): Promise<void> {
           sessionId: session_id,
           sandbox,
           dangerouslySkipPermissions: dangerously_skip_permissions,
-          timeoutSeconds: timeout_seconds || 300,
+          timeoutSeconds: typeof timeout_seconds === 'number' ? timeout_seconds : 1800,
           effort,
           model
         });
@@ -298,7 +298,7 @@ export async function startMcpServer(): Promise<void> {
       cwd: z.string().optional().describe('Optional working directory'),
       session_id: z.string().optional().describe('Optional session ID to resume'),
       dangerously_skip_permissions: z.boolean().optional().default(false).describe('Explicitly bypass permissions (default: false)'),
-      timeout_seconds: z.number().optional().default(300).describe('Execution timeout in seconds'),
+      timeout_seconds: z.number().optional().default(1800).describe('Execution timeout in seconds (default 1800s / 30m; 0 for unlimited)'),
       detailed: z.boolean().optional().default(false).describe('Return verbose tool logs and full output (default false)'),
       model: z.string().optional().describe('Model override for Antigravity agy.')
     },
@@ -311,7 +311,7 @@ export async function startMcpServer(): Promise<void> {
           cwd: validatedCwd,
           sessionId: session_id,
           dangerouslySkipPermissions: dangerously_skip_permissions,
-          timeoutSeconds: timeout_seconds || 300,
+          timeoutSeconds: typeof timeout_seconds === 'number' ? timeout_seconds : 1800,
           model
         });
         return { content: [{ type: 'text', text: formatTaskReport(summary, detailed) }] };
@@ -344,22 +344,26 @@ export async function startMcpServer(): Promise<void> {
   // Tool 6: list_tasks (also aliased for sessions)
   server.tool(
     'list_tasks',
-    'Lists recent agent tasks and active executions in the Observatory.',
+    'Lists active or recent agent tasks in the Observatory (compact format to prevent context bloat).',
     {
-      limit: z.number().optional().default(10).describe('Maximum number of tasks to return')
+      limit: z.number().optional().default(3).describe('Maximum number of tasks to return (default: 3)'),
+      active_only: z.boolean().optional().default(false).describe('Show only currently running tasks')
     },
-    async ({ limit }) => {
-      const tasks = globalSqlite.getRecentTasks(limit || 10);
+    async ({ limit, active_only }) => {
+      let tasks = globalSqlite.getRecentTasks(limit || 3);
+      if (active_only) {
+        tasks = tasks.filter(t => t.status === 'running');
+      }
       if (tasks.length === 0) {
         return {
-          content: [{ type: 'text', text: 'Kayıtlı görev bulunamadı.' }]
+          content: [{ type: 'text', text: 'Aktif veya kayıtlı görev bulunamadı.' }]
         };
       }
 
-      const lines = ['| Görev ID | Ajan | Durum | Oturum ID | Süre | İlk İstek |', '|---|---|---|---|---|---|'];
-      for (const t of tasks) {
+      const lines = ['| Görev ID | Ajan | Durum | Süre | İlk İstek |', '|---|---|---|---|---|'];
+      for (const t of tasks.slice(0, limit || 3)) {
         const promptPreview = (t.prompt || '').slice(0, 30);
-        lines.push(`| \`${t.taskId}\` | ${t.agent} | ${t.status} | \`${t.sessionId ? t.sessionId.slice(0, 8) : '-'}\` | ${(t.durationMs / 1000).toFixed(1)}s | ${promptPreview} |`);
+        lines.push(`| \`${t.taskId}\` | ${t.agent} | ${t.status} | ${(t.durationMs / 1000).toFixed(1)}s | ${promptPreview} |`);
       }
       return {
         content: [{ type: 'text', text: lines.join('\n') }]

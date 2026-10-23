@@ -3,15 +3,22 @@ import type { BuiltCommand, CommandOptions } from './base_adapter.ts';
 import type { EventStore } from '../core/event_store.ts';
 import { createEvent } from '../core/types.ts';
 import { resolveBinary, validateCwd } from '../core/paths.ts';
+import { resolveClaudeSessionId, updateClaudeSessionId } from '../core/claude_session_manager.ts';
 
 export class ClaudeAdapter extends BaseAdapter {
+  private taskCwdMap: Map<string, string> = new Map();
+
   constructor() {
     super('claude');
   }
 
   buildCommand(opts: CommandOptions): BuiltCommand {
-    const { prompt, cwd, sessionId, dangerouslySkipPermissions = false } = opts;
+    const { prompt, cwd, sessionId, dangerouslySkipPermissions = false, taskId } = opts;
     const validatedCwd = validateCwd(cwd);
+
+    if (taskId) {
+      this.taskCwdMap.set(taskId, validatedCwd);
+    }
 
     const args: string[] = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
 
@@ -20,8 +27,9 @@ export class ClaudeAdapter extends BaseAdapter {
       args.push('--dangerously-skip-permissions');
     }
 
-    if (sessionId) {
-      args.push('--resume', sessionId);
+    const effectiveSessionId = resolveClaudeSessionId(validatedCwd, sessionId);
+    if (effectiveSessionId) {
+      args.push('--resume', effectiveSessionId);
     }
 
     if (opts.effort) {
@@ -40,6 +48,11 @@ export class ClaudeAdapter extends BaseAdapter {
     };
   }
 
+  override handleExit(code: number | null, taskId: string, store: EventStore, stderr: string): void {
+    this.taskCwdMap.delete(taskId);
+    super.handleExit(code, taskId, store, stderr);
+  }
+
   handleStdoutLine(line: string, taskId: string, store: EventStore): void {
     const trimmed = line.trim();
     if (!trimmed) return;
@@ -56,6 +69,10 @@ export class ClaudeAdapter extends BaseAdapter {
     if (etype === 'system' && event.subtype === 'init') {
       const sessionId = event.session_id;
       const model = event.model || 'claude-sonnet-5-5';
+      const taskCwd = this.taskCwdMap.get(taskId) || process.cwd();
+      if (sessionId) {
+        updateClaudeSessionId(taskCwd, sessionId);
+      }
       store.recordEvent(createEvent({
         taskId,
         sessionId,

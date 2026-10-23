@@ -12,7 +12,7 @@ export type EventType =
   | 'task.failed'
   | 'task.cancelled';
 
-export type AgentType = 'claude' | 'codex' | 'agy' | 'hermes' | 'ollama' | 'opencode';
+export type AgentType = 'claude' | 'codex' | 'agy' | 'hermes' | 'ollama' | 'opencode' | 'aider' | 'freebuff';
 
 export type TaskTier = 1 | 2 | 3; // 1: Native Stream, 2: Hook/OTel, 3: File Fallback
 

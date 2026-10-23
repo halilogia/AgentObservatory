@@ -8,6 +8,9 @@ import { BaseAdapter } from '../adapters/base_adapter.ts';
 import { ClaudeAdapter } from '../adapters/claude_adapter.ts';
 import { CodexAdapter } from '../adapters/codex_adapter.ts';
 import { AgyAdapter } from '../adapters/agy_adapter.ts';
+import { OpenCodeAdapter } from '../adapters/opencode_adapter.ts';
+import { AiderAdapter } from '../adapters/aider_adapter.ts';
+import { FreebuffAdapter } from '../adapters/freebuff_adapter.ts';
 import { validateCwd } from '../core/paths.ts';
 import { autoLaunchTui } from './tui_launcher.ts';
 
@@ -17,6 +20,7 @@ export interface RunTaskOptions {
   cwd?: string;
   sessionId?: string | null;
   timeoutSeconds?: number;
+  inactivityTimeoutSeconds?: number;
   dangerouslySkipPermissions?: boolean;
   sandbox?: string;
   parentTaskId?: string;
@@ -26,7 +30,8 @@ export interface RunTaskOptions {
 
 interface ActiveProcessEntry {
   child: ChildProcess;
-  timer: NodeJS.Timeout;
+  timer: NodeJS.Timeout | null;
+  inactivityTimer: NodeJS.Timeout | null;
   options: RunTaskOptions;
   isCancelled: boolean;
 }
@@ -41,6 +46,9 @@ export class AgentRunner {
     this.registerAdapter(new ClaudeAdapter());
     this.registerAdapter(new CodexAdapter());
     this.registerAdapter(new AgyAdapter());
+    this.registerAdapter(new OpenCodeAdapter());
+    this.registerAdapter(new AiderAdapter());
+    this.registerAdapter(new FreebuffAdapter());
   }
 
   registerAdapter(adapter: BaseAdapter): void {
@@ -57,7 +65,8 @@ export class AgentRunner {
       prompt,
       cwd,
       sessionId = null,
-      timeoutSeconds = 300
+      timeoutSeconds = 1800,
+      inactivityTimeoutSeconds = 180
     } = options;
 
     const adapter = this.getAdapter(agent);
@@ -112,13 +121,35 @@ export class AgentRunner {
 
       let stderr = '';
 
-      const timer = setTimeout(() => {
-        this.cancelTask(taskId, `Zaman aşımı (${timeoutSeconds}s)`);
-      }, timeoutSeconds * 1000);
+      // Wall-clock maximum duration (default: 1800s, 0 = infinite)
+      const timer: NodeJS.Timeout | null =
+        timeoutSeconds > 0
+          ? setTimeout(() => {
+              this.cancelTask(taskId, `Maksimum çalışma süresi aşımı (${timeoutSeconds}s)`);
+            }, timeoutSeconds * 1000)
+          : null;
+
+      // Inactivity watchdog: resets on any stdout/stderr stream activity
+      let inactivityTimer: NodeJS.Timeout | null = null;
+      const resetInactivity = () => {
+        if (inactivityTimer) clearTimeout(inactivityTimer);
+        if (inactivityTimeoutSeconds > 0) {
+          inactivityTimer = setTimeout(() => {
+            this.cancelTask(taskId, `Hareketsizlik zaman aşımı (${inactivityTimeoutSeconds}s boyunca çıktı üretilmedi)`);
+          }, inactivityTimeoutSeconds * 1000);
+        }
+      };
+      resetInactivity();
+
+      const clearAllTimers = () => {
+        if (timer) clearTimeout(timer);
+        if (inactivityTimer) clearTimeout(inactivityTimer);
+      };
 
       const entry: ActiveProcessEntry = {
         child,
         timer,
+        inactivityTimer,
         options,
         isCancelled: false
       };
@@ -127,6 +158,7 @@ export class AgentRunner {
       if (child.stdout) {
         const rl = readline.createInterface({ input: child.stdout, terminal: false });
         rl.on('line', (line) => {
+          resetInactivity();
           try {
             adapter.handleStdoutLine(line, taskId, this.store);
           } catch {
@@ -137,12 +169,13 @@ export class AgentRunner {
 
       if (child.stderr) {
         child.stderr.on('data', (chunk) => {
+          resetInactivity();
           stderr += chunk.toString('utf8');
         });
       }
 
       child.on('error', (err) => {
-        clearTimeout(timer);
+        clearAllTimers();
         this.activeProcesses.delete(taskId);
         if (!entry.isCancelled) {
           this.store.recordEvent(createEvent({
@@ -158,7 +191,7 @@ export class AgentRunner {
       });
 
       child.on('close', (code) => {
-        clearTimeout(timer);
+        clearAllTimers();
         this.activeProcesses.delete(taskId);
 
         // If the task was cancelled, do NOT let handleExit overwrite with task.failed
@@ -195,7 +228,8 @@ export class AgentRunner {
     const entry = this.activeProcesses.get(taskId);
     if (entry) {
       entry.isCancelled = true;
-      clearTimeout(entry.timer);
+      if (entry.timer) clearTimeout(entry.timer);
+      if (entry.inactivityTimer) clearTimeout(entry.inactivityTimer);
 
       // Record cancellation FIRST so any subsequent exit code is ignored
       this.store.recordEvent(createEvent({
