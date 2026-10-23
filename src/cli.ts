@@ -87,6 +87,9 @@ async function main(): Promise<void> {
   } else if (command === 'mcp') {
     const { startMcpServer } = await import('./mcp/mcp_server.ts');
     await startMcpServer();
+  } else if (command === 'chat') {
+    const { runChat } = await import('./ui/transcript.ts');
+    await runChat(args.slice(1));
   } else if (command === 'doctor') {
     const { runDoctor } = await import('./commands/doctor.ts');
     await runDoctor(args.slice(1));
@@ -105,7 +108,8 @@ async function main(): Promise<void> {
     console.log('  node --experimental-strip-types src/cli.ts sessions                - Son oturumları listeler, seçileni inceler');
     console.log('  node --experimental-strip-types src/cli.ts inspect <taskId>        - Tek bir görevin tüm olaylarını gösterir');
     console.log('  node --experimental-strip-types src/cli.ts mcp                     - Antigravity MCP sunucu modu');
-    console.log('  node --experimental-strip-types src/cli.ts doctor [--live]         - Kurulu ajanları ve (--live) gerçek yanıtı denetler');
+    console.log('  node --experimental-strip-types src/cli.ts chat [taskId|latest] [--follow] [--skin X] - Oturumu ajanın CLI görünümünde gösterir');
+    console.log('  node --experimental-strip-types src/cli.ts doctor [--live]        - Kurulu ajanları ve (--live) gerçek yanıtı denetler');
     console.log('  node --experimental-strip-types src/cli.ts serve [--port 8787]     - Olayları HTTP + SSE ile yayınlar');
   }
 }

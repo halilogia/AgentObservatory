@@ -7,7 +7,7 @@
 | # | Öneri | Neden | Kabul ölçütü |
 |---|---|---|---|
 | 1 | **`observatory serve`**: SQLite'tan okuyan HTTP + SSE uç noktası (`/events`, `/tasks`) | Tarayıcı SQLite okuyamaz; 3D sahne ve web panel olayları canlı alamıyor | `curl -N localhost:PORT/events` görev başlatınca satır akıtır |
-| 2 | **OpenCode izin bayrağını düzelt**: `--dangerously-skip-permissions` yerine `--auto` | Adaptör bugün OpenCode'un bilmediği bir bayrak gönderiyor | `dangerously_skip_permissions: true` ile OpenCode hata vermeden çalışır. Otomatik onay riskli olduğundan açık kullanıcı onayıyla |
+| 2 | ~~OpenCode izin bayrağı~~ **Yapıldı**: bilinmeyen bayrak kaldırıldı; `read-only` → `plan` ajanı, yazma → edit açık / bash kapalı (gerçek denemeyle doğrulandı) | Otomatik onay (`--auto`) bilinçli eklenmedi | OpenCode'da kabuk izni gerekirse ayrıca, açık onayla |
 | 3 | **Gerçek çıktıyla adaptör testleri (golden dosyalar)** | Bu wiki'nin yazıldığı gün üç adaptör gerçek CLI çıktısını okuyamıyordu; testler geçiyordu | `test/fixtures/<motor>.jsonl` gerçek çıktıdan alınır, adaptör olay listesi eşleşir |
 | 4 | **`observatory doctor`** komutu | Hangi program kurulu, giriş var mı, hangi model çalışıyor sorusunu tek komutla yanıtlar | Her motor için "var / yok / giriş yok / model reddedildi" |
 | 5 | **Model ve izin ayarı dosyası** (`~/.observatory/config.json`) | Varsayılan modeller şimdi kodda ve ortam değişkeninde; hesap değişince kod değişiyor | Motor başına model, sandbox, zaman aşımı buradan okunur |

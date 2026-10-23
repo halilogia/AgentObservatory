@@ -9,7 +9,8 @@
 | agy: `jetski: no output produced ... write_file permission` | Headless modda izin sorulamıyor | Yazma gerekiyorsa bilinçli olarak `dangerously_skip_permissions: true`; yoksa salt-okunur görev ver |
 | OpenCode: `spawn EINVAL` | `.cmd` dosyası Node'da doğrudan çalıştırılamaz | `opencode.exe` yolunu kullan (`OPENCODE_BIN` veya `paths.ts` adayı) |
 | OpenCode: `No active credentials for provider: codex` | Model verilmedi, varsayılan sağlayıcıda kimlik yok | `model: "opencode/big-pickle"` ver (artık varsayılan) |
-| OpenCode yazma modunda `unknown argument` | Adaptör `--dangerously-skip-permissions` gönderiyor, OpenCode bunu bilmiyor. Doğrusu `--auto` | Bilinen açık sorun: [Geliştirme önerileri](07-gelistirme-onerileri.md), madde 2 |
+| OpenCode dosya yazdı ama yanlış klasöre | `--dir` verilmeden yalnızca süreç cwd'sine güvenildi | Düzeltildi: adaptör `--dir <cwd>` verir |
+| OpenCode kabuk komutu çalıştıramıyor | Bilinçli: yazma kipinde `bash` kapalı | Komut gerekiyorsa o görevi Codex'e ver |
 | `Geçersiz veya bulunamayan çalışma dizini` | `cwd` yok | Var olan bir klasör ver |
 | Görev sonsuza dek `running` | Süreç takıldı | `cancel_task` veya `taskkill /pid <pid> /T /F`; varsayılan süre sınırı 1800 sn |
 | agy `-p` hiç dönmüyor | Bazı sürümlerde TTY yoksa takıldığı bildirildi ([google-antigravity/antigravity-cli#318](https://github.com/google-antigravity/antigravity-cli/issues/318)) | Bu makinede Observatory üzerinden denendiğinde çalıştı; takılırsa zaman aşımıyla iptal et |

@@ -9,7 +9,7 @@ Adaptör = bir ajanın komutunu kuran (`buildCommand`) ve çıktı satırların�
 | **claude** | `stream-json` | Claude hesabı varsayılanı | `dangerously_skip_permissions` | Oturum devam ettirme (`--resume`) |
 | **codex** | `exec --json` (JSONL) | `gpt-6-astra` | `sandbox: workspace-write` | `~/.codex/config.toml` varsayılanı (`gpt-6.1-sol`) ChatGPT hesabında 400 verdiği için adaptör modeli her zaman açıkça verir |
 | **agy** | `--output-format stream-json` | agy varsayılanı | Headless modda izin sorulamaz; yazma `--dangerously-skip-permissions` ister | Gerçek akış: `init`, `step_update`, `result` |
-| **opencode** | `run --format json` | `opencode/big-pickle` | Otomatik onay bayrağı `--auto` | `opencode.exe` doğrudan çağrılır (`.cmd` Node'da `spawn EINVAL` verir) |
+| **opencode** | `run --format json` | `opencode/big-pickle` | `read-only`: yerleşik `plan` ajanı (dosya değiştiremez). Diğer: dosya düzenleme açık, **kabuk ve web kapalı** (`OPENCODE_CONFIG_CONTENT`). `dangerously_skip_permissions` OpenCode'da karşılıksızdır, otomatik onay bayrağı eklenmez | `opencode.exe` doğrudan çağrılır (`.cmd` Node'da `spawn EINVAL` verir); `--dir` açıkça verilir |
 | **aider**, **freebuff** | adaptörde tanımlı | -- | -- | Bu wiki yazılırken canlı doğrulanmadı |
 
 ## Ajan programının bulunması
