@@ -141,11 +141,29 @@ export function formatToolCompleted(
 }
 
 // Tek bir olayı terminale basar (canlı akış ve oturum incelemesi ortak kullanır).
+interface ActiveMessageState {
+  taskId: string;
+  agent: string;
+  isOpen: boolean;
+}
+const activeMessage: ActiveMessageState = { taskId: '', agent: '', isOpen: false };
+
+export function closeMessageBlockIfNeeded(): void {
+  if (activeMessage.isOpen) {
+    console.log(paint('gray', '         └' + '─'.repeat(45)));
+    activeMessage.isOpen = false;
+  }
+}
+
 function printEvent(evt: TaskEvent, pendingTools: Map<string, ToolInfo>): void {
   const parentId = evt.data?.parentTaskId || evt.parentTaskId;
   const childPrefix = parentId ? paint('yellow', '   └─ ') : '';
   const time = childPrefix + paint('gray', hms(evt.timestamp));
   const agent = paint('cyan', `[${evt.agent.toUpperCase()}]`);
+
+  if (evt.type !== 'message.delta') {
+    closeMessageBlockIfNeeded();
+  }
 
   switch (evt.type) {
     case 'task.started':
@@ -183,11 +201,36 @@ function printEvent(evt: TaskEvent, pendingTools: Map<string, ToolInfo>): void {
 
     case 'message.delta': {
       const delta = evt.data.text || '';
+      if (!delta.trim()) break;
+
+      if (!activeMessage.isOpen || activeMessage.taskId !== evt.taskId) {
+        closeMessageBlockIfNeeded();
+        console.log(`${time} ${agent} ${paint('cyan', '💬 Yanıt:')}`);
+        activeMessage.taskId = evt.taskId;
+        activeMessage.agent = evt.agent;
+        activeMessage.isOpen = true;
+      }
+
       const lines = delta.split('\n');
       for (let i = 0; i < lines.length; i++) {
-        if (lines[i].trim()) {
-          console.log(`${time} ${agent} ${paint('white', lines[i])}`);
+        const raw = lines[i];
+        if (!raw.trim()) {
+          console.log(paint('gray', '         │'));
+          continue;
         }
+
+        let formatted = raw;
+        if (raw.startsWith('#')) {
+          formatted = paint('bold', paint('yellow', raw));
+        } else if (raw.trim().startsWith('- ') || raw.trim().startsWith('* ')) {
+          formatted = paint('white', raw);
+        } else if (raw.startsWith('```')) {
+          formatted = paint('gray', raw);
+        } else {
+          formatted = paint('white', raw);
+        }
+
+        console.log(`         ${paint('gray', '│')} ${formatted}`);
       }
       break;
     }
@@ -453,6 +496,7 @@ export function inspectTask(taskId: string): void {
 
     const pending = new Map<string, ToolInfo>();
     for (const evt of events) printEvent(evt, pending);
+    closeMessageBlockIfNeeded();
 
     if (task?.assistantText) {
       console.log(paint('cyan', '\n' + '═'.repeat(80)));
