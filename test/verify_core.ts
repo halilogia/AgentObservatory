@@ -39,7 +39,9 @@ assert.ok(!clCmd.args.includes('--effort') && !clCmd.args.includes('--model'), '
 const cxCmd = codex.buildCommand({ prompt: 'test prompt' });
 assert.ok(cxCmd.args.includes('workspace-write'), 'Codex varsayılan olarak workspace-write sandbox kullanmalı!');
 assert.ok(!cxCmd.args.includes('danger-full-access'), 'Codex asla varsayılan olarak danger-full-access olmamalı!');
-assert.ok(!cxCmd.args.includes('--model') && !cxCmd.args.includes('-c') && !cxCmd.args.includes('--dangerously-bypass-approvals-and-sandbox'), 'Belirtilmediğinde Codex --model/-c/bypass eklenmemeli!');
+assert.ok(!cxCmd.args.includes('-c') && !cxCmd.args.includes('--dangerously-bypass-approvals-and-sandbox'), 'Belirtilmediğinde Codex -c/bypass eklenmemeli!');
+const cxDefIdx = cxCmd.args.indexOf('--model');
+assert.ok(cxDefIdx >= 0 && cxCmd.args[cxDefIdx + 1] === 'gpt-6-astra', 'Belirtilmediğinde Codex ChatGPT hesabında desteklenen varsayılan modeli (gpt-6-astra) kullanmalı!');
 
 const cxModelCmd = codex.buildCommand({ prompt: 'hi', model: 'o3', effort: 'low', dangerouslySkipPermissions: true });
 const cxModelIdx = cxModelCmd.args.indexOf('--model');

@@ -54,6 +54,23 @@ export class AgyAdapter extends BaseAdapter {
       return;
     }
 
+    // Gerçek `agy --output-format stream-json` biçimi: {event:'init'|'step_update'|'result', ...}
+    if (event.event === 'init' && event.init) {
+      store.recordEvent(createEvent({ taskId, sessionId: event.conversation_id, agent: 'agy', tier: 1, type: 'task.started', data: { model: event.init.model } }));
+      return;
+    }
+    if (event.event === 'step_update' && event.step_update) {
+      const su = event.step_update;
+      if (su.step_type === 'agent_response' && su.text_delta) {
+        store.recordEvent(createEvent({ taskId, sessionId: su.conversation_id, agent: 'agy', tier: 1, type: 'message.delta', data: { text: su.text_delta } }));
+      }
+      return;
+    }
+    if (event.event === 'result' && event.result && event.result.usage) {
+      store.recordEvent(createEvent({ taskId, agent: 'agy', tier: 1, type: 'usage.updated', data: { usage: event.result.usage } }));
+      return;
+    }
+
     const etype = event.type;
     if (etype === 'PLANNER_RESPONSE' || etype === 'assistant') {
       if (event.content) {

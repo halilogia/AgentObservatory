@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 
-export function resolveBinary(name: 'claude' | 'codex' | 'agy'): string {
+export function resolveBinary(name: string): string {
   const envKey = `${name.toUpperCase()}_BIN`;
   if (process.env[envKey] && fs.existsSync(process.env[envKey]!)) {
     return process.env[envKey]!;
@@ -23,6 +23,23 @@ export function resolveBinary(name: 'claude' | 'codex' | 'agy'): string {
     agy: [
       path.join(home, 'AppData', 'Local', 'agy', 'bin', 'agy.exe'),
       'agy'
+    ],
+    opencode: [
+      path.join(home, '.opencode', 'bin', 'opencode.exe'),
+      // npm paketinin gerçek exe'si: .cmd kabuk istediği için Node spawn'ı EINVAL verir
+      path.join(home, 'AppData', 'Roaming', 'npm', 'node_modules', 'opencode-ai', 'bin', 'opencode.exe'),
+      path.join(home, 'AppData', 'Roaming', 'npm', 'opencode.cmd'),
+      'opencode'
+    ],
+    aider: [
+      path.join(home, 'AppData', 'Local', 'Programs', 'Python', 'Python311', 'Scripts', 'aider.exe'),
+      path.join(home, 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'Scripts', 'aider.exe'),
+      'aider'
+    ],
+    freebuff: [
+      path.join(home, 'AppData', 'Roaming', 'npm', 'freebuff.cmd'),
+      path.join(home, '.freebuff', 'bin', 'freebuff.exe'),
+      'freebuff'
     ]
   };
 

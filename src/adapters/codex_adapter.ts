@@ -28,9 +28,8 @@ export class CodexAdapter extends BaseAdapter {
       args = ['exec', prompt, '--json', '--skip-git-repo-check', '--sandbox', sandbox];
     }
 
-    if (opts.model) {
-      args.push('--model', opts.model);
-    }
+    // ~/.codex/config.toml varsayılanı (gpt-6.1-sol) ChatGPT hesabında 400 verir; açık model şart
+    args.push('--model', opts.model || process.env.CODEX_DEFAULT_MODEL || 'gpt-6-astra');
 
     if (opts.effort) {
       const effortVal = (opts.effort === 'xhigh' || opts.effort === 'max') ? 'high' : opts.effort;
