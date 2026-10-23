@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { EventStore } from '../src/core/event_store.ts';
 import { SqliteStore } from '../src/core/sqlite_store.ts';
 import { createEvent } from '../src/core/types.ts';
-import type { BaseAdapter } from '../src/adapters/base_adapter.ts';
+import { BaseAdapter } from '../src/adapters/base_adapter.ts';
 import { AgyAdapter } from '../src/adapters/agy_adapter.ts';
 import { CodexAdapter } from '../src/adapters/codex_adapter.ts';
 import { OpenCodeAdapter } from '../src/adapters/opencode_adapter.ts';
@@ -55,3 +55,26 @@ assert.ok(!ocWrite.args.includes('--auto') && !ocWrite.args.includes('--dangerou
 const ocPerm = JSON.parse(ocWrite.env.OPENCODE_CONFIG_CONTENT as string).permission;
 assert.deepStrictEqual(ocPerm, { edit: 'allow', bash: 'deny', webfetch: 'deny' }, 'yazma kipinde edit açık, bash/webfetch kapalı');
 console.log('✔ opencode izin politikası');
+
+// agent_runner başarısızlık yolları da errorKind taşımalı (süreç başlatılamadı => spawn_failed)
+import { AgentRunner } from '../src/runtime/agent_runner.ts';
+import { failureData } from '../src/core/failure.ts';
+assert.strictEqual(classifyFailure('spawn EINVAL').kind, 'spawn_failed');
+assert.strictEqual(failureData('429 rate limit').errorKind, 'rate_limit');
+class MissingBinaryAdapter extends BaseAdapter {
+  constructor() { super('agy'); }
+  buildCommand() { return { exe: 'C:\yok\olmayan\agy.exe', args: [], cwd: process.cwd(), env: process.env }; }
+  handleStdoutLine() {}
+}
+{
+  const store = new EventStore({ sqliteStore: new SqliteStore(':memory:') });
+  const runner = new AgentRunner(store);
+  runner.registerAdapter(new MissingBinaryAdapter());
+  await runner.runTask({ agent: 'agy', prompt: 'x', cwd: process.cwd(), timeoutSeconds: 10 } as any).catch(() => undefined);
+  const taskId = store.getRecentTasks(1)[0]?.taskId;
+  assert.ok(taskId, 'başarısız görev kaydedilmeli');
+  const failEvent = store.getEvents(taskId).find((e) => e.type === 'task.failed');
+  assert.ok(failEvent, 'task.failed olayı olmalı');
+  assert.strictEqual((failEvent!.data as any).errorKind, 'spawn_failed', 'runner yolu errorKind taşımalı');
+}
+console.log('✔ runner başarısızlık yolu: errorKind');

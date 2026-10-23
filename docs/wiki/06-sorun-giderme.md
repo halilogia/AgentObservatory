@@ -25,7 +25,10 @@ Bir görev `task.failed` olduğunda olayın `data.errorKind` alanı nedenini sö
 | `model_unsupported` | Hesap bu modeli desteklemiyor | Model değiştir |
 | `auth` | Giriş yok / kimlik bilgisi eksik | Kullanıcıdan giriş iste |
 | `permission` | Headless modda izin sorulamadı | Salt-okunur görev ver veya izni bilinçli aç |
+| `spawn_failed` | Süreç hiç başlamadı (`ENOENT`, `EINVAL`, `EACCES`): yol yanlış veya `.cmd` dosyası | `observatory doctor` ile yolu kontrol et |
 | `unknown` | Diğer | Hata metnine bak |
+
+`errorKind` iki yerde yazılır: ajan çıkış kodu sıfır dışı kapanınca (`base_adapter.ts`) ve süreç hiç başlayamayınca (`agent_runner.ts`). İptal (`task.cancelled`) ayrı bir olaydır.
 
 ## Test
 ```bash

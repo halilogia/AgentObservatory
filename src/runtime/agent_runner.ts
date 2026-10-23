@@ -3,6 +3,7 @@ import type { ChildProcess } from 'node:child_process';
 import readline from 'node:readline';
 import { EventStore, globalStore } from '../core/event_store.ts';
 import { createEvent } from '../core/types.ts';
+import { failureData } from '../core/failure.ts';
 import type { TaskSummary } from '../core/types.ts';
 import { BaseAdapter } from '../adapters/base_adapter.ts';
 import { ClaudeAdapter } from '../adapters/claude_adapter.ts';
@@ -103,7 +104,7 @@ export class AgentRunner {
           agent: adapter.name,
           tier: 1,
           type: 'task.failed',
-          data: { error: `Süreç başlatılamadı: ${err.message}` }
+          data: failureData(`Süreç başlatılamadı: ${err.message}`)
         }));
         return reject(err);
       }
@@ -184,7 +185,7 @@ export class AgentRunner {
             agent: adapter.name,
             tier: 1,
             type: 'task.failed',
-            data: { error: err.message }
+            data: failureData(err.message)
           }));
         }
         reject(err);
