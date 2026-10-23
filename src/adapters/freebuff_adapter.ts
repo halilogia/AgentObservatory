@@ -10,6 +10,12 @@ export class FreebuffAdapter extends BaseAdapter {
   }
 
   buildCommand(opts: CommandOptions): BuiltCommand {
+    // Gerçek denemeyle doğrulandı (freebuff 0.2.29, 2026-10-23): CLI yalnızca etkileşimlidir. Konumsal argüman olarak
+    // yalnızca `login` kabul eder; istem verilince "invalid for argument 'command'" hatası verir. Headless mod yok.
+    // Sessizce başarısız olmak yerine açık hata: işi başka motora ver.
+    if (process.env.OBSERVATORY_FREEBUFF_EXPERIMENTAL !== '1') {
+      throw new Error('Freebuff komut satırından istem verilen (headless) modu desteklemiyor; yalnızca etkileşimli çalışır. Başka bir motor kullan.');
+    }
     const { prompt, cwd, sessionId, dangerouslySkipPermissions = false } = opts;
     const validatedCwd = validateCwd(cwd);
 

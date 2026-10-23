@@ -70,7 +70,7 @@ Gerçek denemeyle doğrulandı (2026-10-23, MCP `start_task`, OpenCode):
 
 Kurallar: aynı anda en çok bir pencere (15 sn'lik kilit + çalışan işlem denetimi); testlerde (`NODE_ENV=test` veya `test/` altından çalışan betikler) ve Windows dışında kapalı. Eski pano için `OBSERVATORY_TUI_MODE=watch`.
 
-**Sınır:** Yalnızca Observatory üzerinden başlatılan görevler pencere açar. Terminalde doğrudan `codex` veya `opencode` yazıp başlattığın oturumu Observatory görmez (kanca ile izleme, Tier 2, henüz yapılmadı: [öneri 7](07-gelistirme-onerileri.md)).
+**Not:** Pencereyi yalnızca Observatory üzerinden başlatılan görevler açar. Terminalde elle başlattığın Claude / Codex / OpenCode oturumları ise MCP sunucusu açıkken arka planda kayıt dosyalarından okunur ve açık pencerede görünür: [sayfa 12](12-elle-baslatilan-oturumlar.md). Pencerenin kendisini elle açıp (`chat --follow`) bu oturumları izleyebilirsin.
 
 ## Veri nerede?
 `~/.observatory/observatory.sqlite` (WAL kipi). Silmek geçmişi sıfırlar; program yeniden oluşturur.

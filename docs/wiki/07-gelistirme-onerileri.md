@@ -2,7 +2,7 @@
 
 Öncelik sırasıyla. Her madde "neden" ve "kabul ölçütü" içerir.
 
-**Durum (2026-10-23):** 1 (`serve`), 3 (gerçek çıktı testleri), 4 (`doctor`) ve 6'nın hata türü kısmı (`errorKind: rate_limit`) yapıldı. Robotun dinlenme odasına gitmesi gibi sonuçlar tüketici tarafında yapılacak.
+**Durum (2026-10-24):** 1 (`serve`), 3 (gerçek çıktı testleri), 4 (`doctor`) ve 6'nın hata türü kısmı (`errorKind: rate_limit`) yapıldı. 7'nin amacı (elle başlatılan oturumları görme) kancayla değil, kayıt dosyalarını okuyarak çözüldü: [sayfa 12](12-elle-baslatilan-oturumlar.md); kanca (Tier 2) yapılmadı. Robotun dinlenme odasına gitmesi gibi sonuçlar tüketici tarafında yapılacak.
 
 | # | Öneri | Neden | Kabul ölçütü |
 |---|---|---|---|

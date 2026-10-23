@@ -560,4 +560,7 @@ export async function startMcpServer(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('[AgentObservatory] MCP Server initialized on stdio transport via official @modelcontextprotocol/sdk');
+
+  // Elle başlatılan Claude/Codex/OpenCode oturumlarını da kaydet (Tier 3, salt okunur); kapatmak için OBSERVATORY_NO_INGEST=1
+  try { const { startBackgroundIngest } = await import('../ingest/index.ts'); startBackgroundIngest(); } catch (err: any) { console.error('[AgentObservatory] ingest başlatılamadı: ' + err.message); }
 }

@@ -19,6 +19,7 @@ Benzetme: şantiyedeki kamera ve kayıt cihazı. Ustalar (ajanlar) işini yapar;
 | 9 | [Öğrenme kaynakları](09-ogrenme-kaynaklari.md) | Benzer GitHub projeleri |
 | 10 | [HTTP + SSE API](10-http-sse-api.md) | `observatory serve` uç noktaları, güvenlik, örnekler |
 | 11 | [Oturum görünümü](11-oturum-gorunumu.md) | `observatory chat`: oturumu ajanın CLI görünümünde izleme |
+| 12 | [Elle başlatılan oturumlar](12-elle-baslatilan-oturumlar.md) | `observatory ingest`: terminalde elle açılan oturumları da kaydetme |
 
 ## Tek cümlede
 Bir ajanı başlat → çıktısını satır satır oku → ortak "olay" biçimine çevir → SQLite dosyasına yaz → ekran, MCP ve 3D aynı dosyadan oku.
