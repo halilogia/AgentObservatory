@@ -21,6 +21,7 @@ Benzetme: şantiyedeki kamera ve kayıt cihazı. Ustalar (ajanlar) işini yapar;
 | 11 | [Oturum görünümü](11-oturum-gorunumu.md) | `observatory chat`: oturumu ajanın CLI görünümünde izleme |
 | 12 | [Elle başlatılan oturumlar](12-elle-baslatilan-oturumlar.md) | `observatory ingest`: terminalde elle açılan oturumları da kaydetme |
 | 13 | [Sohbet arayüzü (web)](13-sohbet-arayuzu-web.md) | `observatory web`: model seçicili sohbet sayfası (Claude Code, Codex, OpenCode, agy) |
+| 14 | [Telefondan erişim](14-telefondan-erisim.md) | Tailscale ile telefondan sohbet; CLI bilgisayarda çalışır; eşleştirme kodu, cihaz çerezi, yazma izni |
 
 ## Tek cümlede
 Bir ajanı başlat → çıktısını satır satır oku → ortak "olay" biçimine çevir → SQLite dosyasına yaz → ekran, MCP ve 3D aynı dosyadan oku.

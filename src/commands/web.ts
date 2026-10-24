@@ -14,6 +14,7 @@ import type { ExtraCtx } from './serve.ts';
 import { resolveBinary } from '../core/paths.ts';
 import { restoreTree, snapshotTree } from './web_snapshot.ts';
 import { readCapabilities } from './web_capabilities.ts';
+import { Remote } from './web_remote.ts';
 
 export interface ModelDef { id: string; label: string; sub: string }
 export interface EngineDef { id: 'claude' | 'codex' | 'agy' | 'opencode'; label: string; color: string; models: ModelDef[]; efforts: string[]; write: boolean; note?: string }
@@ -59,14 +60,22 @@ function listOpenCodeViaCli(): Promise<string> {
 const MAX_BODY = 256 * 1024;
 const MAX_ACTIVE = 4;
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'web');
-const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.webp': 'image/webp'
+};
 
 export interface RunnerLike {
   startTask(o: any): { taskId: string; promise: Promise<unknown> };
   cancelTask?(taskId: string, reason?: string): unknown;
 }
 
-export interface WebOptions { opencodeListing?: () => Promise<string>; port?: number; dbPath?: string; roots?: string[]; runner?: RunnerLike; token?: string; pollMs?: number; webDir?: string; configPath?: string; home?: string }
+export interface WebOptions { opencodeListing?: () => Promise<string>; port?: number; dbPath?: string; roots?: string[]; runner?: RunnerLike; token?: string; pollMs?: number; webDir?: string; configPath?: string; home?: string; detectTailscale?: () => Promise<import('./web_remote.ts').TsInfo> }
 
 // Ayar dosyası: { roots?: string[]; folders?: string[] }. `roots` = altındaki klasörler listelenir; `folders` = tek tek eklenmiş proje klasörleri.
 interface WebConfig { roots?: string[]; folders?: string[] }
@@ -142,6 +151,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
   const port = opts.port ?? 8788;
   const token = opts.token || crypto.randomBytes(24).toString('hex');
   const configPath = opts.configPath || CONFIG_PATH;
+  const remote = new Remote(configPath, opts.port ?? 8788, opts.detectTailscale);
   const cfg = readConfig(configPath);
   const roots = (opts.roots || defaultRoots(cfg)).filter((r) => fs.existsSync(r));
   // tek tek eklenmiş proje klasörleri (kökten bağımsız); açılışta olmayanlar atılır
@@ -198,21 +208,27 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
     return { installed, limitedUntil };
   }
 
+  if (remote.enabled) { void remote.refreshTs(true); }
+  const tsTimer = setInterval(() => { if (remote.enabled) void remote.refreshTs(); }, 60000); tsTimer.unref();
   const server = startServer({
     port, dbPath: opts.dbPath, pollMs: opts.pollMs,
-    allowedOrigins: [`http://127.0.0.1:${port}`, `http://localhost:${port}`],
+    allowedOrigins: () => [`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...remote.origins()],
+    allowedHosts: remote.hosts,
+    gate: (ctx) => remote.gate(ctx, () => fs.readFileSync(path.join(webDir, 'pair.html'), 'utf8'), () => fs.readFileSync(path.join(webDir, 'pair.js'), 'utf8')),
     extra: async ({ req, res, url, json, db }) => {
       const method = req.method || 'GET';
 
       // ---- statik arayüz ----
-      const staticFile = url.pathname === '/' ? 'index.html' : /^\/[\w-]+\.(html|js|css)$/.test(url.pathname) ? url.pathname.slice(1) : '';
+      const staticFile = url.pathname === '/' ? 'index.html' : /^\/[\w-]+\.(html|js|css|svg|png|ico|webp)$/.test(url.pathname) ? url.pathname.slice(1) : '';
       if (method === 'GET' && staticFile && fs.existsSync(path.join(webDir, staticFile))) {
         const file = staticFile;
-        let body = fs.readFileSync(path.join(webDir, file), 'utf8');
-        if (file === 'index.html') body = body.replace('__OBS_TOKEN__', token);
+        const ext = path.extname(file).toLowerCase();
+        const isBinary = ['.png', '.ico', '.webp'].includes(ext);
+        let body: string | Buffer = isBinary ? fs.readFileSync(path.join(webDir, file)) : fs.readFileSync(path.join(webDir, file), 'utf8');
+        if (typeof body === 'string' && file === 'index.html') body = body.replace('__OBS_TOKEN__', token);
         res.writeHead(200, {
-          'Content-Type': MIME[path.extname(file)] || 'text/plain',
-          'Cache-Control': 'no-store',
+          'Content-Type': MIME[ext] || 'text/plain',
+          'Cache-Control': file.endsWith('.html') ? 'no-store' : 'public, max-age=3600',
           'X-Frame-Options': 'DENY',
           'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
         });
@@ -227,6 +243,9 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         return true;
       }
 
+      // telefon eşleştirme durumu (yalnızca yerel sayfa; kapı uzak istekleri zaten reddeder)
+      if (method === 'GET' && url.pathname === '/api/remote') { await remote.manage(url.pathname, method, {}, json); return true; }
+
       if (method === 'GET' && url.pathname === '/api/config') {
         const same = (a: string, b: string) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
         const added = folders.filter((f) => fs.existsSync(f)).map((f) => ({ name: path.basename(f), path: f, custom: true }));
@@ -237,13 +256,15 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         if (hereOk && !projects.some((p) => path.resolve(p.path).toLowerCase() === here.toLowerCase())) projects.unshift({ name: path.basename(here), path: here });
         json(200, {
           engines: (await enginesNow()).map((e) => ({ ...e, ...engineStatus(db, e) })),
-          roots, projects, defaultCwd: hereOk ? here : projects[0]?.path || roots[0] || os.homedir(), maxActive: MAX_ACTIVE
+          roots, projects, defaultCwd: hereOk ? here : projects[0]?.path || roots[0] || os.homedir(), maxActive: MAX_ACTIVE,
+          // uzak (telefon) oturumu: yerel yönetim düğmeleri gizlenir, yazma izni cihaza bağlıdır
+          remote: !!remote.deviceOf(req), writeAllowed: remote.deviceOf(req)?.write ?? true
         });
         return true;
       }
 
       // ---- yazan uçlar: jeton + aynı köken ----
-      if (method === 'POST' && ['/api/run', '/api/cancel', '/api/folders', '/api/folders/remove', '/api/snapshot', '/api/restore'].includes(url.pathname)) {
+      if (method === 'POST' && ['/api/run', '/api/cancel', '/api/folders', '/api/folders/remove', '/api/snapshot', '/api/restore', '/api/remote', '/api/pair/new', '/api/devices/write', '/api/devices/remove'].includes(url.pathname)) {
         // hata yanıtları `code` taşır: arayüz bunu seçili dile çevirir; `error` Türkçe yedek metindir
         const fail = (status: number, code: string, error: string, params: Record<string, unknown> = {}) => { json(status, { code, error, params }); return true; };
         const site = req.headers['sec-fetch-site'];
@@ -252,6 +273,11 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         if (!String(req.headers['content-type'] || '').startsWith('application/json')) return fail(415, 'bad_content_type', 'application/json gerekli');
         let b: any;
         try { b = await readJson(req); } catch (e: any) { return fail(e.status || 400, e.status === 413 ? 'too_large' : 'bad_json', e.message); }
+
+        if (url.pathname === '/api/remote' || url.pathname === '/api/pair/new' || url.pathname.startsWith('/api/devices/')) {
+          await remote.manage(url.pathname, method, b, json);
+          return true;
+        }
 
         if (url.pathname === '/api/folders' || url.pathname === '/api/folders/remove') {
           const raw = typeof b.path === 'string' ? b.path.trim().replace(/^"(.*)"$/, '$1') : '';
@@ -300,6 +326,8 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         const effort = b.effort === undefined || b.effort === '' ? undefined : String(b.effort);
         if (effort !== undefined && !engine.efforts.includes(effort)) return fail(400, 'bad_effort', 'bu motor bu çabayı desteklemiyor');
         const write = b.mode === 'write';
+        const dev = remote.deviceOf(req);
+        if (dev && write && !dev.write) return fail(403, 'remote_write_forbidden', 'bu cihazdan yazma izni kapalı');
         if (write && !engine.write) return fail(400, 'no_write', `${engine.label} yazma kipini desteklemiyor`, { engine: engine.label });
         const cwd = typeof b.cwd === 'string' && b.cwd ? b.cwd : roots[0] || folders[0];
         if (!cwd || !fs.existsSync(cwd) || !allowedDir(cwd)) return fail(400, 'cwd_forbidden', 'çalışma klasörü izinli köklerin dışında');

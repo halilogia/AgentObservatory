@@ -9,6 +9,7 @@
     chev: svg('<path d="M4 6l4 4 4-4"/>'),
     caps: svg('<path d="M8 2.5l1.3 3.2 3.2 1.3-3.2 1.3L8 11.5 6.7 8.3 3.5 7l3.2-1.3z"/><path d="M12.5 11v3M11 12.5h3"/>'),
     think: svg('<path d="M8 2.5a4 4 0 00-2 7.4V11h4V9.9A4 4 0 008 2.5z"/><path d="M6.5 13.5h3"/>'),
+    phone: svg('<rect x="5" y="1.8" width="6" height="12.4" rx="1.6"/><path d="M7.2 12.2h1.6"/>'),
     undo: svg('<path d="M6 3.5L3 6.5l3 3"/><path d="M3 6.5h6.5a3.5 3.5 0 010 7H6"/>'),
     check: svg('<path d="M3.5 8.5l3 3 6-7"/>'),
     folder: svg('<path d="M2 4.5A1.5 1.5 0 013.5 3h2.3l1.4 1.5h5.3A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/>'),
@@ -207,11 +208,54 @@
     box.append(el('p', 'ctitle', t('caps.title')), tabs, search, list, x);
     document.addEventListener('keydown', onKey, true); ov.appendChild(box); document.body.appendChild(ov); paint(); search.focus();
   }
+  /** Telefondan erişim (yalnızca yerel sayfa): Tailscale durumu, açma/kapama, eşleştirme kodu, cihaz listesi ve yazma izni */
+  async function openPhone() {
+    if (document.querySelector('.dlg')) return;
+    let s; try { s = await api('/api/remote'); } catch (err) { $('#foot').textContent = err.info ? apiMsg(err) : err.message; return; }
+    let shown = null, msg = '';
+    const ov = el('div', 'dlg'); const box = el('div', 'dlgbox caps'); box.setAttribute('role', 'dialog');
+    const body = el('div', 'clist');
+    const close = () => { ov.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } };
+    const btn = (label, fn, cls) => { const b = el('button', cls || '', label); b.type = 'button'; b.onclick = async () => { try { msg = ''; await fn(); } catch (err) { msg = err.info ? apiMsg(err) : err.message; } paint(); }; return b; };
+    const reload = async () => { s = await api('/api/remote'); };
+    const copyBtn = (text) => { const b = btn(t('phone.copy'), async () => { try { await navigator.clipboard.writeText(text); } catch { /* pano kapalı */ } }); return b; };
+    function paint() {
+      body.replaceChildren();
+      body.appendChild(el('p', 'cdesc', t('phone.intro')));
+      const ts = s.tailscale || {};
+      if (!ts.installed) body.appendChild(el('p', 'adderr', t('phone.noTs')));
+      else if (ts.state !== 'Running') body.appendChild(el('p', 'adderr', t('phone.tsDown', { state: ts.state })));
+      body.appendChild(btn(s.enabled ? t('phone.turnOff') : t('phone.turnOn'), async () => { await api('/api/remote', { enabled: !s.enabled }); shown = null; await reload(); }, s.enabled ? '' : 'primary'));
+      if (s.enabled) {
+        body.appendChild(el('div', 'hgroup', t('phone.step1')));
+        const c1 = el('div', 'pcmd'); c1.append(el('code', '', s.serveCommand), copyBtn(s.serveCommand)); body.appendChild(c1);
+        body.appendChild(el('div', 'hgroup', t('phone.step2')));
+        if (s.url) { const c2 = el('div', 'pcmd'); c2.append(el('code', '', s.url), copyBtn(s.url)); body.appendChild(c2); } else body.appendChild(el('p', 'adderr', t('api.no_host')));
+        body.appendChild(el('div', 'hgroup', t('phone.step3')));
+        if (shown) { body.appendChild(el('div', 'pcode', shown.code)); body.appendChild(el('p', 'cdesc', t('phone.codeNote'))); }
+        body.appendChild(btn(t('phone.newCode'), async () => { shown = await api('/api/pair/new', {}); await reload(); }));
+        body.appendChild(el('div', 'hgroup', t('phone.devices') + ' · ' + s.devices.length));
+        if (!s.devices.length) body.appendChild(el('div', 'cnone', t('phone.none')));
+        s.devices.forEach((d) => {
+          const row = el('div', 'crow drow'); const info = el('div', ''); info.append(el('div', 'cname', d.name), el('div', 'cdesc', t('phone.last', { when: d.lastSeen ? when(d.lastSeen) : '-' })));
+          const wr = btn(t('phone.write') + ': ' + (d.write ? t('phone.on') : t('phone.off')), async () => { await api('/api/devices/write', { id: d.id, write: !d.write }); await reload(); }, d.write ? 'on' : '');
+          const rm = btn(t('phone.remove'), async () => { await api('/api/devices/remove', { id: d.id }); await reload(); });
+          row.append(info, wr, rm); body.appendChild(row);
+        });
+      }
+      if (msg) body.appendChild(el('p', 'adderr', msg));
+    }
+    const x = el('button', '', t('caps.close')); x.type = 'button'; x.onclick = close;
+    ov.onclick = (ev) => { if (ev.target === ov) close(); };
+    box.append(el('p', 'ctitle', t('phone.title')), body, x);
+    document.addEventListener('keydown', onKey, true); ov.appendChild(box); document.body.appendChild(ov); paint();
+  }
   /** sohbeti seçilen kullanıcı mesajından önceki haline geri sarar; Yazabilir kipinde değişen dosyalar da geri alınabilir */
   async function rewind(i) {
     if (st.running || !chat) return;
     const removed = chat.messages.slice(i);
-    const snapRec = removed.find((m) => m.r === 'b' && m.snap);
+    const snapRec = st.cfg.remote ? undefined : removed.find((m) => m.r === 'b' && m.snap); // dosya geri alma yalnızca yerel sayfada
     let files = false;
     if (snapRec) {
       const c = await ask(t('rewind.askFiles'), [t('rewind.both'), t('rewind.chatOnly'), t('rewind.cancel')]);
@@ -353,10 +397,10 @@
     const view = createBot(rec, true);
     st.running = 'pending'; stick = true; refreshSend(); persist();
     try {
-      if (e.write && st.mode === 'write') { // dosya geri alma için: görev başlamadan önce klasörün anlık görüntüsü (git deposu değilse yok)
+      if (canWrite(e) && st.mode === 'write' && !st.cfg.remote) { // dosya geri alma için: görev başlamadan önce klasörün anlık görüntüsü (git deposu değilse yok)
         try { rec.snap = (await api('/api/snapshot', { cwd: st.cwd })).snap || null; rec.snapCwd = st.cwd; } catch { rec.snap = null; }
       }
-      const r = await api('/api/run', { engine: e.id, model: m.id, effort: e.efforts.length ? st.effort : undefined, prompt: sendText, mode: e.write ? st.mode : 'read', cwd: st.cwd, sessionId: resume });
+      const r = await api('/api/run', { engine: e.id, model: m.id, effort: e.efforts.length ? st.effort : undefined, prompt: sendText, mode: canWrite(e) ? st.mode : 'read', cwd: st.cwd, sessionId: resume });
       rec.taskId = r.taskId; views.set(r.taskId, view); st.running = r.taskId;
       const buffered = early.filter((x) => x.taskId === r.taskId); early = early.filter((x) => x.taskId !== r.taskId);
       buffered.forEach(onEvent); refreshSend();
@@ -385,6 +429,8 @@
     b.disabled = running ? st.running === 'pending' : !$('#prompt').value.trim();
     $('#newChat').disabled = running;
   }
+  // telefondan (uzak oturum) yazma izni cihaza bağlıdır; sunucu da ayrıca denetler
+  const canWrite = (e) => e.write && (!st.cfg.remote || st.cfg.writeAllowed);
   const shortModel = (m) => m.label.replace(/^Claude /, '');
   const effortLabel = (x) => t('effort.' + x);
   function refreshControls() {
@@ -398,11 +444,11 @@
     $('#projectLabel').textContent = st.cwd.split(/[\\/]/).filter(Boolean).pop() || t('project.label');
     $('#projectBtn').title = st.cwd;
     document.querySelectorAll('.chev').forEach((c) => { c.innerHTML = ICON.chev; });
-    const mb = $('#modeBtn'); const write = st.mode === 'write' && e.write;
-    mb.disabled = !e.write; mb.classList.toggle('on', write);
+    const mb = $('#modeBtn'); const cw = canWrite(e); const write = st.mode === 'write' && cw;
+    mb.disabled = !cw; mb.classList.toggle('on', write);
     $('#modeIco').innerHTML = write ? ICON.pen : ICON.lock;
     $('#modeLabel').textContent = write ? t('mode.write') : t('mode.read');
-    mb.title = !e.write ? t('mode.noWrite', { engine: e.label }) : write ? t('mode.writeTitle') : t('mode.readTitle');
+    mb.title = !e.write ? t('mode.noWrite', { engine: e.label }) : !cw ? t('remote.noWrite') : write ? t('mode.writeTitle') : t('mode.readTitle');
     refreshFoot();
   }
   function refreshFoot() {
@@ -480,6 +526,7 @@
       }
       menu.appendChild(b);
     });
+    if (st.cfg.remote) { menu.hidden = false; placeMenu(menu); return; } // klasör ekleme yalnızca yerel sayfada
     const add = el('button', 'item add'); add.type = 'button';
     const ai = el('span', 'ico'); ai.innerHTML = ICON.plus; add.append(ai, el('span', 't', t('project.add')));
     add.onclick = (ev) => {
@@ -499,7 +546,7 @@
     menu.appendChild(add);
     menu.hidden = false; placeMenu(menu);
   }
-  function toggleMode() { if (engineById(st.engine).write) { st.mode = st.mode === 'write' ? 'read' : 'write'; refreshControls(); } }
+  function toggleMode() { if (canWrite(engineById(st.engine))) { st.mode = st.mode === 'write' ? 'read' : 'write'; refreshControls(); } }
 
   // ---------- / komutları (adlar dile göre: /yeni veya /new) ----------
   const COMMANDS = [
@@ -545,6 +592,7 @@
   /** dil değişince arayüzün tamamı yeniden çevrilir */
   function applyLanguage() {
     I18N.applyDom(); document.title = t('app.title');
+    $('#phoneBtn').title = t('phone.btn'); $('#phoneBtn').setAttribute('aria-label', t('phone.btn'));
     $('#capsBtn').title = t('caps.btn'); $('#capsBtn').setAttribute('aria-label', t('caps.btn')); $('#langBtn').textContent = t('lang.switchTo'); $('#langBtn').title = t('lang.switchTitle');
     refreshControls(); refreshSend(); refreshTheme(); renderEngineStatus(); renderHistory(); closeMenus();
     if (!st.running) renderThread();
@@ -577,6 +625,7 @@
     st.cwd = st.cfg.projects.some((p) => p.path === saved.cwd) ? saved.cwd : st.cfg.defaultCwd;
     if (!narrow() && lsGet('obs-nav') === 'closed') $('#layout').classList.add('nav-closed');
     $('#capsIco').innerHTML = ICON.caps; $('#capsBtn').onclick = openCaps;
+    $('#phoneIco').innerHTML = ICON.phone; $('#phoneBtn').onclick = openPhone; $('#phoneBtn').hidden = !!st.cfg.remote;
     $('#newIco').innerHTML = ICON.plus; $('#sideIco').innerHTML = ICON.panel;
     applyLanguage();
     I18N.on('languageChanged', applyLanguage);

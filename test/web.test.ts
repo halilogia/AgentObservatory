@@ -52,7 +52,11 @@ try {
   assert.ok(!/https?:\/\//.test(html), 'sayfa dış kaynak yüklememeli');
   assert.ok((page.headers.get('content-security-policy') || '').includes("script-src 'self'"), 'sıkı CSP');
   assert.strictEqual(page.headers.get('x-frame-options'), 'DENY');
-  for (const f of ['md.js', 'store.js', 'i18n.js', 'lang-tr.js', 'lang-en.js', 'theme.js']) assert.strictEqual((await fetch(base + '/' + f)).status, 200, f + ' sunulmalı');
+  for (const f of ['md.js', 'store.js', 'i18n.js', 'lang-tr.js', 'lang-en.js', 'theme.js', 'favicon.svg', 'favicon.png']) assert.strictEqual((await fetch(base + '/' + f)).status, 200, f + ' sunulmalı');
+  const svgFavicon = await fetch(base + '/favicon.svg');
+  assert.strictEqual(svgFavicon.headers.get('content-type'), 'image/svg+xml');
+  const pngFavicon = await fetch(base + '/favicon.png');
+  assert.strictEqual(pngFavicon.headers.get('content-type'), 'image/png');
   assert.strictEqual((await fetch(base + '/nope.js')).status, 404, 'olmayan dosya 404');
   assert.strictEqual((await fetch(base + '/..%2fpackage.json')).status, 404, 'dizin dışına çıkılamaz');
   const js = await fetch(base + '/app.js');

@@ -146,12 +146,20 @@ main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: 
 .foot { font-size: 12px; color: var(--faint); text-align: center; min-height: 18px; }
 
 @media (max-width: 860px) {
-  .layout, .layout.nav-closed { grid-template-columns: 0 minmax(0, 1fr); }
+  .layout, .layout.nav-closed { grid-template-columns: minmax(0, 1fr); } /* .side sabit konumlu: ızgarada tek sütun kalır, yoksa içerik 0 genişlikli sütuna düşer */
   .side { position: fixed; inset: 0 auto 0 0; width: min(300px, 86vw); z-index: 20; visibility: hidden; transform: translateX(-100%); transition: transform .18s ease; box-shadow: var(--shadow); }
   .layout.nav-open .side { visibility: visible; transform: none; }
   .layout.nav-open .scrim { display: block; position: fixed; inset: 0; z-index: 10; background: rgba(0, 0, 0, .4); }
   .empty h1 { font-size: 26px; }
   .pill { max-width: 130px; }
+  /* telefon: alt çubuk iki satıra sarılır (klasör + kip üstte; çaba, model, gönder altta); üst çubuk sıkışmaz */
+  .bar { flex-wrap: wrap; row-gap: 8px; }
+  .left, .right { flex-wrap: wrap; }
+  .right { margin-left: auto; }
+  .pill span:not(.ico):not(.dot) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .top { gap: 6px; padding: 10px 10px; }
+  .brand { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-size: 14px; }
+  .cup { margin-right: 2px; }
 }
 .cup { width: 42px; height: 30px; image-rendering: pixelated; margin-right: 8px; }
 :root:not([data-theme="dark"]) .cup { filter: drop-shadow(0 0 .5px rgba(0, 0, 0, .55)) drop-shadow(0 0 1px rgba(0, 0, 0, .25)); }
@@ -189,3 +197,18 @@ main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: 
 .cnone { color: var(--faint); font-size: 13px; padding: 14px 4px; }
 .menu.eff { right: 0; left: auto; width: min(200px, 100%); }
 .item.plain { grid-template-columns: minmax(0, 1fr) 18px; }
+.pairbox { max-width: 360px; margin: 18vh auto 0; padding: 0 20px; display: flex; flex-direction: column; gap: 12px; }
+.pairbox h1 { font-size: 24px; margin: 0; }
+.pairbox p { margin: 0; color: var(--muted); font-size: 14px; }
+.pairbox input { font: inherit; font-size: 22px; letter-spacing: .12em; text-align: center; text-transform: uppercase; padding: 12px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); color: var(--text); outline: none; }
+.pairbox input:focus { border-color: var(--faint); }
+.pairbox button { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text); font: inherit; border-radius: 12px; padding: 12px; cursor: pointer; }
+.pairbox button:disabled { opacity: .5; }
+.pairbox .adderr { color: var(--err); min-height: 18px; }
+.pcmd { display: flex; gap: 8px; align-items: center; }
+.pcmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font: 12.5px/1.4 ui-monospace, Consolas, monospace; background: var(--sunken); border-radius: 8px; padding: 8px 10px; }
+.pcode { font: 600 30px/1.3 ui-monospace, Consolas, monospace; letter-spacing: .14em; text-align: center; padding: 10px 0 2px; }
+.drow { display: flex; align-items: center; gap: 8px; } .drow > div { flex: 1; min-width: 0; }
+.dlgbox .clist button { margin-top: 6px; }
+.drow button { margin-top: 0 !important; font-size: 12.5px; padding: 6px 9px; } .drow button.on { border-color: var(--text); }
+.pairbox input, .pairbox button { width: 100%; box-sizing: border-box; }

@@ -26,7 +26,10 @@
 ### Yetenekler, telefon, yerel yol kapısı (2026-10-24)
   - [x] Yetenekler penceresi: her CLI'nin skill / ajan / komut / MCP / eklenti adlarını göster (salt okunur; yalnızca adlar ve açıklamalar, gizli değerler okunmaz).
   - [x] Düşünme çabasını model seçiciden ayır (kendi düğmesi, daha kolay arayüz).
-  - [/] Telefondan erişim (mesaj gönderme): Tailscale + tek kullanımlık eşleştirme kodu/QR, cihaz çerezi, cihaz listesi/iptal, telefondan yazma izni varsayılan kapalı. CLI'lar bilgisayarda çalışır, telefon yalnızca ekran/klavye.
+  - [x] Telefondan erişim (mesaj gönderme): sunucu + arayüz + testler tamam (Tailscale, tek kullanımlık kod, cihaz çerezi, hesap kilidi, yerel-özel uçlar, yazma izni varsayılan kapalı). Wiki 14. CLI'lar bilgisayarda çalışır, telefon yalnızca ekran/klavye.
+  - [x] Telefon düzeni: dar ekranda içerik 0 genişlikli sütuna düşüyordu (ızgara hatası), alt çubuk taşıyordu; ikisi düzeltildi.
+  - [ ] Gerçek Tailscale + telefonla uçtan uca deneme (kullanıcı: Tailscale girişi, `tailscale serve --bg 8788`, HTTPS izni).
+  - [ ] Eşleştirme için QR kod (bağımlılıksız üretici; şimdilik kod + adres metni).
   - [x] GravityGuard: commit'e yerel yol girmesini engelleyen kapı (varsayılan: engelle, izin listesi + tek seferlik kaçış). GravityGuard reposunda (`e6e58c5`) ve `~/.git-template` şablonunda hazır; testler geçti.
   - [ ] Yerel yol kapısını mevcut 25 deponun `.git/hooks` klasörüne dağıtmak: toplu kanca değişikliği otomatik izne takıldı, kullanıcı çalıştıracak (`python ~/.git-template/rollout_path_gate.py --apply`).
   - [x] AgentObservatory test verilerindeki yerel yollar `Kullanici` ile değiştirildi (eski commit geçmişinde duruyor; geçmişi yeniden yazmak kullanıcı kararı).

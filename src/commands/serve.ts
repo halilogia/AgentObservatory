@@ -22,7 +22,10 @@ function parseRow(row: any) {
 export interface ExtraCtx { req: http.IncomingMessage; res: http.ServerResponse; url: URL; json: (code: number, body: unknown) => void; db: DatabaseSync }
 export type ExtraHandler = (ctx: ExtraCtx) => boolean | Promise<boolean>;
 
-export function startServer(opts: { port?: number; dbPath?: string; pollMs?: number; allowedOrigins?: string[]; extra?: ExtraHandler } = {}): http.Server {
+/** Uzaktan erişim (ör. Tailscale): yerel olmayan Host yalnızca açıkça izin verilenlerse kabul edilir; `gate` her istekte (Host/Origin sonrası) kimlik denetimi yapar. */
+export type GateHandler = (ctx: ExtraCtx & { remote: boolean }) => boolean | Promise<boolean>;
+
+export function startServer(opts: { port?: number; dbPath?: string; pollMs?: number; allowedOrigins?: string[] | (() => string[]); extra?: ExtraHandler; allowedHosts?: () => string[]; gate?: GateHandler } = {}): http.Server {
   const dbPath = opts.dbPath || process.env.OBSERVATORY_DB || path.join(os.homedir(), '.observatory', 'observatory.sqlite');
   if (!fs.existsSync(dbPath)) throw new Error(`Veritabanı yok: ${dbPath} (önce bir görev çalıştır)`);
   const db = new DatabaseSync(dbPath);
@@ -53,11 +56,13 @@ export function startServer(opts: { port?: number; dbPath?: string; pollMs?: num
 
   const server = http.createServer(async (req, res) => {
     const host = String(req.headers.host || '');
-    if (!LOCAL_HOST_RE.test(host)) { res.writeHead(403).end('forbidden host'); return; }
+    const remote = !LOCAL_HOST_RE.test(host);
+    if (remote && !(opts.allowedHosts?.() || []).includes(host.toLowerCase())) { res.writeHead(403).end('forbidden host'); return; }
     const origin = String(req.headers.origin || '');
     if (origin) {
       // allowedOrigins verilirse (web arayüzü) yalnızca o kökenler; aksi halde herhangi bir yerel köken (salt okunur API)
-      const ok = opts.allowedOrigins ? opts.allowedOrigins.includes(origin) : LOCAL_ORIGIN_RE.test(origin);
+      const list = typeof opts.allowedOrigins === 'function' ? opts.allowedOrigins() : opts.allowedOrigins;
+      const ok = list ? list.includes(origin) : LOCAL_ORIGIN_RE.test(origin);
       if (!ok) { res.writeHead(403).end('forbidden origin'); return; }
       if (!opts.allowedOrigins) {
         res.setHeader('Access-Control-Allow-Origin', origin);
@@ -70,6 +75,7 @@ export function startServer(opts: { port?: number; dbPath?: string; pollMs?: num
       res.end(JSON.stringify(body));
     };
     try {
+      if (opts.gate && (await opts.gate({ req, res, url, json, db, remote }))) return;
       if (opts.extra && (await opts.extra({ req, res, url, json, db }))) return;
       if (url.pathname === '/health') return json(200, { ok: true, db: dbPath, lastSeq: Number((q.maxSeq.get() as any).m) });
       if (url.pathname === '/tasks') {
