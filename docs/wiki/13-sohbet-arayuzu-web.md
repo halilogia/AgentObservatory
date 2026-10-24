@@ -8,7 +8,7 @@ node bin/observatory.js web --port 9000
 ```
 
 ## Ne var?
-- **Model seçici** (sağ alt): motor + model listesi, her satırda renkli nokta, ad ve alt açıklama, seçili olanda onay işareti. **Düşünme çabası** (Düşük / Orta / Yüksek / X-yüksek / Maks) model seçiciden ayrıdır: yanındaki kendi düğmesinden seçilir; çabası olmayan motorda (OpenCode) düğme görünmez. Kurulu olmayan veya kotası dolu motor soluk görünür ve seçilemez.
+- **Model seçici** (sağ alt): motor + model listesi, her satırda renkli nokta, ad ve alt açıklama, seçili olanda onay işareti. **Düşünme çabası** model seçiciden ayrıdır: yanında, motor renginde, soldan sağa dolan çubuklardan oluşan bir ölçektir (çubuğa tıkla ya da ok tuşları; üstteki çubuk nabız atar, görev sürerken çubuklar dalgalanır). **Çubuk sayısı motora göre değişir** (her CLI'nin gerçek seviyeleri): Claude Code 5 (low, medium, high, xhigh, max), Codex 6 (+ ultra), Antigravity 2 (low, high), OpenCode'da çaba olmadığı için ölçek hiç görünmez. Kurulu olmayan veya kotası dolu motor soluk görünür ve seçilemez.
 - **Klasör seçici** (sol alt): ajanın çalışacağı proje. Liste izinli köklerin altındaki projelerdir, en son değişen önce.
   - **Klasör ekle** (listenin altı): tam yolu yaz, Enter. Klasör kökten bağımsız tek başına proje olarak eklenir, `~/.agent-observatory/web.json` içinde saklanır; eklenenin üstüne gelince çıkan çarpı listeden çıkarır (diskteki klasöre dokunulmaz). Sürücü kökü, kullanıcı klasörü ve üstleri reddedilir.
   - **Kökler** (altındaki klasörler listelenir): `--root <klasör>` (tekrarlanabilir) > `OBSERVATORY_WEB_ROOTS` > ayar dosyasındaki `roots` > **başlatılan klasörün üstü** (yanındaki projeler). GitHub'dan indirip kuran biri için varsayılan bu: `git clone` ettiği klasörün yanındaki projeler görünür, başkasını "Klasör ekle" ile ekler.
@@ -36,7 +36,7 @@ node bin/observatory.js web --port 9000
 | Motor | Modeller | Çaba | Yazma | Not |
 |---|---|---|---|---|
 | Claude Code | Sonnet 5.5, Opus 5.5, Haiku 5.5 | 5 kademe (`--effort`) | yok | Headless modda izin sorulamaz: yalnızca okuma ve yanıt |
-| Codex | GPT-6 Astra | 5 kademe (en yüksek ikisi `high`'a iner) | `workspace-write` | ChatGPT girişi; kotası dolunca rozet "limit ... kadar" gösterir |
+| Codex | GPT-6 Astra | 6 kademe: low, medium, high, xhigh, max, ultra (hepsi doğrudan geçer; xhigh ve ultra 2026-10-24'te canlı denendi) | `workspace-write` | ChatGPT girişi; kotası dolunca rozet "limit ... kadar" gösterir |
 | OpenCode | **Ücretsiz modeller `opencode models` CLI çıktısından canlı okunur** (10 dk önbellek). 2026-10-24 listesi, hepsi tek tek denendi: Big Pickle, Beam, Deepseek V4.1 Flash, Flint 40B, GLM 5.3 Flash, Mimo V2.6 Flash, Nemotron 3 Ultra, Nemotron 3.5 Lightning, Nemotron 3.5 Super VL | yok | düzenleme açık, kabuk kapalı | OpenCode tarafında liste değişince menü kendiliğinden güncellenir; CLI okunamazsa Big Pickle yedek olarak kalır |
 | Antigravity (agy) | Gemini 3.8 Flash | Düşük / Yüksek (modelin `-low` / `-high` sürümü) | yok | Resmî `agy.exe`; Antigravity şartları nedeniyle düşük hacimde kullan |
 

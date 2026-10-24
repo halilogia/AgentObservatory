@@ -195,8 +195,6 @@ main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: 
 .cbadge { margin-left: 8px; font-size: 11px; font-weight: 500; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; }
 .cdesc { font-size: 13px; color: var(--muted); margin-top: 2px; }
 .cnone { color: var(--faint); font-size: 13px; padding: 14px 4px; }
-.menu.eff { right: 0; left: auto; width: min(200px, 100%); }
-.item.plain { grid-template-columns: minmax(0, 1fr) 18px; }
 .pairbox { max-width: 360px; margin: 18vh auto 0; padding: 0 20px; display: flex; flex-direction: column; gap: 12px; }
 .pairbox h1 { font-size: 24px; margin: 0; }
 .pairbox p { margin: 0; color: var(--muted); font-size: 14px; }
@@ -212,3 +210,19 @@ main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: 
 .dlgbox .clist button { margin-top: 6px; }
 .drow button { margin-top: 0 !important; font-size: 12.5px; padding: 6px 9px; } .drow button.on { border-color: var(--text); }
 .pairbox input, .pairbox button { width: 100%; box-sizing: border-box; }
+/* düşünme çubuğu: motor renginde, soldan sağa dolan, üstteki çubuk nabız atar; görev sürerken dalga */
+.think { display: inline-flex; align-items: flex-end; gap: 2px; height: 32px; padding: 0 6px; border: 1px solid var(--border); border-radius: 999px; --c: var(--text); }
+.think[hidden] { display: none; }
+.tb { width: 14px; height: 100%; padding: 0 0 7px; border: 0; background: transparent; display: flex; align-items: flex-end; justify-content: center; cursor: pointer; }
+.tb i { display: block; width: 5px; height: calc(8px + var(--i) * 15px / (var(--n) - 1)); border-radius: 3px; background: var(--border-strong); transform-origin: bottom; transition: background-color .28s ease, transform .28s ease, box-shadow .28s ease; transition-delay: calc(var(--i) * 28ms); }
+.tb:hover i { transform: scaleY(1.18); }
+.tb.on i { background: var(--c); }
+.tb.top i { box-shadow: 0 0 8px var(--c); animation: thinkpulse 2.2s ease-in-out infinite; }
+.tb:focus-visible { outline: 2px solid var(--c); outline-offset: -2px; border-radius: 6px; }
+.tl { align-self: center; font-size: 12px; color: var(--muted); padding: 0 4px 0 6px; min-width: 3.4em; white-space: nowrap; }
+.think.run .tb.on i { animation: thinkwave 1s ease-in-out infinite; animation-delay: calc(var(--i) * 90ms); }
+@keyframes thinkpulse { 0%, 100% { box-shadow: 0 0 3px var(--c); } 50% { box-shadow: 0 0 10px var(--c); } }
+@keyframes thinkwave { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.55); } }
+@media (prefers-reduced-motion: reduce) { .tb i, .tb.top i, .think.run .tb.on i { animation: none; transition: none; } }
+/* uzun menüler: ince kaydırma çubuğu */
+.menu { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }

@@ -32,8 +32,8 @@ export class CodexAdapter extends BaseAdapter {
     args.push('--model', opts.model || process.env.CODEX_DEFAULT_MODEL || 'gpt-6-astra');
 
     if (opts.effort) {
-      const effortVal = (opts.effort === 'xhigh' || opts.effort === 'max') ? 'high' : opts.effort;
-      args.push('-c', `model_reasoning_effort="${effortVal}"`);
+      // Codex gpt-6-astra: low, medium, high, xhigh, max, ultra doğrudan kabul edilir (2026-10-24'te xhigh ve ultra canlı denendi)
+      args.push('-c', `model_reasoning_effort="${opts.effort}"`);
     }
 
     // Only bypass approvals/sandbox if explicitly set to true

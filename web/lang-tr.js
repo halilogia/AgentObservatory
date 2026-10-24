@@ -11,7 +11,7 @@ ObsI18n.addResources('tr', {
   rewind: { title: 'Buraya dön', askFiles: 'Bu noktadan sonra ajan dosyalarda değişiklik yaptı. Dosyalar da bu noktadaki haline döndürülsün mü?', both: 'Sohbeti ve dosyaları geri al', chatOnly: 'Yalnızca sohbeti geri al', cancel: 'Vazgeç' },
   project: { label: 'Klasör', add: 'Klasör ekle', addPlaceholder: 'Tam yol yaz, Enter ile ekle', remove: 'Listeden çıkar' },
   jump: 'En alta in',
-  effort: { title: 'Düşünme çabası', none: 'bu motorda yok', low: 'Düşük', medium: 'Orta', high: 'Yüksek', xhigh: 'X-yüksek', max: 'Maks' },
+  effort: { title: 'Düşünme çabası', none: 'bu motorda yok', low: 'Düşük', medium: 'Orta', high: 'Yüksek', xhigh: 'X-yüksek', max: 'Maks', ultra: 'Ultra' },
   status: { notInstalled: 'kurulu değil', limited: 'kota dolu', limitUntil: '{{engine}} · limit {{time}}\'e kadar', engines: 'Motor durumları' },
   history: { today: 'Bugün', yesterday: 'Dün', older: 'Daha önce', delete: 'Sohbeti sil', untitled: 'Sohbet' },
   time: { now: 'şimdi', min: '{{n}} dk', hour: '{{n}} sa', minutes_one: '{{count}} dk', minutes_other: '{{count}} dk', hours_one: '{{count}} saat', hours_other: '{{count}} saat' },

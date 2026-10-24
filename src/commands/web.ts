@@ -27,7 +27,7 @@ export const ENGINES: EngineDef[] = [
       { id: 'opus', label: 'Claude Opus 5.5', sub: 'models.opus' },
       { id: 'haiku', label: 'Claude Haiku 5.5', sub: 'models.haiku' }
     ] },
-  { id: 'codex', label: 'Codex', color: '#10A37F', write: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+  { id: 'codex', label: 'Codex', color: '#10A37F', write: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
     models: [{ id: 'gpt-6-astra', label: 'GPT-6 Astra', sub: 'models.gpt6astra' }] },
   { id: 'opencode', label: 'OpenCode', color: '#AA82FF', write: true, efforts: [],
     note: 'engines.opencode.note',

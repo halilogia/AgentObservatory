@@ -423,7 +423,7 @@
   // ---------- kontroller ----------
   function autosize() { const b = $('#prompt'); b.style.height = 'auto'; b.style.height = Math.min(b.scrollHeight, 220) + 'px'; refreshSend(); updateSlash(); }
   function refreshSend() {
-    const b = $('#send'); const running = !!st.running;
+    const b = $('#send'); const running = !!st.running; $('#think').classList.toggle('run', running);
     b.innerHTML = running ? ICON.stop : ICON.up;
     b.setAttribute('aria-label', running ? t('composer.stop') : t('composer.send'));
     b.disabled = running ? st.running === 'pending' : !$('#prompt').value.trim();
@@ -433,13 +433,39 @@
   const canWrite = (e) => e.write && (!st.cfg.remote || st.cfg.writeAllowed);
   const shortModel = (m) => m.label.replace(/^Claude /, '');
   const effortLabel = (x) => t('effort.' + x);
+  // düşünme çabası: motora göre 2-6 çubuklu, motor renginde, animasyonlu ölçek (OpenCode'da çaba olmadığı için gizli)
+  function renderThink() {
+    const e = engineById(st.engine); const box = $('#think');
+    box.hidden = !e.efforts.length; if (!e.efforts.length) return;
+    box.style.setProperty('--c', e.color); box.dataset.n = e.efforts.length;
+    if (box.dataset.engine !== e.id) { // motor değişti: çubuk sayısı farklı olabilir, yeniden kur
+      box.replaceChildren(); box.dataset.engine = e.id; box.setAttribute('aria-label', t('effort.title'));
+      e.efforts.forEach((x, i) => {
+        const b = el('button', 'tb'); b.type = 'button'; b.setAttribute('role', 'radio'); b.style.setProperty('--i', i); b.style.setProperty('--n', e.efforts.length);
+        b.appendChild(el('i')); b.onclick = () => { st.effort = x; saveSettings(); refreshControls(); }; box.appendChild(b);
+      });
+      box.appendChild(el('span', 'tl'));
+    }
+    const idx = Math.max(0, e.efforts.indexOf(st.effort));
+    box.querySelectorAll('.tb').forEach((b, i) => {
+      b.classList.toggle('on', i <= idx); b.classList.toggle('top', i === idx); b.setAttribute('aria-checked', String(i === idx));
+      const l = effortLabel(e.efforts[i]); b.title = t('effort.title') + ': ' + l; b.setAttribute('aria-label', l); b.tabIndex = i === idx ? 0 : -1;
+    });
+    box.querySelector('.tl').textContent = effortLabel(st.effort);
+    box.classList.toggle('run', !!st.running);
+  }
+  function thinkKey(ev) {
+    const e = engineById(st.engine); const d = ev.key === 'ArrowRight' || ev.key === 'ArrowUp' ? 1 : ev.key === 'ArrowLeft' || ev.key === 'ArrowDown' ? -1 : 0;
+    if (!d) return; ev.preventDefault();
+    const i = Math.min(e.efforts.length - 1, Math.max(0, e.efforts.indexOf(st.effort) + d));
+    st.effort = e.efforts[i]; saveSettings(); refreshControls(); $('#think').querySelector('.tb.top')?.focus();
+  }
   function refreshControls() {
     const e = engineById(st.engine); const m = e.models.find((x) => x.id === st.model);
     $('#modelDot').style.setProperty('--c', e.color);
     $('#modelLabel').textContent = shortModel(m);
     // düşünme çabası kendi düğmesinde; çabası olmayan motorda (OpenCode) düğme gizlenir
-    const eb = $('#effortBtn'); eb.hidden = !e.efforts.length; eb.title = t('effort.title');
-    if (e.efforts.length) { $('#effortIco').innerHTML = ICON.think; $('#effortLabel').textContent = effortLabel(st.effort); }
+    renderThink();
     $('#projectIco').innerHTML = ICON.folder;
     $('#projectLabel').textContent = st.cwd.split(/[\\/]/).filter(Boolean).pop() || t('project.label');
     $('#projectBtn').title = st.cwd;
@@ -472,7 +498,7 @@
     menu.classList.toggle('up', up); menu.classList.toggle('down', !up);
     menu.style.maxHeight = Math.max(160, Math.floor((up ? above : below) - 8)) + 'px';
   }
-  function closeMenus() { $('#modelMenu').hidden = true; $('#projectMenu').hidden = true; $('#effortMenu').hidden = true; hideSlash(); }
+  function closeMenus() { $('#modelMenu').hidden = true; $('#projectMenu').hidden = true; hideSlash(); }
   function pick(engineId, modelId) {
     const e = engineById(engineId); st.engine = engineId; st.model = modelId;
     if (!e.efforts.includes(st.effort)) st.effort = e.efforts.includes('medium') ? 'medium' : e.efforts[0] || '';
@@ -483,7 +509,7 @@
     const menu = $('#modelMenu');
     if (!keep && !menu.hidden) { menu.hidden = true; return; }
     const keepScroll = menu.scrollTop;
-    $('#projectMenu').hidden = true; $('#effortMenu').hidden = true; hideSlash(); menu.replaceChildren();
+    $('#projectMenu').hidden = true; hideSlash(); menu.replaceChildren();
     st.cfg.engines.forEach((e) => {
       const g = el('div', 'mgroup'); const gd = el('span', 'dot'); gd.style.setProperty('--c', e.color); g.append(gd, document.createTextNode(e.label)); menu.appendChild(g);
       e.models.forEach((m) => {
@@ -498,21 +524,10 @@
     });
     menu.hidden = false; placeMenu(menu); menu.scrollTop = keepScroll;
   }
-  function openEffortMenu() {
-    const menu = $('#effortMenu'); const e = engineById(st.engine);
-    if (!menu.hidden) { menu.hidden = true; return; }
-    $('#modelMenu').hidden = true; $('#projectMenu').hidden = true; hideSlash(); menu.replaceChildren();
-    e.efforts.forEach((x) => {
-      const b = el('button', 'item plain'); b.type = 'button'; b.setAttribute('role', 'option');
-      const ck = el('span', 'check'); if (x === st.effort) ck.innerHTML = ICON.check;
-      b.append(el('span', 't', effortLabel(x)), ck); b.onclick = () => { st.effort = x; saveSettings(); refreshControls(); closeMenus(); }; menu.appendChild(b);
-    });
-    menu.hidden = false; placeMenu(menu);
-  }
   function openProjectMenu() {
     const menu = $('#projectMenu');
     if (!menu.hidden) { menu.hidden = true; return; }
-    $('#modelMenu').hidden = true; $('#effortMenu').hidden = true; hideSlash(); menu.replaceChildren();
+    $('#modelMenu').hidden = true; hideSlash(); menu.replaceChildren();
     st.cfg.projects.forEach((p) => {
       const b = el('button', 'item'); b.type = 'button';
       const ic = el('span', 'ico'); ic.innerHTML = ICON.folder;
@@ -635,7 +650,7 @@
     $('#themeBtn').onclick = () => { ObsTheme.set(ObsTheme.get() === 'dark' ? 'light' : 'dark'); refreshTheme(); };
     $('#jump').onclick = () => { scrollDown(true); $('#jump').hidden = true; };
     $('#modelBtn').onclick = (ev) => { ev.stopPropagation(); openModelMenu(); };
-    $('#effortBtn').onclick = (ev) => { ev.stopPropagation(); openEffortMenu(); };
+    $('#think').addEventListener('keydown', thinkKey);
     $('#projectBtn').onclick = (ev) => { ev.stopPropagation(); openProjectMenu(); };
     $('#modeBtn').onclick = toggleMode;
     main().addEventListener('scroll', onScroll, { passive: true });
@@ -649,7 +664,7 @@
     });
     document.addEventListener('click', (ev) => { if (!ev.target.closest('.menu')) closeMenus(); });
     document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeMenus(); });
-    window.addEventListener('resize', () => { ['#modelMenu', '#projectMenu', '#effortMenu', '#slashMenu'].forEach((s) => { if (!$(s).hidden) placeMenu($(s)); }); });
+    window.addEventListener('resize', () => { ['#modelMenu', '#projectMenu', '#slashMenu'].forEach((s) => { if (!$(s).hidden) placeMenu($(s)); }); });
     setInterval(refreshConfig, 60000);
     setInterval(refreshCup, 250);
     connect(); $('#prompt').focus();

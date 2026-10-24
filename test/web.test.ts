@@ -97,7 +97,7 @@ try {
   assert.strictEqual((await post('/api/run', { ...ok, model: 'yok' })).status, 400, 'bilinmeyen model');
   assert.strictEqual((await post('/api/run', { ...ok, prompt: '  ' })).status, 400, 'boş istem');
   assert.strictEqual((await post('/api/run', { ...ok, cwd: os.homedir() })).status, 400, 'izinli kök dışı klasör');
-  assert.strictEqual((await post('/api/run', { ...ok, effort: 'ultra' })).status, 400, 'geçersiz çaba');
+  assert.strictEqual((await post('/api/run', { ...ok, effort: 'turbo' })).status, 400, 'geçersiz çaba');
   assert.strictEqual((await post('/api/cancel', { taskId: 'task_yok' })).status, 404, 'etkin olmayan görev iptal edilemez');
   assert.strictEqual(calls.length, 0, 'reddedilen isteklerde runner çağrılmamalı');
 

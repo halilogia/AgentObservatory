@@ -28,6 +28,7 @@
   - [x] Düşünme çabasını model seçiciden ayır (kendi düğmesi, daha kolay arayüz).
   - [x] Telefondan erişim (mesaj gönderme): sunucu + arayüz + testler tamam (Tailscale, tek kullanımlık kod, cihaz çerezi, hesap kilidi, yerel-özel uçlar, yazma izni varsayılan kapalı). Wiki 14. CLI'lar bilgisayarda çalışır, telefon yalnızca ekran/klavye.
   - [x] Telefon düzeni: dar ekranda içerik 0 genişlikli sütuna düşüyordu (ızgara hatası), alt çubuk taşıyordu; ikisi düzeltildi.
+  - [x] Düşünme çabası çubuğu (animasyonlu, motor renginde) + her CLI'nin gerçek seviyeleri (Codex 6, Claude 5, agy 2, OpenCode yok); Codex'te eski `xhigh/max -> high` sınırlaması kaldırıldı (canlı doğrulandı).
   - [ ] Gerçek Tailscale + telefonla uçtan uca deneme (kullanıcı: Tailscale girişi, `tailscale serve --bg 8788`, HTTPS izni).
   - [ ] Eşleştirme için QR kod (bağımlılıksız üretici; şimdilik kod + adres metni).
   - [x] GravityGuard: commit'e yerel yol girmesini engelleyen kapı (varsayılan: engelle, izin listesi + tek seferlik kaçış). GravityGuard reposunda (`e6e58c5`) ve `~/.git-template` şablonunda hazır; testler geçti.

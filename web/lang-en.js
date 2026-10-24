@@ -11,7 +11,7 @@ ObsI18n.addResources('en', {
   rewind: { title: 'Rewind to here', askFiles: 'After this point the agent changed files. Restore the files to how they were at this point too?', both: 'Rewind chat and files', chatOnly: 'Rewind chat only', cancel: 'Cancel' },
   project: { label: 'Folder', add: 'Add folder', addPlaceholder: 'Type the full path, press Enter', remove: 'Remove from list' },
   jump: 'Jump to latest',
-  effort: { title: 'Thinking effort', none: 'not available for this engine', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Xhigh', max: 'Max' },
+  effort: { title: 'Thinking effort', none: 'not available for this engine', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Xhigh', max: 'Max', ultra: 'Ultra' },
   status: { notInstalled: 'not installed', limited: 'quota reached', limitUntil: '{{engine}} · limit until {{time}}', engines: 'Engine status' },
   history: { today: 'Today', yesterday: 'Yesterday', older: 'Earlier', delete: 'Delete chat', untitled: 'Chat' },
   time: { now: 'now', min: '{{n}} min', hour: '{{n}} h', minutes_one: '{{count}} min', minutes_other: '{{count}} min', hours_one: '{{count}} hour', hours_other: '{{count}} hours' },

@@ -50,9 +50,9 @@ const cxCfgIdx = cxModelCmd.args.indexOf('-c');
 assert.ok(cxCfgIdx >= 0 && cxModelCmd.args[cxCfgIdx + 1] === 'model_reasoning_effort="low"', 'Codex komutu model_reasoning_effort="low" içermeli!');
 assert.ok(cxModelCmd.args.includes('--dangerously-bypass-approvals-and-sandbox'), 'Codex açıkça istenince bypass bayrağını içermeli!');
 
-for (const e of ['xhigh', 'max']) {
+for (const e of ['xhigh', 'max', 'ultra']) {
   const c = codex.buildCommand({ prompt: 'hi', effort: e });
-  assert.ok(c.args.includes('model_reasoning_effort="high"'), `Codex effort ${e} -> high eşlenmeli!`);
+  assert.ok(c.args.includes(`model_reasoning_effort="${e}"`), `Codex effort ${e} olduğu gibi geçmeli!`);
 }
 
 // C. CWD Doğrulama
