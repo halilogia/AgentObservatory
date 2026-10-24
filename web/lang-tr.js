@@ -13,7 +13,7 @@ ObsI18n.addResources('tr', {
   status: { notInstalled: 'kurulu değil', limited: 'kota dolu', limitUntil: '{{engine}} · limit {{time}}\'e kadar', engines: 'Motor durumları' },
   history: { today: 'Bugün', yesterday: 'Dün', older: 'Daha önce', delete: 'Sohbeti sil', untitled: 'Sohbet' },
   time: { now: 'şimdi', min: '{{n}} dk', hour: '{{n}} sa', minutes_one: '{{count}} dk', minutes_other: '{{count}} dk', hours_one: '{{count}} saat', hours_other: '{{count}} saat' },
-  slash: { model: 'Modeli ve düşünme çabasını seç', new: 'Yeni sohbet başlat', folder: 'Çalışma klasörünü seç', write: 'Yazma kipini aç veya kapat', history: 'Sohbet geçmişini aç veya kapat', copy: 'Son yanıtı panoya kopyala' },
+  slash: { model: 'Modeli seç', new: 'Yeni sohbet başlat', folder: 'Çalışma klasörünü seç', write: 'Yazma kipini aç veya kapat', history: 'Sohbet geçmişini aç veya kapat', copy: 'Son yanıtı panoya kopyala' },
   slashName: { model: '/model', new: '/yeni', folder: '/klasor', write: '/yaz', history: '/gecmis', copy: '/kopyala' },
   meta: { sec: '{{n}} sn', in: 'giriş {{n}}', out: 'çıkış {{n}}' },
   retry: { label: 'Başka motorla dene:' },

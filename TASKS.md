@@ -25,8 +25,9 @@
 
 ### Yetenekler, telefon, yerel yol kapısı (2026-10-24)
   - [x] Yetenekler penceresi: her CLI'nin skill / ajan / komut / MCP / eklenti adlarını göster (salt okunur; yalnızca adlar ve açıklamalar, gizli değerler okunmaz).
-  - [ ] Telefondan erişim (mesaj gönderme): erişim yöntemi kararı bekliyor (öneri: Tailscale + eşleştirme kodu).
-  - [ ] GravityGuard: commit'e yerel yol (`C:\Users\<ad>\...`) girmesini engelleyen kapı (`publication_guard.py`); karar bekliyor.
+  - [x] Düşünme çabasını model seçiciden ayır (kendi düğmesi, daha kolay arayüz).
+  - [/] Telefondan erişim (mesaj gönderme): Tailscale + tek kullanımlık eşleştirme kodu/QR, cihaz çerezi, cihaz listesi/iptal, telefondan yazma izni varsayılan kapalı. CLI'lar bilgisayarda çalışır, telefon yalnızca ekran/klavye.
+  - [/] GravityGuard: commit'e yerel yol (`C:\Users\<ad>\...`) girmesini engelleyen kapı (`publication_guard.py`, varsayılan: engelle, izin listesi + tek seferlik kaçış).
 
 ---
 

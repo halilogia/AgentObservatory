@@ -8,6 +8,7 @@
   const ICON = {
     chev: svg('<path d="M4 6l4 4 4-4"/>'),
     caps: svg('<path d="M8 2.5l1.3 3.2 3.2 1.3-3.2 1.3L8 11.5 6.7 8.3 3.5 7l3.2-1.3z"/><path d="M12.5 11v3M11 12.5h3"/>'),
+    think: svg('<path d="M8 2.5a4 4 0 00-2 7.4V11h4V9.9A4 4 0 008 2.5z"/><path d="M6.5 13.5h3"/>'),
     undo: svg('<path d="M6 3.5L3 6.5l3 3"/><path d="M3 6.5h6.5a3.5 3.5 0 010 7H6"/>'),
     check: svg('<path d="M3.5 8.5l3 3 6-7"/>'),
     folder: svg('<path d="M2 4.5A1.5 1.5 0 013.5 3h2.3l1.4 1.5h5.3A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/>'),
@@ -389,7 +390,10 @@
   function refreshControls() {
     const e = engineById(st.engine); const m = e.models.find((x) => x.id === st.model);
     $('#modelDot').style.setProperty('--c', e.color);
-    $('#modelLabel').textContent = shortModel(m) + (e.efforts.length ? ' · ' + effortLabel(st.effort) : '');
+    $('#modelLabel').textContent = shortModel(m);
+    // düşünme çabası kendi düğmesinde; çabası olmayan motorda (OpenCode) düğme gizlenir
+    const eb = $('#effortBtn'); eb.hidden = !e.efforts.length; eb.title = t('effort.title');
+    if (e.efforts.length) { $('#effortIco').innerHTML = ICON.think; $('#effortLabel').textContent = effortLabel(st.effort); }
     $('#projectIco').innerHTML = ICON.folder;
     $('#projectLabel').textContent = st.cwd.split(/[\\/]/).filter(Boolean).pop() || t('project.label');
     $('#projectBtn').title = st.cwd;
@@ -422,7 +426,7 @@
     menu.classList.toggle('up', up); menu.classList.toggle('down', !up);
     menu.style.maxHeight = Math.max(160, Math.floor((up ? above : below) - 8)) + 'px';
   }
-  function closeMenus() { $('#modelMenu').hidden = true; $('#projectMenu').hidden = true; hideSlash(); }
+  function closeMenus() { $('#modelMenu').hidden = true; $('#projectMenu').hidden = true; $('#effortMenu').hidden = true; hideSlash(); }
   function pick(engineId, modelId) {
     const e = engineById(engineId); st.engine = engineId; st.model = modelId;
     if (!e.efforts.includes(st.effort)) st.effort = e.efforts.includes('medium') ? 'medium' : e.efforts[0] || '';
@@ -433,7 +437,7 @@
     const menu = $('#modelMenu');
     if (!keep && !menu.hidden) { menu.hidden = true; return; }
     const keepScroll = menu.scrollTop;
-    $('#projectMenu').hidden = true; hideSlash(); menu.replaceChildren();
+    $('#projectMenu').hidden = true; $('#effortMenu').hidden = true; hideSlash(); menu.replaceChildren();
     st.cfg.engines.forEach((e) => {
       const g = el('div', 'mgroup'); const gd = el('span', 'dot'); gd.style.setProperty('--c', e.color); g.append(gd, document.createTextNode(e.label)); menu.appendChild(g);
       e.models.forEach((m) => {
@@ -446,19 +450,23 @@
         b.append(dot, txt, ck); b.onclick = () => pick(e.id, m.id); menu.appendChild(b);
       });
     });
-    const e = engineById(st.engine); const box = el('div', 'effort');
-    const row = el('div', 'row'); row.append(el('span', '', t('effort.title')), el('span', '', e.efforts.length ? effortLabel(st.effort) : t('effort.none'))); box.appendChild(row);
-    const seg = el('div', 'seg');
-    (e.efforts.length ? e.efforts : ['—']).forEach((x) => {
-      const b = el('button', x === st.effort ? 'on' : '', e.efforts.length ? effortLabel(x) : x); b.type = 'button'; b.disabled = !e.efforts.length;
-      b.onclick = () => { st.effort = x; saveSettings(); refreshControls(); openModelMenu(true); }; seg.appendChild(b);
+    menu.hidden = false; placeMenu(menu); menu.scrollTop = keepScroll;
+  }
+  function openEffortMenu() {
+    const menu = $('#effortMenu'); const e = engineById(st.engine);
+    if (!menu.hidden) { menu.hidden = true; return; }
+    $('#modelMenu').hidden = true; $('#projectMenu').hidden = true; hideSlash(); menu.replaceChildren();
+    e.efforts.forEach((x) => {
+      const b = el('button', 'item plain'); b.type = 'button'; b.setAttribute('role', 'option');
+      const ck = el('span', 'check'); if (x === st.effort) ck.innerHTML = ICON.check;
+      b.append(el('span', 't', effortLabel(x)), ck); b.onclick = () => { st.effort = x; saveSettings(); refreshControls(); closeMenus(); }; menu.appendChild(b);
     });
-    box.appendChild(seg); menu.appendChild(box); menu.hidden = false; placeMenu(menu); menu.scrollTop = keepScroll;
+    menu.hidden = false; placeMenu(menu);
   }
   function openProjectMenu() {
     const menu = $('#projectMenu');
     if (!menu.hidden) { menu.hidden = true; return; }
-    $('#modelMenu').hidden = true; hideSlash(); menu.replaceChildren();
+    $('#modelMenu').hidden = true; $('#effortMenu').hidden = true; hideSlash(); menu.replaceChildren();
     st.cfg.projects.forEach((p) => {
       const b = el('button', 'item'); b.type = 'button';
       const ic = el('span', 'ico'); ic.innerHTML = ICON.folder;
@@ -578,6 +586,7 @@
     $('#themeBtn').onclick = () => { ObsTheme.set(ObsTheme.get() === 'dark' ? 'light' : 'dark'); refreshTheme(); };
     $('#jump').onclick = () => { scrollDown(true); $('#jump').hidden = true; };
     $('#modelBtn').onclick = (ev) => { ev.stopPropagation(); openModelMenu(); };
+    $('#effortBtn').onclick = (ev) => { ev.stopPropagation(); openEffortMenu(); };
     $('#projectBtn').onclick = (ev) => { ev.stopPropagation(); openProjectMenu(); };
     $('#modeBtn').onclick = toggleMode;
     main().addEventListener('scroll', onScroll, { passive: true });
@@ -591,7 +600,7 @@
     });
     document.addEventListener('click', (ev) => { if (!ev.target.closest('.menu')) closeMenus(); });
     document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeMenus(); });
-    window.addEventListener('resize', () => { ['#modelMenu', '#projectMenu', '#slashMenu'].forEach((s) => { if (!$(s).hidden) placeMenu($(s)); }); });
+    window.addEventListener('resize', () => { ['#modelMenu', '#projectMenu', '#effortMenu', '#slashMenu'].forEach((s) => { if (!$(s).hidden) placeMenu($(s)); }); });
     setInterval(refreshConfig, 60000);
     setInterval(refreshCup, 250);
     connect(); $('#prompt').focus();

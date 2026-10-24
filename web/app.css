@@ -143,12 +143,6 @@ main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: 
 .item .check { width: 16px; height: 16px; }
 .slash .item { grid-template-columns: 84px minmax(0, 1fr); }
 .mgroup { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); padding: 8px 10px 2px; }
-.effort { border-top: 1px solid var(--border); margin-top: 6px; padding: 10px 10px 6px; }
-.effort .row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
-.seg { display: flex; background: var(--sunken); border-radius: 999px; padding: 3px; gap: 2px; }
-.seg button { flex: 1 1 0; min-width: 0; border: 0; background: transparent; border-radius: 999px; padding: 4px 2px; font-size: 12px; color: var(--muted); white-space: nowrap; }
-.seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .15); font-weight: 600; }
-.seg button:disabled { opacity: .4; cursor: not-allowed; }
 .foot { font-size: 12px; color: var(--faint); text-align: center; min-height: 18px; }
 
 @media (max-width: 860px) {
@@ -193,3 +187,5 @@ main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: 
 .cbadge { margin-left: 8px; font-size: 11px; font-weight: 500; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; }
 .cdesc { font-size: 13px; color: var(--muted); margin-top: 2px; }
 .cnone { color: var(--faint); font-size: 13px; padding: 14px 4px; }
+.menu.eff { right: 0; left: auto; width: min(200px, 100%); }
+.item.plain { grid-template-columns: minmax(0, 1fr) 18px; }

@@ -13,7 +13,7 @@ ObsI18n.addResources('en', {
   status: { notInstalled: 'not installed', limited: 'quota reached', limitUntil: '{{engine}} · limit until {{time}}', engines: 'Engine status' },
   history: { today: 'Today', yesterday: 'Yesterday', older: 'Earlier', delete: 'Delete chat', untitled: 'Chat' },
   time: { now: 'now', min: '{{n}} min', hour: '{{n}} h', minutes_one: '{{count}} min', minutes_other: '{{count}} min', hours_one: '{{count}} hour', hours_other: '{{count}} hours' },
-  slash: { model: 'Choose the model and thinking effort', new: 'Start a new chat', folder: 'Choose the working folder', write: 'Turn write mode on or off', history: 'Show or hide chat history', copy: 'Copy the last answer to the clipboard' },
+  slash: { model: 'Choose the model', new: 'Start a new chat', folder: 'Choose the working folder', write: 'Turn write mode on or off', history: 'Show or hide chat history', copy: 'Copy the last answer to the clipboard' },
   slashName: { model: '/model', new: '/new', folder: '/folder', write: '/write', history: '/history', copy: '/copy' },
   meta: { sec: '{{n}} s', in: 'in {{n}}', out: 'out {{n}}' },
   retry: { label: 'Try another engine:' },
