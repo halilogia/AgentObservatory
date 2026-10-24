@@ -55,7 +55,7 @@ Terminal 1'de `task.started`, `tool.invoked`, `message.delta`, `usage.updated`, 
 ## Claude Code'a MCP olarak ekleme
 
 ```bash
-claude mcp add agent-observatory --scope user -- node --experimental-strip-types "C:\Users\Halil Emre\Desktop\GitHub\Public\AgentObservatory\src\cli.ts" mcp
+claude mcp add agent-observatory --scope user -- node --experimental-strip-types "<kurulum-klasörü>\AgentObservatory\src\cli.ts" mcp
 claude mcp list
 ```
 
