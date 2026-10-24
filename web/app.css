@@ -162,3 +162,12 @@ main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: 
 .cup { width: 42px; height: 30px; image-rendering: pixelated; margin-right: 8px; }
 :root:not([data-theme="dark"]) .cup { filter: drop-shadow(0 0 .5px rgba(0, 0, 0, .55)) drop-shadow(0 0 1px rgba(0, 0, 0, .25)); }
 .cup[hidden] { display: none; }
+.menu .item { position: relative; }
+.menu .rm { position: absolute; right: 34px; top: 50%; width: 22px; height: 22px; margin-top: -11px; display: none; align-items: center; justify-content: center; border-radius: 6px; color: var(--faint); }
+.menu .item:hover .rm { display: flex; } .menu .rm:hover { background: var(--border); color: var(--text); }
+.menu .rm svg { width: 12px; height: 12px; }
+.addrow { padding: 6px 8px; }
+.addin { width: 100%; box-sizing: border-box; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; padding: 7px 10px; outline: none; }
+.addin:focus { border-color: var(--faint); }
+.adderr { color: var(--err); font-size: 12px; padding: 4px 2px 0; min-height: 0; }
+.menu .item.add .t { color: var(--muted); }

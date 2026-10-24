@@ -381,8 +381,31 @@
       const ic = el('span', 'ico'); ic.innerHTML = ICON.folder;
       const txt = el('span'); txt.append(el('div', 't', p.name), el('div', 's', p.path));
       const ck = el('span', 'check'); if (p.path === st.cwd) ck.innerHTML = ICON.check;
-      b.append(ic, txt, ck); b.onclick = () => { st.cwd = p.path; saveSettings(); refreshControls(); closeMenus(); }; menu.appendChild(b);
+      b.append(ic, txt, ck); b.onclick = () => { st.cwd = p.path; saveSettings(); refreshControls(); closeMenus(); };
+      if (p.custom) { // elle eklenen klasör: listeden çıkarılabilir (diskteki klasöre dokunulmaz)
+        const x = el('span', 'rm'); x.setAttribute('role', 'button'); x.title = t('project.remove'); x.innerHTML = ICON.x;
+        x.onclick = async (ev) => { ev.stopPropagation(); try { await api('/api/folders/remove', { path: p.path }); await refreshConfig(); menu.hidden = true; openProjectMenu(); } catch { /* yoksay */ } };
+        b.appendChild(x);
+      }
+      menu.appendChild(b);
     });
+    const add = el('button', 'item add'); add.type = 'button';
+    const ai = el('span', 'ico'); ai.innerHTML = ICON.plus; add.append(ai, el('span', 't', t('project.add')));
+    add.onclick = (ev) => {
+      ev.stopPropagation();
+      const input = el('input', 'addin'); input.type = 'text'; input.spellcheck = false; input.placeholder = t('project.addPlaceholder');
+      const err = el('div', 'adderr');
+      const row = el('div', 'addrow'); row.append(input, err); add.replaceWith(row); input.focus();
+      input.onkeydown = async (e2) => {
+        if (e2.key === 'Escape') { e2.stopPropagation(); menu.hidden = true; return; }
+        if (e2.key !== 'Enter' || !input.value.trim()) return;
+        try {
+          const r = await api('/api/folders', { path: input.value.trim() });
+          await refreshConfig(); st.cwd = r.path; saveSettings(); refreshControls(); closeMenus();
+        } catch (e3) { err.textContent = e3.info ? apiMsg(e3) : String(e3.message || e3); }
+      };
+    };
+    menu.appendChild(add);
     menu.hidden = false; placeMenu(menu);
   }
   function toggleMode() { if (engineById(st.engine).write) { st.mode = st.mode === 'write' ? 'read' : 'write'; refreshControls(); } }

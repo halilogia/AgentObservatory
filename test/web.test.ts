@@ -32,7 +32,7 @@ const fakeRunner = {
 
 const PORT = 18990 + Math.floor(Math.random() * 9);
 const TOKEN = 'a'.repeat(48);
-const { server } = startWeb({ port: PORT, dbPath, roots: [root], runner: fakeRunner, token: TOKEN, pollMs: 50,
+const { server } = startWeb({ port: PORT, dbPath, roots: [root], configPath: path.join(dir, 'web.json'), runner: fakeRunner, token: TOKEN, pollMs: 50,
   opencodeListing: async () => ['openai/gpt-5', 'opencode/nemotron-3.5-super-vl-free', 'opencode/big-pickle', 'opencode/glm-5.3-flash-free', 'opencode/big-pickle'].join('\n') });
 await new Promise((r) => server.once('listening', r));
 const base = `http://127.0.0.1:${PORT}`;
@@ -118,6 +118,28 @@ try {
     while (!buf.includes('task.completed') && Date.now() < deadline) { const { value, done } = await reader.read(); if (done) break; buf += dec.decode(value); }
     assert.ok(buf.includes(taskId) && buf.includes('merhaba') && buf.includes('task.completed'), 'SSE görevin olaylarını akıtmalı');
     await reader.cancel();
+  }
+  // klasör ekle: kökün dışındaki bir klasör eklenir, listelenir, çalıştırılabilir, kalıcıdır ve çıkarılabilir
+  {
+    const outside = path.join(dir, 'masaustu-yeni'); fs.mkdirSync(outside);
+    const code = async (body: unknown, p = '/api/folders') => ((await (await post(p, body)).json()) as any).code;
+    assert.strictEqual(await code({ path: 'goreli/yol' }), 'folder_not_absolute');
+    assert.strictEqual(await code({ path: path.join(dir, 'yok') }), 'folder_missing');
+    assert.strictEqual(await code({ path: dbPath }), 'folder_not_dir');
+    assert.strictEqual(await code({ path: os.homedir() }), 'folder_too_broad');
+    assert.strictEqual(await code({ path: path.parse(dir).root }), 'folder_too_broad');
+    assert.strictEqual((await post('/api/folders', { path: outside }, { 'x-observatory-token': 'yanlis' })).status, 403, 'jetonsuz klasör eklenemez');
+    const added = await (await post('/api/folders', { path: `"${outside}"` })).json() as any;
+    assert.strictEqual(added.ok, true);
+    const cfg2 = await (await fetch(base + '/api/config')).json() as any;
+    assert.ok(cfg2.projects.some((p: any) => p.custom && p.path === outside), 'eklenen klasör listede ve custom');
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, 'web.json'), 'utf8'));
+    assert.deepStrictEqual(saved.folders, [outside], 'ayar dosyasına yazılmalı');
+    const okRun = await post('/api/run', { engine: 'codex', model: 'gpt-6-astra', prompt: 'x', mode: 'read', cwd: path.join(outside) });
+    assert.notStrictEqual(((await okRun.json()) as any).code, 'cwd_forbidden', 'eklenen klasörde çalıştırılabilir');
+    await post('/api/folders/remove', { path: outside });
+    const cfg3 = await (await fetch(base + '/api/config')).json() as any;
+    assert.ok(!cfg3.projects.some((p: any) => p.path === outside), 'çıkarılan klasör listede olmamalı');
   }
   console.log('✔ web: arayüz + CSP, yapılandırma, jeton/Origin/Sec-Fetch-Site korumaları, doğrulamalar, gönder -> SSE');
 } finally {

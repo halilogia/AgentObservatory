@@ -64,15 +64,41 @@ export interface RunnerLike {
   cancelTask?(taskId: string, reason?: string): unknown;
 }
 
-export interface WebOptions { opencodeListing?: () => Promise<string>; port?: number; dbPath?: string; roots?: string[]; runner?: RunnerLike; token?: string; pollMs?: number; webDir?: string }
+export interface WebOptions { opencodeListing?: () => Promise<string>; port?: number; dbPath?: string; roots?: string[]; runner?: RunnerLike; token?: string; pollMs?: number; webDir?: string; configPath?: string }
 
-function defaultRoots(): string[] {
-  const env = process.env.OBSERVATORY_WEB_ROOTS;
-  if (env) return env.split(';').map((s) => s.trim()).filter(Boolean);
-  return [path.join(os.homedir(), 'Desktop', 'GitHub')];
+// Ayar dosyası: { roots?: string[]; folders?: string[] }. `roots` = altındaki klasörler listelenir; `folders` = tek tek eklenmiş proje klasörleri.
+interface WebConfig { roots?: string[]; folders?: string[] }
+const CONFIG_PATH = process.env.OBSERVATORY_CONFIG || path.join(os.homedir(), '.agent-observatory', 'web.json');
+
+function readConfig(file: string): WebConfig {
+  try {
+    const v = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const strs = (a: unknown) => (Array.isArray(a) ? a.filter((s) => typeof s === 'string' && s) : undefined);
+    return { roots: strs(v.roots), folders: strs(v.folders) };
+  } catch { return {}; }
+}
+function writeConfig(file: string, cfg: WebConfig): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(cfg, null, 2), 'utf8');
 }
 
-function insideRoots(dir: string, roots: string[]): boolean {
+/** çok geniş klasör: sürücü kökü, kullanıcı klasörü ya da onun üstü. Ajana tüm bilgisayarı açmamak için reddedilir. */
+export function tooBroad(dir: string): boolean {
+  const norm = (p: string) => path.resolve(p).toLowerCase();
+  const d = norm(dir), home = norm(os.homedir());
+  return d === norm(path.parse(d).root) || d === home || home.startsWith(d + path.sep);
+}
+
+/** Kök seçimi: --root / OBSERVATORY_WEB_ROOTS > ayar dosyası > başlatılan klasörün üstü (yanındaki projeler). */
+function defaultRoots(cfg: WebConfig, cwd = process.cwd()): string[] {
+  const env = process.env.OBSERVATORY_WEB_ROOTS;
+  if (env) return env.split(';').map((s) => s.trim()).filter(Boolean);
+  if (cfg.roots && cfg.roots.length) return cfg.roots;
+  const up = path.dirname(path.resolve(cwd));
+  return tooBroad(up) ? [] : [up];
+}
+
+export function insideRoots(dir: string, roots: string[]): boolean {
   let real: string;
   try { real = fs.realpathSync(dir); } catch { return false; }
   const norm = (p: string) => path.resolve(p).toLowerCase();
@@ -113,7 +139,16 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
   process.env.OBSERVATORY_NO_AUTO_TUI = '1';
   const port = opts.port ?? 8788;
   const token = opts.token || crypto.randomBytes(24).toString('hex');
-  const roots = (opts.roots || defaultRoots()).filter((r) => fs.existsSync(r));
+  const configPath = opts.configPath || CONFIG_PATH;
+  const cfg = readConfig(configPath);
+  const roots = (opts.roots || defaultRoots(cfg)).filter((r) => fs.existsSync(r));
+  // tek tek eklenmiş proje klasörleri (kökten bağımsız); açılışta olmayanlar atılır
+  let folders = (cfg.folders || []).filter((f) => fs.existsSync(f) && !tooBroad(f));
+  const allowedDir = (dir: string): boolean => {
+    if (insideRoots(dir, roots)) return true;
+    return folders.some((f) => insideRoots(dir, [f]));
+  };
+  const saveFolders = () => writeConfig(configPath, { ...readConfig(configPath), folders });
   const webDir = opts.webDir || WEB_DIR;
   const active = new Set<string>();
   let runnerPromise: Promise<RunnerLike> | null = null;
@@ -184,10 +219,12 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
       }
 
       if (method === 'GET' && url.pathname === '/api/config') {
-        const projects = listProjects(roots);
+        const same = (a: string, b: string) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+        const added = folders.filter((f) => fs.existsSync(f)).map((f) => ({ name: path.basename(f), path: f, custom: true }));
+        const projects: Array<{ name: string; path: string; custom?: boolean }> = [...added, ...listProjects(roots).filter((p) => !added.some((a) => same(a.path, p.path)))];
         // varsayılan klasör: sunucunun başlatıldığı proje (izinli kökün içindeyse, kökün kendisi değilse); yoksa en son değişen proje
         const here = path.resolve(process.cwd());
-        const hereOk = fs.existsSync(here) && insideRoots(here, roots) && !roots.some((r) => path.resolve(r).toLowerCase() === here.toLowerCase());
+        const hereOk = fs.existsSync(here) && allowedDir(here) && !tooBroad(here) && !roots.some((r) => same(r, here));
         if (hereOk && !projects.some((p) => path.resolve(p.path).toLowerCase() === here.toLowerCase())) projects.unshift({ name: path.basename(here), path: here });
         json(200, {
           engines: (await enginesNow()).map((e) => ({ ...e, ...engineStatus(db, e) })),
@@ -197,7 +234,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
       }
 
       // ---- yazan uçlar: jeton + aynı köken ----
-      if (method === 'POST' && (url.pathname === '/api/run' || url.pathname === '/api/cancel')) {
+      if (method === 'POST' && ['/api/run', '/api/cancel', '/api/folders', '/api/folders/remove'].includes(url.pathname)) {
         // hata yanıtları `code` taşır: arayüz bunu seçili dile çevirir; `error` Türkçe yedek metindir
         const fail = (status: number, code: string, error: string, params: Record<string, unknown> = {}) => { json(status, { code, error, params }); return true; };
         const site = req.headers['sec-fetch-site'];
@@ -206,6 +243,26 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         if (!String(req.headers['content-type'] || '').startsWith('application/json')) return fail(415, 'bad_content_type', 'application/json gerekli');
         let b: any;
         try { b = await readJson(req); } catch (e: any) { return fail(e.status || 400, e.status === 413 ? 'too_large' : 'bad_json', e.message); }
+
+        if (url.pathname === '/api/folders' || url.pathname === '/api/folders/remove') {
+          const raw = typeof b.path === 'string' ? b.path.trim().replace(/^"(.*)"$/, '$1') : '';
+          if (!raw || !path.isAbsolute(raw)) return fail(400, 'folder_not_absolute', 'tam yol gerekli (ör. C:\\Users\\...\\proje)');
+          const dir = path.resolve(raw);
+          const same = (a: string, c: string) => path.resolve(a).toLowerCase() === path.resolve(c).toLowerCase();
+          if (url.pathname === '/api/folders/remove') {
+            folders = folders.filter((f) => !same(f, dir));
+            saveFolders();
+            json(200, { ok: true });
+            return true;
+          }
+          let st: fs.Stats;
+          try { st = fs.statSync(dir); } catch { return fail(400, 'folder_missing', 'klasör bulunamadı'); }
+          if (!st.isDirectory()) return fail(400, 'folder_not_dir', 'bu bir klasör değil');
+          if (tooBroad(dir)) return fail(400, 'folder_too_broad', 'çok geniş klasör: sürücü kökü ya da kullanıcı klasörü eklenemez');
+          if (!folders.some((f) => same(f, dir))) { folders.unshift(dir); saveFolders(); }
+          json(200, { ok: true, path: dir });
+          return true;
+        }
 
         if (url.pathname === '/api/cancel') {
           if (typeof b.taskId !== 'string' || !active.has(b.taskId)) return fail(404, 'no_active_task', 'etkin görev yok');
@@ -224,8 +281,8 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         if (effort !== undefined && !engine.efforts.includes(effort)) return fail(400, 'bad_effort', 'bu motor bu çabayı desteklemiyor');
         const write = b.mode === 'write';
         if (write && !engine.write) return fail(400, 'no_write', `${engine.label} yazma kipini desteklemiyor`, { engine: engine.label });
-        const cwd = typeof b.cwd === 'string' && b.cwd ? b.cwd : roots[0];
-        if (!cwd || !fs.existsSync(cwd) || !insideRoots(cwd, roots)) return fail(400, 'cwd_forbidden', 'çalışma klasörü izinli köklerin dışında');
+        const cwd = typeof b.cwd === 'string' && b.cwd ? b.cwd : roots[0] || folders[0];
+        if (!cwd || !fs.existsSync(cwd) || !allowedDir(cwd)) return fail(400, 'cwd_forbidden', 'çalışma klasörü izinli köklerin dışında');
         if (active.size >= MAX_ACTIVE) return fail(429, 'too_many', `en çok ${MAX_ACTIVE} eşzamanlı görev`, { max: MAX_ACTIVE });
         const st = engineStatus(db, engine);
         if (!st.installed) return fail(409, 'not_installed', `${engine.label} kurulu değil`, { engine: engine.label });
@@ -255,8 +312,11 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
 export async function runWeb(args: string[]): Promise<void> {
   const pIdx = args.indexOf('--port');
   const port = pIdx >= 0 ? Number(args[pIdx + 1]) : Number(process.env.OBSERVATORY_WEB_PORT) || 8788;
-  const { server } = startWeb({ port });
+  // --root <klasör> (tekrarlanabilir): bu klasörlerin altındaki projeler listelenir
+  const flagRoots = args.flatMap((a, i) => (a === '--root' && args[i + 1] ? [path.resolve(args[i + 1])] : []));
+  const { server } = startWeb({ port, roots: flagRoots.length ? flagRoots : undefined });
   await new Promise((r) => server.once('listening', r));
   console.log(`Observatory sohbet arayüzü: http://127.0.0.1:${port}`);
-  console.log(`İzinli klasör kökleri: ${defaultRoots().join('; ')} (OBSERVATORY_WEB_ROOTS ile değişir). Varsayılan kip salt okunur.`);
+  const roots = flagRoots.length ? flagRoots : defaultRoots(readConfig(CONFIG_PATH));
+  console.log(`Klasör kökleri: ${roots.join('; ') || '(yok)'}. Arayüzden "Klasör ekle" ile başka klasör ekleyebilirsin (ayar: ${CONFIG_PATH}). Varsayılan kip salt okunur.`);
 }
