@@ -3,12 +3,10 @@
   --border: #e5e7eb; --border-strong: #d4d4d8; --shadow: 0 6px 30px rgba(0, 0, 0, .08); --accent: #111113; --accent-text: #fff;
   --ok: #15803d; --warn: #b45309; --err: #b91c1c; --err-bg: #fef2f2; --code-bg: #f4f4f5; --link: #1d4ed8; --side: #fafafa;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0e0e10; --surface: #17171a; --sunken: #212126; --text: #f2f2f3; --muted: #a1a1aa; --faint: #71717a;
-    --border: #2a2a30; --border-strong: #3a3a42; --shadow: 0 6px 30px rgba(0, 0, 0, .5); --accent: #f2f2f3; --accent-text: #0e0e10;
-    --ok: #4ade80; --warn: #fbbf24; --err: #f87171; --err-bg: #2a1515; --code-bg: #1d1d22; --link: #8ab4ff; --side: #121214;
-  }
+:root[data-theme="dark"] {
+  --bg: #0e0e10; --surface: #17171a; --sunken: #212126; --text: #f2f2f3; --muted: #a1a1aa; --faint: #71717a;
+  --border: #2a2a30; --border-strong: #3a3a42; --shadow: 0 6px 30px rgba(0, 0, 0, .5); --accent: #f2f2f3; --accent-text: #0e0e10;
+  --ok: #4ade80; --warn: #fbbf24; --err: #f87171; --err-bg: #2a1515; --code-bg: #1d1d22; --link: #8ab4ff; --side: #121214;
 }
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: transparent transparent; }
 *:hover { scrollbar-color: var(--border-strong) transparent; }
@@ -54,6 +52,9 @@ button:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px sol
 .content { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
 .top { display: flex; align-items: center; gap: 10px; padding: 10px 16px; }
 .brand { font-weight: 600; letter-spacing: -.01em; }
+.spacer { flex: 1; }
+.ghost { background: transparent; border: 1px solid var(--border); border-radius: 10px; padding: 4px 12px; font-size: 13px; color: var(--muted); }
+.ghost:hover { background: var(--sunken); color: var(--text); }
 .iconbtn { width: 32px; height: 32px; border-radius: 8px; border: 0; background: transparent; display: grid; place-items: center; color: var(--muted); }
 .iconbtn:hover { background: var(--sunken); color: var(--text); }
 .iconbtn .ico { width: 18px; height: 18px; }
@@ -142,7 +143,8 @@ main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: 
 .item .s { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .item .b { font-size: 11px; color: var(--warn); }
 .item .check { width: 16px; height: 16px; }
-.slash .item { grid-template-columns: 74px minmax(0, 1fr); }
+.slash .item { grid-template-columns: 84px minmax(0, 1fr); }
+.mgroup { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); padding: 8px 10px 2px; }
 .effort { border-top: 1px solid var(--border); margin-top: 6px; padding: 10px 10px 6px; }
 .effort .row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
 .seg { display: flex; background: var(--sunken); border-radius: 999px; padding: 3px; gap: 2px; }

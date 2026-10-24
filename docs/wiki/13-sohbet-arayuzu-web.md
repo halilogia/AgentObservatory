@@ -22,7 +22,8 @@ node bin/observatory.js web --port 9000
 - Sol altta motor durumu (kurulu mu, kota dolu mu); 60 sn'de bir yenilenir.
 - Menüler pencereye sığar: yer yoksa aşağı açılır, yükseklik sınırlanır ve içeride kaydırılır.
 - Varsayılan klasör, sunucuyu başlattığın proje klasörüdür (izinli kökün içindeyse).
-- Açık ve koyu tema (sistem ayarına uyar).
+- **Aydınlık tema varsayılan**; üstteki ay/güneş düğmesiyle koyu temaya geçilir, seçim saklanır. Tema ilk boyamadan önce uygulanır (yanıp sönme yok).
+- **Türkçe ve İngilizce**: üstteki dil düğmesiyle tüm arayüz, menüler, hata mesajları, `/` komutları (`/yeni` / `/new`), tarih ve süre biçimleri anında çevrilir; açık sohbetin süre ve hata satırları da yeniden çevrilir. İlk açılışta tarayıcı dili Türkçeyse Türkçe, değilse İngilizce; seçim saklanır.
 
 ## Motorlar
 
@@ -30,7 +31,7 @@ node bin/observatory.js web --port 9000
 |---|---|---|---|---|
 | Claude Code | Sonnet 5.5, Opus 5.5, Haiku 5.5 | 5 kademe (`--effort`) | yok | Headless modda izin sorulamaz: yalnızca okuma ve yanıt |
 | Codex | GPT-6 Astra | 5 kademe (en yüksek ikisi `high`'a iner) | `workspace-write` | ChatGPT girişi; kotası dolunca rozet "limit ... kadar" gösterir |
-| OpenCode | Big Pickle (ücretsiz) | yok | düzenleme açık, kabuk kapalı | |
+| OpenCode | **Ücretsiz modeller `opencode models` CLI çıktısından canlı okunur** (10 dk önbellek). 2026-10-24 listesi, hepsi tek tek denendi: Big Pickle, Beam, Deepseek V4.1 Flash, Flint 40B, GLM 5.3 Flash, Mimo V2.6 Flash, Nemotron 3 Ultra, Nemotron 3.5 Lightning, Nemotron 3.5 Super VL | yok | düzenleme açık, kabuk kapalı | OpenCode tarafında liste değişince menü kendiliğinden güncellenir; CLI okunamazsa Big Pickle yedek olarak kalır |
 | Antigravity (agy) | Gemini 3.8 Flash | Düşük / Yüksek (modelin `-low` / `-high` sürümü) | yok | Resmî `agy.exe`; Antigravity şartları nedeniyle düşük hacimde kullan |
 
 ## Güvenlik
@@ -67,4 +68,13 @@ Dosyalar: `src/commands/web.ts` (sunucu ve motor tablosu), `web/index.html`, `we
 - **Çok büyük klasörlerde** OpenCode takılabilir (denemede `Desktop\GitHub` kökünde yanıt metni gelmedi). Bu yüzden kök seçilemez, proje seçilir; yanıt gelmezse arayüz bunu bildirir.
 - Codex şu an kotası dolu olabilir; durum rozetinde görünür.
 - Geçmiş yalnızca bu tarayıcıda ve bu adreste (`127.0.0.1:8788`) saklanır; başka tarayıcıda veya portta görünmez. En çok 40 sohbet tutulur, araç çıktıları 2000 karaktere kısaltılır. Çalışırken (görev sürerken) sohbet değiştirilemez.
-- **Sunucuyu yeniden başlat:** Arayüz dosyaları (`web/`) diskten okunur ama sunucu kodu (`web.ts`) bellekte kalır. Güncellemeden sonra çalışan `observatory web` işlemini kapatıp yeniden başlat; eski sunucu yeni dosyaları (`md.js`, `store.js`) sunmaz ve sayfa açılmaz.
+- **Sunucuyu yeniden başlat:** Arayüz dosyaları (`web/`) diskten okunur ama sunucu kodu (`web.ts`) bellekte kalır. Güncellemeden sonra çalışan `observatory web` işlemini kapatıp yeniden başlat; eski sunucu yeni dosyaları (`md.js`, `store.js`, `i18n.js`...) sunmaz ve sayfa açılmaz.
+- Eski sürümde kaydedilmiş sohbetlerin süre ve hata satırları sabit Türkçe metin olarak kalır (dil değişince çevrilmez); yeni sohbetler dile göre çevrilir.
+
+## Çok dillilik (i18n) nasıl çalışır?
+i18next ile aynı kullanım biçimine sahip küçük bir katman (`web/i18n.js`): `t(anahtar, {ara_değer})`, `changeLanguage`, `on('languageChanged')`, `{{ad}}` ara değerleri, çoğul (`key_one` / `key_other`, `Intl.PluralRules`), yedek dil ve `data-i18n` bağlama. Bağımlılık eklenmedi: sunucunun sıkı CSP'si (`script-src 'self'`) dış kitaplık yüklemeye izin vermez.
+
+- Metinler `web/lang-tr.js` ve `web/lang-en.js` dosyalarında. **Yeni dil eklemek:** `lang-xx.js` oluştur, `index.html`'e ekle, `i18n.js` içindeki `languages` listesine yaz.
+- Sunucu hata yanıtları `code` taşır (ör. `no_write`, `cwd_forbidden`); arayüz bunu seçili dile çevirir. Motor notları ve model açıklamaları da çeviri anahtarı olarak gelir (`engines.claude.note`, `models.free`).
+- Model adları (Claude Sonnet 5.5, GPT-6 Astra...) özel isim olduğu için çevrilmez. Ajanın yanıtı kendi dilinde kalır.
+- `test/web_i18n.test.ts`: iki dilde aynı anahtarlar, kodda ve HTML'de kullanılan her anahtarın tanımlı olması, sunucu hata kodları ile motor ve model anahtarlarının çevirisi, ara değer, çoğul, dil değişimi.

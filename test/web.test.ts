@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { SqliteStore } from '../src/core/sqlite_store.ts';
 import { createEvent } from '../src/core/types.ts';
-import { startWeb } from '../src/commands/web.ts';
+import { startWeb, parseOpenCodeModels, humanizeModel } from '../src/commands/web.ts';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'obs-web-'));
 const root = path.join(dir, 'GitHub');
@@ -32,7 +32,8 @@ const fakeRunner = {
 
 const PORT = 18990 + Math.floor(Math.random() * 9);
 const TOKEN = 'a'.repeat(48);
-const { server } = startWeb({ port: PORT, dbPath, roots: [root], runner: fakeRunner, token: TOKEN, pollMs: 50 });
+const { server } = startWeb({ port: PORT, dbPath, roots: [root], runner: fakeRunner, token: TOKEN, pollMs: 50,
+  opencodeListing: async () => ['openai/gpt-5', 'opencode/nemotron-3.5-super-vl-free', 'opencode/big-pickle', 'opencode/glm-5.3-flash-free', 'opencode/big-pickle'].join('\n') });
 await new Promise((r) => server.once('listening', r));
 const base = `http://127.0.0.1:${PORT}`;
 const post = (p: string, body: unknown, headers: Record<string, string> = {}) =>
@@ -51,7 +52,7 @@ try {
   assert.ok(!/https?:\/\//.test(html), 'sayfa dış kaynak yüklememeli');
   assert.ok((page.headers.get('content-security-policy') || '').includes("script-src 'self'"), 'sıkı CSP');
   assert.strictEqual(page.headers.get('x-frame-options'), 'DENY');
-  for (const f of ['md.js', 'store.js']) assert.strictEqual((await fetch(base + '/' + f)).status, 200, f + ' sunulmalı');
+  for (const f of ['md.js', 'store.js', 'i18n.js', 'lang-tr.js', 'lang-en.js', 'theme.js']) assert.strictEqual((await fetch(base + '/' + f)).status, 200, f + ' sunulmalı');
   assert.strictEqual((await fetch(base + '/nope.js')).status, 404, 'olmayan dosya 404');
   assert.strictEqual((await fetch(base + '/..%2fpackage.json')).status, 404, 'dizin dışına çıkılamaz');
   const js = await fetch(base + '/app.js');
@@ -64,6 +65,13 @@ try {
   assert.ok(cfg.projects.some((p: any) => p.name === 'proj'), 'proje listesi');
   assert.ok(cfg.defaultCwd.startsWith(root) && cfg.defaultCwd !== root, 'varsayılan klasör kök değil, bir proje olmalı');
   assert.ok(cfg.engines.every((e: any) => typeof e.installed === 'boolean'));
+  // OpenCode modelleri CLI listesinden: yalnızca opencode/ ücretsiz modelleri, tekrarsız, big-pickle önce
+  const oc = cfg.engines.find((e: any) => e.id === 'opencode');
+  assert.deepStrictEqual(oc.models.map((m: any) => m.id), ['opencode/big-pickle', 'opencode/glm-5.3-flash-free', 'opencode/nemotron-3.5-super-vl-free']);
+  assert.deepStrictEqual(oc.models.map((m: any) => m.label), ['Big Pickle', 'GLM 5.3 Flash', 'Nemotron 3.5 Super VL']);
+  assert.ok(oc.models.every((m: any) => m.sub === 'models.free'));
+  assert.strictEqual(humanizeModel('opencode/flint-40b-free'), 'Flint 40B');
+  assert.deepStrictEqual(parseOpenCodeModels(['boş', 'opencode/a-free', 'openai/x', ''].join('\r\n')).map((m) => m.id), ['opencode/a-free']);
 
   // yazan uçların korumaları
   const ok = { engine: 'codex', model: 'gpt-6-astra', prompt: 'x', cwd: path.join(root, 'proj') };
@@ -75,7 +83,12 @@ try {
   assert.strictEqual(await rawPost({ host: `127.0.0.1:${PORT}`, 'content-type': 'text/plain', 'x-observatory-token': TOKEN }), 415, 'content-type denetimi');
 
   // doğrulamalar
-  assert.strictEqual((await post('/api/run', { ...ok, engine: 'agy', model: 'gemini-3.8-flash', mode: 'write' })).status, 400, 'agy yazma kipi yok');
+  const nw = await post('/api/run', { ...ok, engine: 'agy', model: 'gemini-3.8-flash', mode: 'write' });
+  assert.strictEqual(nw.status, 400, 'agy yazma kipi yok');
+  const nwj = await nw.json() as any;
+  assert.strictEqual(nwj.code, 'no_write', 'hata kodu çeviri için dönmeli'); assert.strictEqual(nwj.params.engine, 'Antigravity (agy)');
+  assert.strictEqual(((await (await post('/api/run', { ...ok, cwd: os.homedir() })).json()) as any).code, 'cwd_forbidden');
+  assert.strictEqual(((await (await post('/api/run', { ...ok }, { 'x-observatory-token': 'yanlis' })).json()) as any).code, 'bad_token');
   assert.strictEqual((await post('/api/run', { ...ok, engine: 'claude', model: 'sonnet', mode: 'write' })).status, 400, 'claude yazma kipi yok');
   assert.strictEqual((await post('/api/run', { ...ok, model: 'yok' })).status, 400, 'bilinmeyen model');
   assert.strictEqual((await post('/api/run', { ...ok, prompt: '  ' })).status, 400, 'boş istem');

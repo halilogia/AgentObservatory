@@ -1,0 +1,67 @@
+ObsI18n.addResources('tr', {
+  app: { title: 'Agent Observatory' },
+  common: { copy: 'Kopyala', copied: 'Kopyalandı' },
+  nav: { newChat: 'Yeni sohbet', toggle: 'Geçmişi aç veya kapat', history: 'Sohbet geçmişi' },
+  empty: { title: 'Ne yaptırmak istersin?', sub: 'İstemi bir motora ver: Claude Code, Codex, OpenCode ya da Antigravity.' },
+  composer: { placeholder: 'Bir şey yaz. Komutlar için / yaz. Enter gönderir, Shift+Enter satır atlar', label: 'İstem', send: 'Gönder', stop: 'Durdur' },
+  mode: { read: 'Salt okunur', write: 'Yazabilir', readTitle: 'Dosyalar değiştirilmez', writeTitle: 'Ajan seçili klasörde dosya değiştirebilir', noWrite: '{{engine}}: yazma kipi yok' },
+  project: { label: 'Klasör' },
+  jump: 'En alta in',
+  effort: { title: 'Düşünme çabası', none: 'bu motorda yok', low: 'Düşük', medium: 'Orta', high: 'Yüksek', xhigh: 'X-yüksek', max: 'Maks' },
+  status: { notInstalled: 'kurulu değil', limited: 'kota dolu', limitUntil: '{{engine}} · limit {{time}}\'e kadar', engines: 'Motor durumları' },
+  history: { empty: 'Henüz sohbet yok.', today: 'Bugün', yesterday: 'Dün', older: 'Daha önce', delete: 'Sohbeti sil', untitled: 'Sohbet' },
+  time: { now: 'şimdi', min: '{{n}} dk', hour: '{{n}} sa', minutes_one: '{{count}} dk', minutes_other: '{{count}} dk', hours_one: '{{count}} saat', hours_other: '{{count}} saat' },
+  suggest: { s1: 'Bu klasörün yapısını kısaca özetle', s2: 'Son git değişikliklerini açıkla', s3: 'README dosyasında eksik olan neler?', s4: 'Testleri nasıl çalıştırırım?' },
+  slash: { model: 'Modeli ve düşünme çabasını seç', new: 'Yeni sohbet başlat', folder: 'Çalışma klasörünü seç', write: 'Yazma kipini aç veya kapat', history: 'Sohbet geçmişini aç veya kapat', copy: 'Son yanıtı panoya kopyala' },
+  slashName: { model: '/model', new: '/yeni', folder: '/klasor', write: '/yaz', history: '/gecmis', copy: '/kopyala' },
+  meta: { sec: '{{n}} sn', in: 'giriş {{n}}', out: 'çıkış {{n}}' },
+  retry: { label: 'Başka motorla dene:' },
+  notice: {
+    cancelled: 'Görev iptal edildi.',
+    noText: 'Motor yanıt metni üretmedi. Çok büyük bir klasörde çalışıyorsan daha küçük bir proje seç.',
+    noTextTools: 'Motor yanıt metni üretmedi (yalnızca araç çalıştırdı; araç kartlarını aç). Çok büyük bir klasörde çalışıyorsan daha küçük bir proje seç.',
+    failed: 'Görev başarısız oldu.'
+  },
+  err: {
+    rate_limit: 'Kota doldu.',
+    rate_limit_wait: 'Kota doldu (yaklaşık {{wait}} sonra açılır).',
+    auth: 'Giriş gerekli: ilgili CLI\'da oturum aç.',
+    model_unsupported: 'Bu model hesapta desteklenmiyor.',
+    permission: 'İzin gerekiyor. Yazabilir kipini destekleyen bir motor seç ya da isteği salt okunur yap.',
+    spawn_failed: 'Program başlatılamadı. Terminalde "observatory doctor" çalıştır.'
+  },
+  api: {
+    unknown_engine: 'Bilinmeyen motor.',
+    unknown_model: 'Bu motor için bilinmeyen model.',
+    bad_prompt: 'İstem boş ya da 20000 karakterden uzun.',
+    bad_effort: 'Bu motor bu çabayı desteklemiyor.',
+    no_write: '{{engine}} yazma kipini desteklemiyor.',
+    cwd_forbidden: 'Çalışma klasörü izinli köklerin dışında.',
+    too_many: 'En çok {{max}} eşzamanlı görev çalışabilir.',
+    not_installed: '{{engine}} kurulu değil.',
+    limited: '{{engine}} kotası dolu.',
+    bad_token: 'Oturum jetonu geçersiz: sayfayı yenile.',
+    bad_origin: 'Yalnızca aynı kökenden istek kabul edilir.',
+    bad_content_type: 'application/json gerekli.',
+    bad_json: 'Geçersiz JSON.',
+    too_large: 'İstek çok büyük.',
+    no_active_task: 'Etkin görev yok.'
+  },
+  foot: { busy: 'Görev çalışırken sohbet değiştirilemez.', disconnected: 'Bağlantı koptu, yeniden deneniyor...', startFailed: 'Başlatılamadı: {{msg}}', writeOn: 'Yazma açık.' },
+  engines: {
+    claude: { note: 'Headless modda izin sorulamaz: yalnızca okuma ve yanıt.' },
+    codex: { note: '' },
+    opencode: { note: 'Yazma kipinde dosya düzenler, kabuk komutu çalıştırmaz.' },
+    agy: { note: 'Headless modda yazma izni yok. Düşük hacimde kullan.' }
+  },
+  models: {
+    sonnet: 'Günlük kodlama ve ajan işleri',
+    opus: 'Karmaşık işler için amiral gemisi',
+    haiku: 'Hızlı yanıtlar',
+    gpt6astra: 'OpenAI, ChatGPT girişiyle',
+    free: 'Ücretsiz model',
+    gemini38flash: 'Google, resmî agy.exe'
+  },
+  lang: { switchTo: 'English', switchTitle: 'Switch to English' },
+  theme: { toLight: 'Aydınlık temaya geç', toDark: 'Koyu temaya geç' }
+});

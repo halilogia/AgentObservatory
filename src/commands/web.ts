@@ -3,6 +3,7 @@
 // Güvenlik: yalnızca 127.0.0.1; Host + tam Origin denetimi; yazma uçları rastgele jeton ister (sayfaya meta etiketiyle verilir);
 // çalışma klasörü izinli köklerle sınırlı; varsayılan salt okunur; dangerously_skip_permissions ve danger-full-access yok.
 import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -17,21 +18,41 @@ export interface EngineDef { id: 'claude' | 'codex' | 'agy' | 'opencode'; label:
 
 export const ENGINES: EngineDef[] = [
   { id: 'claude', label: 'Claude Code', color: '#D97757', write: false, efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
-    note: 'Headless modda izin sorulamaz: yalnızca okuma ve yanıt.',
+    note: 'engines.claude.note',
     models: [
-      { id: 'sonnet', label: 'Claude Sonnet 5.5', sub: 'Günlük kodlama ve ajan işleri' },
-      { id: 'opus', label: 'Claude Opus 5.5', sub: 'Karmaşık işler için amiral gemisi' },
-      { id: 'haiku', label: 'Claude Haiku 5.5', sub: 'Hızlı yanıtlar' }
+      { id: 'sonnet', label: 'Claude Sonnet 5.5', sub: 'models.sonnet' },
+      { id: 'opus', label: 'Claude Opus 5.5', sub: 'models.opus' },
+      { id: 'haiku', label: 'Claude Haiku 5.5', sub: 'models.haiku' }
     ] },
   { id: 'codex', label: 'Codex', color: '#10A37F', write: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
-    models: [{ id: 'gpt-6-astra', label: 'GPT-6 Astra', sub: 'OpenAI, ChatGPT girişiyle' }] },
+    models: [{ id: 'gpt-6-astra', label: 'GPT-6 Astra', sub: 'models.gpt6astra' }] },
   { id: 'opencode', label: 'OpenCode', color: '#AA82FF', write: true, efforts: [],
-    note: 'Yazma kipinde dosya düzenler, kabuk komutu çalıştırmaz.',
-    models: [{ id: 'opencode/big-pickle', label: 'Big Pickle', sub: 'Ücretsiz model' }] },
+    note: 'engines.opencode.note',
+    models: [{ id: 'opencode/big-pickle', label: 'Big Pickle', sub: 'models.free' }] },
   { id: 'agy', label: 'Antigravity (agy)', color: '#4285F4', write: false, efforts: ['low', 'high'],
-    note: 'Headless modda yazma izni yok. Düşük hacimde kullan.',
-    models: [{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', sub: 'Google, resmî agy.exe' }] }
+    note: 'engines.agy.note',
+    models: [{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', sub: 'models.gemini38flash' }] }
 ];
+
+/** `opencode models` çıktısından ücretsiz OpenCode (Zen) modelleri: 'opencode/...' satırları, big-pickle önce */
+export function parseOpenCodeModels(text: string): ModelDef[] {
+  const ids = Array.from(new Set(String(text).split(/\r?\n/).map((l) => l.trim()).filter((l) => /^opencode\/[\w.-]+$/.test(l))));
+  ids.sort((a, b) => (a === 'opencode/big-pickle' ? -1 : b === 'opencode/big-pickle' ? 1 : a.localeCompare(b)));
+  return ids.map((id) => ({ id, label: humanizeModel(id), sub: 'models.free' }));
+}
+
+const UPPER = new Set(['vl', 'glm', 'gpt', 'llm', 'ai']);
+export function humanizeModel(id: string): string {
+  return id.replace(/^[^/]*\//, '').replace(/-free$/, '').split('-').filter(Boolean)
+    .map((t) => (UPPER.has(t) || /^\d+b$/i.test(t) ? t.toUpperCase() : t.charAt(0).toUpperCase() + t.slice(1))).join(' ');
+}
+
+const OPENCODE_TTL_MS = 10 * 60 * 1000;
+function listOpenCodeViaCli(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(resolveBinary('opencode'), ['models'], { timeout: 20000, windowsHide: true, maxBuffer: 1024 * 1024 }, (err, stdout) => (err ? reject(err) : resolve(String(stdout))));
+  });
+}
 
 const MAX_BODY = 256 * 1024;
 const MAX_ACTIVE = 4;
@@ -43,7 +64,7 @@ export interface RunnerLike {
   cancelTask?(taskId: string, reason?: string): unknown;
 }
 
-export interface WebOptions { port?: number; dbPath?: string; roots?: string[]; runner?: RunnerLike; token?: string; pollMs?: number; webDir?: string }
+export interface WebOptions { opencodeListing?: () => Promise<string>; port?: number; dbPath?: string; roots?: string[]; runner?: RunnerLike; token?: string; pollMs?: number; webDir?: string }
 
 function defaultRoots(): string[] {
   const env = process.env.OBSERVATORY_WEB_ROOTS;
@@ -107,6 +128,22 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
     return a.length === b.length && crypto.timingSafeEqual(a, b);
   };
 
+  // OpenCode'un ücretsiz modelleri `opencode models` CLI çıktısından canlı okunur (10 dk önbellek; liste sık değişir)
+  let ocModels: ModelDef[] | null = null;
+  let ocAt = 0;
+  let ocPending: Promise<void> | null = null;
+  const listing = opts.opencodeListing || listOpenCodeViaCli;
+  async function enginesNow(): Promise<EngineDef[]> {
+    if (!ocModels || Date.now() - ocAt > OPENCODE_TTL_MS) {
+      ocPending = ocPending || listing().then(
+        (t) => { const m = parseOpenCodeModels(t); if (m.length) ocModels = m; ocAt = Date.now(); },
+        () => { ocAt = Date.now() - OPENCODE_TTL_MS + 30000; } // başarısız: 30 sn sonra yeniden dene, o arada yedek liste
+      ).finally(() => { ocPending = null; });
+      if (!ocModels) await ocPending; // ilk açılışta bekle (yaklaşık 1,6 sn); sonrakilerde eski liste hemen döner
+    }
+    return ENGINES.map((e) => (e.id === 'opencode' && ocModels ? { ...e, models: ocModels } : e));
+  }
+
   function engineStatus(db: ExtraCtx['db'], e: EngineDef): { installed: boolean; limitedUntil: number | null } {
     const installed = fs.existsSync(resolveBinary(e.id));
     let limitedUntil: number | null = null;
@@ -153,7 +190,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         const hereOk = fs.existsSync(here) && insideRoots(here, roots) && !roots.some((r) => path.resolve(r).toLowerCase() === here.toLowerCase());
         if (hereOk && !projects.some((p) => path.resolve(p.path).toLowerCase() === here.toLowerCase())) projects.unshift({ name: path.basename(here), path: here });
         json(200, {
-          engines: ENGINES.map((e) => ({ ...e, ...engineStatus(db, e) })),
+          engines: (await enginesNow()).map((e) => ({ ...e, ...engineStatus(db, e) })),
           roots, projects, defaultCwd: hereOk ? here : projects[0]?.path || roots[0] || os.homedir(), maxActive: MAX_ACTIVE
         });
         return true;
@@ -161,36 +198,38 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
 
       // ---- yazan uçlar: jeton + aynı köken ----
       if (method === 'POST' && (url.pathname === '/api/run' || url.pathname === '/api/cancel')) {
+        // hata yanıtları `code` taşır: arayüz bunu seçili dile çevirir; `error` Türkçe yedek metindir
+        const fail = (status: number, code: string, error: string, params: Record<string, unknown> = {}) => { json(status, { code, error, params }); return true; };
         const site = req.headers['sec-fetch-site'];
-        if (site && site !== 'same-origin') { json(403, { error: 'yalnızca aynı kökenden' }); return true; }
-        if (!tokenOk(req.headers['x-observatory-token'])) { json(403, { error: 'jeton geçersiz' }); return true; }
-        if (!String(req.headers['content-type'] || '').startsWith('application/json')) { json(415, { error: 'application/json gerekli' }); return true; }
+        if (site && site !== 'same-origin') return fail(403, 'bad_origin', 'yalnızca aynı kökenden');
+        if (!tokenOk(req.headers['x-observatory-token'])) return fail(403, 'bad_token', 'jeton geçersiz');
+        if (!String(req.headers['content-type'] || '').startsWith('application/json')) return fail(415, 'bad_content_type', 'application/json gerekli');
         let b: any;
-        try { b = await readJson(req); } catch (e: any) { json(e.status || 400, { error: e.message }); return true; }
+        try { b = await readJson(req); } catch (e: any) { return fail(e.status || 400, e.status === 413 ? 'too_large' : 'bad_json', e.message); }
 
         if (url.pathname === '/api/cancel') {
-          if (typeof b.taskId !== 'string' || !active.has(b.taskId)) { json(404, { error: 'etkin görev yok' }); return true; }
+          if (typeof b.taskId !== 'string' || !active.has(b.taskId)) return fail(404, 'no_active_task', 'etkin görev yok');
           const runner = await getRunner();
           runner.cancelTask?.(b.taskId, 'Kullanıcı arayüzden iptal etti');
           json(200, { ok: true });
           return true;
         }
 
-        const engine = ENGINES.find((e) => e.id === b.engine);
-        if (!engine) { json(400, { error: 'bilinmeyen motor' }); return true; }
+        const engine = (await enginesNow()).find((e) => e.id === b.engine);
+        if (!engine) return fail(400, 'unknown_engine', 'bilinmeyen motor');
         const model = engine.models.find((m) => m.id === b.model);
-        if (!model) { json(400, { error: 'bu motor için bilinmeyen model' }); return true; }
-        if (typeof b.prompt !== 'string' || !b.prompt.trim() || b.prompt.length > 20000) { json(400, { error: 'istem boş ya da 20000 karakterden uzun' }); return true; }
+        if (!model) return fail(400, 'unknown_model', 'bu motor için bilinmeyen model');
+        if (typeof b.prompt !== 'string' || !b.prompt.trim() || b.prompt.length > 20000) return fail(400, 'bad_prompt', 'istem boş ya da 20000 karakterden uzun');
         const effort = b.effort === undefined || b.effort === '' ? undefined : String(b.effort);
-        if (effort !== undefined && !engine.efforts.includes(effort)) { json(400, { error: 'bu motor bu çabayı desteklemiyor' }); return true; }
+        if (effort !== undefined && !engine.efforts.includes(effort)) return fail(400, 'bad_effort', 'bu motor bu çabayı desteklemiyor');
         const write = b.mode === 'write';
-        if (write && !engine.write) { json(400, { error: `${engine.label} yazma kipini desteklemiyor` }); return true; }
+        if (write && !engine.write) return fail(400, 'no_write', `${engine.label} yazma kipini desteklemiyor`, { engine: engine.label });
         const cwd = typeof b.cwd === 'string' && b.cwd ? b.cwd : roots[0];
-        if (!cwd || !fs.existsSync(cwd) || !insideRoots(cwd, roots)) { json(400, { error: 'çalışma klasörü izinli köklerin dışında' }); return true; }
-        if (active.size >= MAX_ACTIVE) { json(429, { error: `en çok ${MAX_ACTIVE} eşzamanlı görev` }); return true; }
+        if (!cwd || !fs.existsSync(cwd) || !insideRoots(cwd, roots)) return fail(400, 'cwd_forbidden', 'çalışma klasörü izinli köklerin dışında');
+        if (active.size >= MAX_ACTIVE) return fail(429, 'too_many', `en çok ${MAX_ACTIVE} eşzamanlı görev`, { max: MAX_ACTIVE });
         const st = engineStatus(db, engine);
-        if (!st.installed) { json(409, { error: `${engine.label} kurulu değil` }); return true; }
-        if (st.limitedUntil) { json(409, { error: `${engine.label} kotası dolu`, limitedUntil: st.limitedUntil }); return true; }
+        if (!st.installed) return fail(409, 'not_installed', `${engine.label} kurulu değil`, { engine: engine.label });
+        if (st.limitedUntil) return fail(409, 'limited', `${engine.label} kotası dolu`, { engine: engine.label, limitedUntil: st.limitedUntil });
 
         // agy modeli çabaya göre seçilir (gemini-3.8-flash-low | -high); diğerlerinde model kimliği olduğu gibi
         const modelId = engine.id === 'agy' ? `${model.id}-${effort === 'low' ? 'low' : 'high'}` : model.id;

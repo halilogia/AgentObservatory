@@ -2,6 +2,8 @@
   'use strict';
   const $ = (s) => document.querySelector(s);
   const TOKEN = document.querySelector('meta[name="obs-token"]').content;
+  const I18N = ObsI18n;
+  const t = (key, params) => I18N.t(key, params);
   const svg = (d, extra = '') => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
   const ICON = {
     chev: svg('<path d="M4 6l4 4 4-4"/>'),
@@ -13,15 +15,16 @@
     plus: svg('<path d="M8 3v10M3 8h10"/>'),
     panel: svg('<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M6 3v10"/>'),
     x: svg('<path d="M4 4l8 8M12 4l-8 8"/>'),
+    sun: svg('<circle cx="8" cy="8" r="2.8"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/>'),
+    moon: svg('<path d="M13 9.6A5.4 5.4 0 016.4 3 5.4 5.4 0 108 13.4a5.4 5.4 0 005-3.8z"/>'),
     stop: '<svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg>'
   };
-  const EFFORT = { low: 'Düşük', medium: 'Orta', high: 'Yüksek', xhigh: 'X-yüksek', max: 'Maks' };
-  const SUGGEST = ['Bu klasörün yapısını kısaca özetle', 'Son git değişikliklerini açıkla', 'README dosyasında eksik olan neler?', 'Testleri nasıl çalıştırırım?'];
   const st = { cfg: null, engine: 'claude', model: 'sonnet', effort: 'medium', mode: 'read', cwd: '', running: null };
   const views = new Map();
   let chat = null;
   let early = [];
   let stick = true;
+  const locale = () => (I18N.language === 'tr' ? 'tr-TR' : 'en-US');
 
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
   const engineById = (id) => st.cfg.engines.find((e) => e.id === id);
@@ -33,8 +36,13 @@
   async function api(path, body) {
     const r = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json', 'x-observatory-token': TOKEN }, body: JSON.stringify(body) });
     let j = {}; try { j = await r.json(); } catch { /* gövde yok */ }
-    if (!r.ok) throw Object.assign(new Error(j.error || 'istek başarısız (' + r.status + ')'), { info: j });
+    if (!r.ok) throw Object.assign(new Error(j.error || 'HTTP ' + r.status), { info: j });
     return j;
+  }
+  /** sunucu hata kodunu seçili dile çevirir; kod yoksa sunucu metnini gösterir */
+  function apiMsg(err) {
+    const i = err.info || {};
+    return i.code ? t('api.' + i.code, i.params || {}) : err.message;
   }
 
   // ---------- kaydırma ve kopyalama ----------
@@ -51,26 +59,37 @@
   }
   async function copyText(text, btn) {
     try { await navigator.clipboard.writeText(text); } catch {
-      const t = el('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); } catch { /* yoksay */ } t.remove();
+      const ta = el('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch { /* yoksay */ } ta.remove();
     }
-    if (btn) { const old = btn.textContent; btn.textContent = 'Kopyalandı'; setTimeout(() => { btn.textContent = old; }, 1200); }
+    if (btn) { const old = btn.textContent; btn.textContent = t('common.copied'); setTimeout(() => { btn.textContent = old; }, 1200); }
   }
-  const renderMd = (box, text) => ObsMd.render(document, box, text, { onCopy: copyText });
+  const renderMd = (box, text) => ObsMd.render(document, box, text, { onCopy: copyText, copyLabel: t('common.copy') });
 
   function toolSummary(name, input) {
     const o = input && typeof input === 'object' ? input : {};
     const v = o.command ?? o.CommandLine ?? o.cmd ?? o.file_path ?? o.filePath ?? o.path ?? o.pattern ?? o.query ?? Object.values(o).find((x) => typeof x === 'string') ?? '';
     return String(v).replace(/\s+/g, ' ').slice(0, 140);
   }
-  function friendlyError(d) {
+  /** Bildirimler dilden bağımsız saklanır ({key, params} veya ham metin) ve çizilirken çevrilir */
+  function noticeFor(d) {
     const kind = d.errorKind;
-    const mins = d.cooldownMs ? Math.max(1, Math.round(d.cooldownMs / 60000)) : 0;
-    if (kind === 'rate_limit') return 'Kota doldu' + (mins ? ` (yaklaşık ${mins >= 90 ? Math.round(mins / 60) + ' saat' : mins + ' dk'} sonra açılır)` : '') + '.';
-    if (kind === 'auth') return 'Giriş gerekli: ilgili CLI\'da oturum aç.';
-    if (kind === 'model_unsupported') return 'Bu model hesapta desteklenmiyor.';
-    if (kind === 'permission') return 'İzin gerekiyor. Yazabilir kipini destekleyen bir motor seç ya da isteği salt okunur yap.';
-    if (kind === 'spawn_failed') return 'Program başlatılamadı. Terminalde "observatory doctor" çalıştır.';
-    return String(d.error || d.reason || 'Görev başarısız oldu.').split('\n')[0].slice(0, 300);
+    if (kind === 'rate_limit') return d.cooldownMs ? { key: 'err.rate_limit_wait', mins: Math.max(1, Math.round(d.cooldownMs / 60000)) } : { key: 'err.rate_limit' };
+    if (['auth', 'model_unsupported', 'permission', 'spawn_failed'].includes(kind)) return { key: 'err.' + kind };
+    const raw = String(d.error || d.reason || '').split('\n')[0].slice(0, 300);
+    return raw ? { text: raw } : { key: 'notice.failed' };
+  }
+  function noticeText(n) {
+    if (n.key) {
+      const p = { ...(n.params || {}) };
+      if (n.mins) p.wait = n.mins >= 90 ? t('time.hours', { count: Math.round(n.mins / 60) }) : t('time.minutes', { count: n.mins });
+      return t(n.key, p);
+    }
+    return n.text || '';
+  }
+  function metaText(m) {
+    if (typeof m === 'string') return m; // eski kayıtlar
+    if (!m) return '';
+    return [t('meta.sec', { n: m.sec }), m.tin ? t('meta.in', { n: fmtTok(m.tin) }) : '', m.tout ? t('meta.out', { n: fmtTok(m.tout) }) : ''].filter(Boolean).join(' · ');
   }
 
   // ---------- sohbet verisi ve geçmiş ----------
@@ -81,39 +100,45 @@
   function persist() { if (chat && chat.messages.length) { ObsStore.save(chat); renderHistory(); } }
   function when(ts) {
     const m = Math.round((Date.now() - ts) / 60000);
-    if (m < 1) return 'şimdi'; if (m < 60) return m + ' dk'; if (m < 1440) return Math.round(m / 60) + ' sa';
-    return new Date(ts).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+    if (m < 1) return t('time.now'); if (m < 60) return t('time.min', { n: m }); if (m < 1440) return t('time.hour', { n: Math.round(m / 60) });
+    return new Date(ts).toLocaleDateString(locale(), { day: 'numeric', month: 'short' });
   }
   function renderHistory() {
     const box = $('#history'); box.replaceChildren();
     const list = ObsStore.list();
-    if (!list.length) { box.appendChild(el('div', 'hempty', 'Henüz sohbet yok.')); return; }
-    const day = (ts) => { const d = new Date(ts), n = new Date(); const diff = Math.floor((new Date(n.getFullYear(), n.getMonth(), n.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5); return diff <= 0 ? 'Bugün' : diff === 1 ? 'Dün' : 'Daha önce'; };
+    if (!list.length) { box.appendChild(el('div', 'hempty', t('history.empty'))); return; }
+    const day = (ts) => { const d = new Date(ts), n = new Date(); const diff = Math.floor((new Date(n.getFullYear(), n.getMonth(), n.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5); return diff <= 0 ? t('history.today') : diff === 1 ? t('history.yesterday') : t('history.older'); };
     let last = '';
     list.forEach((c) => {
       const g = day(c.updated); if (g !== last) { box.appendChild(el('div', 'hgroup', g)); last = g; }
       const item = el('div', 'hitem' + (chat && chat.id === c.id ? ' on' : ''));
-      const main1 = el('button', 'hmain'); main1.type = 'button'; main1.title = c.title;
+      const title = c.title || t('history.untitled');
+      const main1 = el('button', 'hmain'); main1.type = 'button'; main1.title = title;
       const lastBot = [...c.messages].reverse().find((m) => m.r === 'b');
       const dot = el('span', 'dot'); if (lastBot) dot.style.setProperty('--c', lastBot.color);
-      main1.append(dot, el('span', 't', c.title || 'Sohbet'), el('span', 'when', when(c.updated)));
+      main1.append(dot, el('span', 't', title), el('span', 'when', when(c.updated)));
       main1.onclick = () => loadChat(c.id);
-      const del = el('button', 'del'); del.type = 'button'; del.setAttribute('aria-label', 'Sohbeti sil'); del.innerHTML = ICON.x;
+      const del = el('button', 'del'); del.type = 'button'; del.setAttribute('aria-label', t('history.delete')); del.innerHTML = ICON.x;
       del.onclick = (ev) => { ev.stopPropagation(); ObsStore.remove(c.id); if (chat && chat.id === c.id) newChat(); else renderHistory(); };
       item.append(main1, del); box.appendChild(item);
     });
   }
   function clearThread() { $('#thread').replaceChildren(); views.clear(); }
   function showThread(has) { $('#empty').hidden = has; $('#chips').hidden = has; }
+  function renderThread() {
+    clearThread();
+    if (!chat || !chat.messages.length) { showThread(false); return; }
+    showThread(true);
+    chat.messages.forEach((m) => { if (m.r === 'u') addUserDom(m.text); else createBot(m, false); });
+  }
   function newChat() {
     if (st.running) return;
     chat = null; clearThread(); showThread(false); renderHistory(); $('#prompt').focus(); stick = true; onScroll();
   }
   function loadChat(id) {
-    if (st.running) { $('#foot').textContent = 'Görev çalışırken sohbet değiştirilemez.'; return; }
+    if (st.running) { $('#foot').textContent = t('foot.busy'); return; }
     const c = ObsStore.get(id); if (!c) return;
-    chat = c; clearThread(); showThread(true);
-    c.messages.forEach((m) => { if (m.r === 'u') addUserDom(m.text); else createBot(m, false); });
+    chat = c; renderThread();
     const lastBot = [...c.messages].reverse().find((m) => m.r === 'b');
     if (lastBot && engineById(lastBot.engine)) {
       st.engine = lastBot.engine; st.model = lastBot.model; if (lastBot.effort) st.effort = lastBot.effort;
@@ -126,6 +151,7 @@
   // ---------- mesaj DOM'u ----------
   function addUserDom(text) { showThread(true); $('#thread').appendChild(el('div', 'msg user', text)); scrollDown(); }
   function fullText(rec) { return rec.parts.filter((p) => p.k === 'text').map((p) => p.v).join('\n\n'); }
+  function engineLabel(rec) { const e = st.cfg && engineById(rec.engine); return e ? e.label : rec.engine; }
 
   function createBot(rec, live) {
     showThread(true);
@@ -141,30 +167,28 @@
     const v = { rec, row, content, meta, dots, curText: null, tools: new Map(), lastTool: null, raf: 0, tin: 0, tout: 0, t0: Date.now(), done: !live };
     if (!live) {
       rec.parts.forEach((p) => { if (p.k === 'text') { const box = el('div'); content.appendChild(box); renderMd(box, p.v); } else buildTool(v, p, true); });
-      if (rec.notice) content.appendChild(el('div', 'notice' + (rec.notice.warn ? ' warn' : ''), rec.notice.text));
+      if (rec.notice) content.appendChild(el('div', 'notice' + (rec.notice.warn ? ' warn' : ''), noticeText(rec.notice)));
       renderMeta(v);
     }
     scrollDown();
     return v;
   }
-  function engineLabel(rec) { const e = st.cfg && engineById(rec.engine); return e ? e.label : rec.engine; }
-
-  function addText(v, t) {
-    if (!t) return;
+  function addText(v, txt) {
+    if (!txt) return;
     if (!v.curText) { const part = { k: 'text', v: '' }; v.rec.parts.push(part); v.curText = { part, box: el('div') }; v.content.appendChild(v.curText.box); }
-    v.curText.part.v += t;
+    v.curText.part.v += txt;
     if (!v.raf) v.raf = requestAnimationFrame(() => { v.raf = 0; if (v.curText) renderMd(v.curText.box, v.curText.part.v); scrollDown(); });
   }
   function buildTool(v, part, withOut) {
     const det = el('details', 'tool'); const sum = el('summary');
-    sum.append(el('span', 'tn', part.name || 'araç'), el('span', 'ts', part.summary || ''));
+    sum.append(el('span', 'tn', part.name), el('span', 'ts', part.summary || ''));
     det.appendChild(sum); v.content.appendChild(det);
     if (withOut && part.out) { const pre = el('pre'); pre.appendChild(el('code', '', part.out)); det.appendChild(pre); }
     return det;
   }
   function addTool(v, d) {
     v.curText = null;
-    const part = { k: 'tool', name: d.name || 'araç', summary: toolSummary(d.name, d.input), out: '' };
+    const part = { k: 'tool', name: d.name || 'tool', summary: toolSummary(d.name, d.input), out: '' };
     v.rec.parts.push(part);
     const rec = { part, det: buildTool(v, part, false), done: false };
     v.tools.set(d.id || 'n' + v.tools.size, rec); v.lastTool = rec; scrollDown();
@@ -179,13 +203,14 @@
   }
   function renderMeta(v) {
     v.meta.replaceChildren();
-    if (v.rec.meta) v.meta.appendChild(el('span', '', v.rec.meta));
-    if (fullText(v.rec)) { const b = el('button', '', 'Kopyala'); b.type = 'button'; b.onclick = () => copyText(fullText(v.rec), b); v.meta.appendChild(b); }
+    const txt = metaText(v.rec.meta);
+    if (txt) v.meta.appendChild(el('span', '', txt));
+    if (fullText(v.rec)) { const b = el('button', '', t('common.copy')); b.type = 'button'; b.onclick = () => copyText(fullText(v.rec), b); v.meta.appendChild(b); }
   }
   function retryRow(v) {
     const others = st.cfg.engines.filter((e) => e.id !== v.rec.engine && e.installed && !e.limitedUntil);
     if (!others.length || !v.rec.prompt) return;
-    const row = el('div', 'retry'); row.appendChild(el('span', '', 'Başka motorla dene:'));
+    const row = el('div', 'retry'); row.appendChild(el('span', '', t('retry.label')));
     others.forEach((e) => {
       const b = el('button'); b.type = 'button';
       const d = el('span', 'dot'); d.style.setProperty('--c', e.color);
@@ -203,13 +228,12 @@
     if (v.raf) { cancelAnimationFrame(v.raf); v.raf = 0; }
     if (v.curText) renderMd(v.curText.box, v.curText.part.v);
     let notice = null;
-    if (kind === 'failed') notice = { text: friendlyError(d || {}) };
-    else if (kind === 'cancelled') notice = { text: 'Görev iptal edildi.', warn: true };
-    else if (kind === 'completed' && !fullText(v.rec)) notice = { warn: true, text: 'Motor yanıt metni üretmedi' + (v.tools.size ? ' (yalnızca araç çalıştırdı; araç kartlarını aç).' : '.') + ' Çok büyük bir klasörde çalışıyorsan daha küçük bir proje seç.' };
-    if (notice) { v.rec.notice = notice; v.content.appendChild(el('div', 'notice' + (notice.warn ? ' warn' : ''), notice.text)); }
+    if (kind === 'failed') notice = noticeFor(d || {});
+    else if (kind === 'cancelled') notice = { key: 'notice.cancelled', warn: true };
+    else if (kind === 'completed' && !fullText(v.rec)) notice = { key: v.tools.size ? 'notice.noTextTools' : 'notice.noText', warn: true };
+    if (notice) { v.rec.notice = notice; v.content.appendChild(el('div', 'notice' + (notice.warn ? ' warn' : ''), noticeText(notice))); }
     if (kind === 'failed') retryRow(v);
-    const sec = Math.round((Date.now() - v.t0) / 1000);
-    v.rec.meta = [sec + ' sn', v.tin ? 'giriş ' + fmtTok(v.tin) : '', v.tout ? 'çıkış ' + fmtTok(v.tout) : ''].filter(Boolean).join(' · ');
+    v.rec.meta = { sec: Math.round((Date.now() - v.t0) / 1000), tin: v.tin, tout: v.tout };
     renderMeta(v);
     if (st.running === v.rec.taskId) st.running = null;
     persist(); refreshSend(); refreshConfig(); $('#prompt').focus(); scrollDown();
@@ -233,7 +257,7 @@
     const es = new EventSource('/stream');
     es.addEventListener('observatory', (m) => { try { onEvent(JSON.parse(m.data)); } catch { /* bozuk olay */ } });
     es.onopen = () => refreshFoot();
-    es.onerror = () => { $('#foot').textContent = 'Bağlantı koptu, yeniden deneniyor...'; };
+    es.onerror = () => { $('#foot').textContent = t('foot.disconnected'); };
   }
 
   // ---------- gönderme ----------
@@ -242,7 +266,7 @@
     ensureChat(text);
     const e = engineById(st.engine); const m = e.models.find((x) => x.id === st.model);
     if (o.bubble !== false) { chat.messages.push({ r: 'u', text }); addUserDom(text); }
-    const rec = { r: 'b', engine: e.id, model: m.id, label: m.label, color: e.color, parts: [], notice: null, meta: '', prompt: text, cwd: st.cwd, taskId: null, effort: e.efforts.length ? st.effort : '' };
+    const rec = { r: 'b', engine: e.id, model: m.id, label: m.label, color: e.color, parts: [], notice: null, meta: null, prompt: text, cwd: st.cwd, taskId: null, effort: e.efforts.length ? st.effort : '' };
     chat.messages.push(rec);
     const view = createBot(rec, true);
     const resume = chat.session && chat.session.engine === e.id && chat.session.cwd === st.cwd ? chat.session.id : undefined;
@@ -254,7 +278,9 @@
       buffered.forEach(onEvent); refreshSend();
     } catch (err) {
       view.dots.remove(); view.done = true; st.running = null;
-      rec.notice = { text: err.message }; view.content.appendChild(el('div', 'notice', err.message));
+      const i = err.info || {};
+      rec.notice = i.code ? { key: 'api.' + i.code, params: i.params || {} } : { text: err.message };
+      view.content.appendChild(el('div', 'notice', noticeText(rec.notice)));
       retryRow(view); persist(); refreshSend(); refreshConfig();
     }
   }
@@ -271,32 +297,36 @@
   function refreshSend() {
     const b = $('#send'); const running = !!st.running;
     b.innerHTML = running ? ICON.stop : ICON.up;
-    b.setAttribute('aria-label', running ? 'Durdur' : 'Gönder');
+    b.setAttribute('aria-label', running ? t('composer.stop') : t('composer.send'));
     b.disabled = running ? st.running === 'pending' : !$('#prompt').value.trim();
     $('#newChat').disabled = running;
   }
   const shortModel = (m) => m.label.replace(/^Claude /, '');
+  const effortLabel = (x) => t('effort.' + x);
   function refreshControls() {
     const e = engineById(st.engine); const m = e.models.find((x) => x.id === st.model);
     $('#modelDot').style.setProperty('--c', e.color);
-    $('#modelLabel').textContent = shortModel(m) + (e.efforts.length ? ' · ' + (EFFORT[st.effort] || st.effort) : '');
+    $('#modelLabel').textContent = shortModel(m) + (e.efforts.length ? ' · ' + effortLabel(st.effort) : '');
     $('#projectIco').innerHTML = ICON.folder;
-    $('#projectLabel').textContent = st.cwd.split(/[\\/]/).filter(Boolean).pop() || 'Klasör';
+    $('#projectLabel').textContent = st.cwd.split(/[\\/]/).filter(Boolean).pop() || t('project.label');
     $('#projectBtn').title = st.cwd;
     document.querySelectorAll('.chev').forEach((c) => { c.innerHTML = ICON.chev; });
     const mb = $('#modeBtn'); const write = st.mode === 'write' && e.write;
     mb.disabled = !e.write; mb.classList.toggle('on', write);
     $('#modeIco').innerHTML = write ? ICON.pen : ICON.lock;
-    $('#modeLabel').textContent = write ? 'Yazabilir' : 'Salt okunur';
-    mb.title = !e.write ? e.label + ': yazma kipi yok' : write ? 'Ajan seçili klasörde dosya değiştirebilir' : 'Dosyalar değiştirilmez';
+    $('#modeLabel').textContent = write ? t('mode.write') : t('mode.read');
+    mb.title = !e.write ? t('mode.noWrite', { engine: e.label }) : write ? t('mode.writeTitle') : t('mode.readTitle');
     refreshFoot();
   }
-  function refreshFoot() { const e = engineById(st.engine); $('#foot').textContent = (e.note ? e.note + ' ' : '') + (st.mode === 'write' && e.write ? 'Yazma açık.' : ''); }
+  function refreshFoot() {
+    const e = engineById(st.engine);
+    $('#foot').textContent = [e.note ? t(e.note) : '', st.mode === 'write' && e.write ? t('foot.writeOn') : ''].filter(Boolean).join(' ');
+  }
   function renderEngineStatus() {
     const box = $('#engineStatus'); box.replaceChildren();
     st.cfg.engines.forEach((e) => {
       const c = el('span', 'eng' + (!e.installed || e.limitedUntil ? ' off' : '')); c.style.setProperty('--c', e.color);
-      const label = e.limitedUntil ? `${e.label} · limit ${new Date(e.limitedUntil).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}'e kadar` : !e.installed ? `${e.label} · kurulu değil` : e.label;
+      const label = e.limitedUntil ? t('status.limitUntil', { engine: e.label, time: new Date(e.limitedUntil).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) }) : !e.installed ? `${e.label} · ${t('status.notInstalled')}` : e.label;
       c.append(el('i'), document.createTextNode(label)); box.appendChild(c);
     });
   }
@@ -319,24 +349,28 @@
   function openModelMenu(keep) {
     const menu = $('#modelMenu');
     if (!keep && !menu.hidden) { menu.hidden = true; return; }
+    const keepScroll = menu.scrollTop;
     $('#projectMenu').hidden = true; hideSlash(); menu.replaceChildren();
-    st.cfg.engines.forEach((e) => e.models.forEach((m) => {
-      const blocked = !e.installed ? 'kurulu değil' : e.limitedUntil ? 'kota dolu' : '';
-      const b = el('button', 'item'); b.type = 'button'; b.disabled = !!blocked; b.setAttribute('role', 'option');
-      const dot = el('span', 'dot'); dot.style.setProperty('--c', e.color);
-      const txt = el('span'); txt.append(el('div', 't', m.label), el('div', 's', `${e.label} · ${m.sub}`));
-      if (blocked) txt.appendChild(el('div', 'b', blocked));
-      const ck = el('span', 'check'); if (e.id === st.engine && m.id === st.model) ck.innerHTML = ICON.check;
-      b.append(dot, txt, ck); b.onclick = () => pick(e.id, m.id); menu.appendChild(b);
-    }));
+    st.cfg.engines.forEach((e) => {
+      const g = el('div', 'mgroup'); const gd = el('span', 'dot'); gd.style.setProperty('--c', e.color); g.append(gd, document.createTextNode(e.label)); menu.appendChild(g);
+      e.models.forEach((m) => {
+        const blocked = !e.installed ? t('status.notInstalled') : e.limitedUntil ? t('status.limited') : '';
+        const b = el('button', 'item'); b.type = 'button'; b.disabled = !!blocked; b.setAttribute('role', 'option');
+        const dot = el('span', 'dot'); dot.style.setProperty('--c', e.color);
+        const txt = el('span'); txt.append(el('div', 't', m.label), el('div', 's', t(m.sub)));
+        if (blocked) txt.appendChild(el('div', 'b', blocked));
+        const ck = el('span', 'check'); if (e.id === st.engine && m.id === st.model) ck.innerHTML = ICON.check;
+        b.append(dot, txt, ck); b.onclick = () => pick(e.id, m.id); menu.appendChild(b);
+      });
+    });
     const e = engineById(st.engine); const box = el('div', 'effort');
-    const row = el('div', 'row'); row.append(el('span', '', 'Düşünme çabası'), el('span', '', e.efforts.length ? EFFORT[st.effort] || '' : 'bu motorda yok')); box.appendChild(row);
+    const row = el('div', 'row'); row.append(el('span', '', t('effort.title')), el('span', '', e.efforts.length ? effortLabel(st.effort) : t('effort.none'))); box.appendChild(row);
     const seg = el('div', 'seg');
     (e.efforts.length ? e.efforts : ['—']).forEach((x) => {
-      const b = el('button', x === st.effort ? 'on' : '', EFFORT[x] || x); b.type = 'button'; b.disabled = !e.efforts.length;
+      const b = el('button', x === st.effort ? 'on' : '', e.efforts.length ? effortLabel(x) : x); b.type = 'button'; b.disabled = !e.efforts.length;
       b.onclick = () => { st.effort = x; saveSettings(); refreshControls(); openModelMenu(true); }; seg.appendChild(b);
     });
-    box.appendChild(seg); menu.appendChild(box); menu.hidden = false; placeMenu(menu);
+    box.appendChild(seg); menu.appendChild(box); menu.hidden = false; placeMenu(menu); menu.scrollTop = keepScroll;
   }
   function openProjectMenu() {
     const menu = $('#projectMenu');
@@ -353,33 +387,34 @@
   }
   function toggleMode() { if (engineById(st.engine).write) { st.mode = st.mode === 'write' ? 'read' : 'write'; refreshControls(); } }
 
-  // ---------- / komutları ----------
+  // ---------- / komutları (adlar dile göre: /yeni veya /new) ----------
   const COMMANDS = [
-    { name: '/model', desc: 'Modeli ve düşünme çabasını seç', run: () => openModelMenu() },
-    { name: '/yeni', desc: 'Yeni sohbet başlat', run: () => newChat() },
-    { name: '/klasor', desc: 'Çalışma klasörünü seç', run: () => openProjectMenu() },
-    { name: '/yaz', desc: 'Yazma kipini aç veya kapat', run: () => toggleMode() },
-    { name: '/gecmis', desc: 'Sohbet geçmişini aç veya kapat', run: () => toggleNav() },
-    { name: '/kopyala', desc: 'Son yanıtı panoya kopyala', run: () => { const b = [...(chat ? chat.messages : [])].reverse().find((m) => m.r === 'b'); if (b) copyText(fullText(b)); } }
+    { id: 'model', run: () => openModelMenu() },
+    { id: 'new', run: () => newChat() },
+    { id: 'folder', run: () => openProjectMenu() },
+    { id: 'write', run: () => toggleMode() },
+    { id: 'history', run: () => toggleNav() },
+    { id: 'copy', run: () => { const b = [...(chat ? chat.messages : [])].reverse().find((m) => m.r === 'b'); if (b) copyText(fullText(b)); } }
   ];
+  const cmdName = (c) => t('slashName.' + c.id);
   let slashIdx = 0, slashList = [];
   function hideSlash() { $('#slashMenu').hidden = true; slashList = []; }
   function updateSlash() {
     const v = $('#prompt').value;
     if (!/^\/[^\s]*$/.test(v)) { hideSlash(); return; }
-    slashList = COMMANDS.filter((c) => c.name.startsWith(v.toLowerCase()));
+    slashList = COMMANDS.filter((c) => cmdName(c).startsWith(v.toLowerCase()));
     if (!slashList.length) { hideSlash(); return; }
     slashIdx = Math.min(slashIdx, slashList.length - 1);
     const menu = $('#slashMenu'); menu.replaceChildren();
     slashList.forEach((c, i) => {
       const b = el('button', 'item' + (i === slashIdx ? ' sel' : '')); b.type = 'button';
-      b.append(el('span', 't', c.name), el('span', 's', c.desc)); b.onclick = () => runSlash(c); menu.appendChild(b);
+      b.append(el('span', 't', cmdName(c)), el('span', 's', t('slash.' + c.id))); b.onclick = () => runSlash(c); menu.appendChild(b);
     });
     $('#modelMenu').hidden = true; $('#projectMenu').hidden = true; menu.hidden = false; placeMenu(menu);
   }
   function runSlash(c) { $('#prompt').value = ''; autosize(); hideSlash(); c.run(); }
 
-  // ---------- kenar çubuğu ----------
+  // ---------- kenar çubuğu, tema, dil ----------
   const narrow = () => window.matchMedia('(max-width: 860px)').matches;
   function toggleNav() {
     const l = $('#layout');
@@ -387,10 +422,28 @@
     else { l.classList.toggle('nav-closed'); lsSet('obs-nav', l.classList.contains('nav-closed') ? 'closed' : 'open'); }
   }
   function closeNavOnMobile() { $('#layout').classList.remove('nav-open'); }
+  function refreshTheme() {
+    const dark = ObsTheme.get() === 'dark';
+    $('#themeIco').innerHTML = dark ? ICON.sun : ICON.moon;
+    const label = dark ? t('theme.toLight') : t('theme.toDark');
+    $('#themeBtn').title = label; $('#themeBtn').setAttribute('aria-label', label);
+  }
+  function renderChips() {
+    const chips = $('#chips'); chips.replaceChildren();
+    ['s1', 's2', 's3', 's4'].forEach((k) => { const s = t('suggest.' + k); const b = el('button', 'chip', s); b.type = 'button'; b.onclick = () => { $('#prompt').value = s; autosize(); $('#prompt').focus(); }; chips.appendChild(b); });
+  }
+  /** dil değişince arayüzün tamamı yeniden çevrilir */
+  function applyLanguage() {
+    I18N.applyDom(); document.title = t('app.title');
+    $('#langBtn').textContent = t('lang.switchTo'); $('#langBtn').title = t('lang.switchTitle');
+    renderChips(); refreshControls(); refreshSend(); refreshTheme(); renderEngineStatus(); renderHistory(); closeMenus();
+    if (!st.running) renderThread();
+  }
 
   async function refreshConfig() { try { st.cfg = await api('/api/config'); renderEngineStatus(); } catch { /* sunucu yok */ } }
 
   async function init() {
+    I18N.init();
     st.cfg = await api('/api/config');
     let saved = {}; try { saved = JSON.parse(lsGet('obs-web') || '{}'); } catch { /* yoksay */ }
     const e0 = st.cfg.engines.find((e) => e.id === saved.engine && e.installed && !e.limitedUntil) || st.cfg.engines.find((e) => e.installed && !e.limitedUntil) || st.cfg.engines[0];
@@ -400,10 +453,12 @@
     st.cwd = st.cfg.projects.some((p) => p.path === saved.cwd) ? saved.cwd : st.cfg.defaultCwd;
     if (!narrow() && lsGet('obs-nav') === 'closed') $('#layout').classList.add('nav-closed');
     $('#newIco').innerHTML = ICON.plus; $('#sideIco').innerHTML = ICON.panel;
-    renderEngineStatus(); refreshControls(); refreshSend(); renderHistory();
-    const chips = $('#chips'); SUGGEST.forEach((s) => { const b = el('button', 'chip', s); b.type = 'button'; b.onclick = () => { $('#prompt').value = s; autosize(); $('#prompt').focus(); }; chips.appendChild(b); });
+    applyLanguage();
+    I18N.on('languageChanged', applyLanguage);
     $('#send').onclick = send; $('#newChat').onclick = newChat;
     $('#sideToggle').onclick = toggleNav; $('#scrim').onclick = closeNavOnMobile;
+    $('#langBtn').onclick = () => I18N.changeLanguage(I18N.language === 'tr' ? 'en' : 'tr');
+    $('#themeBtn').onclick = () => { ObsTheme.set(ObsTheme.get() === 'dark' ? 'light' : 'dark'); refreshTheme(); };
     $('#jump').onclick = () => { scrollDown(true); $('#jump').hidden = true; };
     $('#modelBtn').onclick = (ev) => { ev.stopPropagation(); openModelMenu(); };
     $('#projectBtn').onclick = (ev) => { ev.stopPropagation(); openProjectMenu(); };
@@ -423,5 +478,5 @@
     setInterval(refreshConfig, 60000);
     connect(); $('#prompt').focus();
   }
-  init().catch((err) => { $('#foot').textContent = 'Başlatılamadı: ' + err.message; });
+  init().catch((err) => { const m = err && err.info ? apiMsg(err) : (err && err.message) || String(err); $('#foot').textContent = t('foot.startFailed', { msg: m }); });
 })();

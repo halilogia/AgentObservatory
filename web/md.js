@@ -69,7 +69,7 @@
     });
   }
 
-  /** opts.onCopy(text): verilirse kod bloklarına "Kopyala" düğmesi eklenir */
+  /** opts.onCopy(text, btn): verilirse kod bloklarına kopyala düğmesi eklenir (opts.copyLabel: düğme metni) */
   function render(doc, box, text, opts) {
     opts = opts || {};
     box.replaceChildren();
@@ -78,7 +78,7 @@
       if (b.t === 'code') {
         e = doc.createElement('div'); e.className = 'codebox';
         var pre = doc.createElement('pre'), code = doc.createElement('code'); code.textContent = b.v; pre.appendChild(code); e.appendChild(pre);
-        if (opts.onCopy) { var btn = doc.createElement('button'); btn.type = 'button'; btn.className = 'copy'; btn.textContent = 'Kopyala'; btn.onclick = function () { opts.onCopy(b.v, btn); }; e.appendChild(btn); }
+        if (opts.onCopy) { var btn = doc.createElement('button'); btn.type = 'button'; btn.className = 'copy'; btn.textContent = opts.copyLabel || 'Copy'; btn.onclick = function () { opts.onCopy(b.v, btn); }; e.appendChild(btn); }
       } else if (b.t === 'h') { e = doc.createElement('h' + Math.min(b.level + 2, 5)); inlineDom(doc, e, b.c); }
       else if (b.t === 'hr') e = doc.createElement('hr');
       else if (b.t === 'quote') { e = doc.createElement('blockquote'); inlineDom(doc, e, b.c); }

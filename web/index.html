@@ -1,46 +1,50 @@
 <!doctype html>
-<html lang="tr">
+<html lang="tr" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="obs-token" content="__OBS_TOKEN__">
 <title>Agent Observatory</title>
 <link rel="stylesheet" href="/app.css">
+<script src="/theme.js"></script>
 </head>
 <body>
 <div class="layout" id="layout">
-  <aside class="side" id="side" aria-label="Sohbet geçmişi">
+  <aside class="side" id="side" data-i18n-attr="aria-label:nav.history">
     <div class="side-head">
-      <button class="newbtn" id="newChat" type="button"><span class="ico" id="newIco"></span>Yeni sohbet</button>
+      <button class="newbtn" id="newChat" type="button"><span class="ico" id="newIco"></span><span data-i18n="nav.newChat">Yeni sohbet</span></button>
     </div>
     <nav class="history" id="history"></nav>
-    <div class="side-foot" id="engineStatus" aria-label="Motor durumları"></div>
+    <div class="side-foot" id="engineStatus" data-i18n-attr="aria-label:status.engines"></div>
   </aside>
   <div class="scrim" id="scrim"></div>
   <div class="content">
     <header class="top">
-      <button class="iconbtn" id="sideToggle" type="button" aria-label="Geçmişi aç veya kapat"><span class="ico" id="sideIco"></span></button>
+      <button class="iconbtn" id="sideToggle" type="button" data-i18n-attr="aria-label:nav.toggle"><span class="ico" id="sideIco"></span></button>
       <div class="brand">Agent Observatory</div>
+      <div class="spacer"></div>
+      <button class="ghost" id="langBtn" type="button"></button>
+      <button class="iconbtn" id="themeBtn" type="button"><span class="ico" id="themeIco"></span></button>
     </header>
     <main id="main">
       <section class="empty" id="empty">
-        <h1>Ne yaptırmak istersin?</h1>
-        <p class="sub">İstemi bir motora ver: Claude Code, Codex, OpenCode ya da Antigravity.</p>
+        <h1 data-i18n="empty.title">Ne yaptırmak istersin?</h1>
+        <p class="sub" data-i18n="empty.sub">İstemi bir motora ver: Claude Code, Codex, OpenCode ya da Antigravity.</p>
       </section>
       <section class="thread" id="thread" aria-live="polite"></section>
     </main>
-    <button class="jump" id="jump" type="button" hidden>En alta in</button>
+    <button class="jump" id="jump" type="button" hidden data-i18n="jump">En alta in</button>
     <footer class="dock">
       <div class="composer" id="composer">
-        <textarea id="prompt" rows="1" placeholder="Bir şey yaz. Komutlar için / yaz. Enter gönderir, Shift+Enter satır atlar" aria-label="İstem"></textarea>
+        <textarea id="prompt" rows="1" data-i18n-attr="placeholder:composer.placeholder;aria-label:composer.label"></textarea>
         <div class="bar">
           <div class="left">
-            <button class="pill" id="projectBtn" type="button" aria-haspopup="listbox"><span class="ico" id="projectIco"></span><span id="projectLabel">Klasör</span><span class="ico chev"></span></button>
-            <button class="pill" id="modeBtn" type="button"><span class="ico" id="modeIco"></span><span id="modeLabel">Salt okunur</span></button>
+            <button class="pill" id="projectBtn" type="button" aria-haspopup="listbox"><span class="ico" id="projectIco"></span><span id="projectLabel"></span><span class="ico chev"></span></button>
+            <button class="pill" id="modeBtn" type="button"><span class="ico" id="modeIco"></span><span id="modeLabel"></span></button>
           </div>
           <div class="right">
-            <button class="pill model" id="modelBtn" type="button" aria-haspopup="listbox"><span class="dot" id="modelDot"></span><span id="modelLabel">Model</span><span class="ico chev"></span></button>
-            <button class="send" id="send" type="button" aria-label="Gönder"></button>
+            <button class="pill model" id="modelBtn" type="button" aria-haspopup="listbox"><span class="dot" id="modelDot"></span><span id="modelLabel"></span><span class="ico chev"></span></button>
+            <button class="send" id="send" type="button"></button>
           </div>
         </div>
         <div class="menu" id="modelMenu" hidden></div>
@@ -52,6 +56,9 @@
     </footer>
   </div>
 </div>
+<script src="/i18n.js"></script>
+<script src="/lang-tr.js"></script>
+<script src="/lang-en.js"></script>
 <script src="/md.js"></script>
 <script src="/store.js"></script>
 <script src="/app.js"></script>

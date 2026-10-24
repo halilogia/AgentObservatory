@@ -1,0 +1,67 @@
+ObsI18n.addResources('en', {
+  app: { title: 'Agent Observatory' },
+  common: { copy: 'Copy', copied: 'Copied' },
+  nav: { newChat: 'New chat', toggle: 'Show or hide history', history: 'Chat history' },
+  empty: { title: 'What should we get done?', sub: 'Give a prompt to an engine: Claude Code, Codex, OpenCode or Antigravity.' },
+  composer: { placeholder: 'Type something. Type / for commands. Enter sends, Shift+Enter adds a new line', label: 'Prompt', send: 'Send', stop: 'Stop' },
+  mode: { read: 'Read-only', write: 'Can write', readTitle: 'Files are not modified', writeTitle: 'The agent can modify files in the selected folder', noWrite: '{{engine}}: no write mode' },
+  project: { label: 'Folder' },
+  jump: 'Jump to latest',
+  effort: { title: 'Thinking effort', none: 'not available for this engine', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Xhigh', max: 'Max' },
+  status: { notInstalled: 'not installed', limited: 'quota reached', limitUntil: '{{engine}} · limit until {{time}}', engines: 'Engine status' },
+  history: { empty: 'No chats yet.', today: 'Today', yesterday: 'Yesterday', older: 'Earlier', delete: 'Delete chat', untitled: 'Chat' },
+  time: { now: 'now', min: '{{n}} min', hour: '{{n}} h', minutes_one: '{{count}} min', minutes_other: '{{count}} min', hours_one: '{{count}} hour', hours_other: '{{count}} hours' },
+  suggest: { s1: 'Summarize this folder\'s structure briefly', s2: 'Explain the latest git changes', s3: 'What is missing in the README?', s4: 'How do I run the tests?' },
+  slash: { model: 'Choose the model and thinking effort', new: 'Start a new chat', folder: 'Choose the working folder', write: 'Turn write mode on or off', history: 'Show or hide chat history', copy: 'Copy the last answer to the clipboard' },
+  slashName: { model: '/model', new: '/new', folder: '/folder', write: '/write', history: '/history', copy: '/copy' },
+  meta: { sec: '{{n}} s', in: 'in {{n}}', out: 'out {{n}}' },
+  retry: { label: 'Try another engine:' },
+  notice: {
+    cancelled: 'Task cancelled.',
+    noText: 'The engine produced no answer text. If you are working in a very large folder, pick a smaller project.',
+    noTextTools: 'The engine produced no answer text (it only ran tools; open the tool cards). If you are working in a very large folder, pick a smaller project.',
+    failed: 'The task failed.'
+  },
+  err: {
+    rate_limit: 'Quota reached.',
+    rate_limit_wait: 'Quota reached (opens again in about {{wait}}).',
+    auth: 'Sign-in required: log in to the relevant CLI.',
+    model_unsupported: 'This model is not supported on this account.',
+    permission: 'Permission required. Pick an engine that supports write mode or make the request read-only.',
+    spawn_failed: 'The program could not be started. Run "observatory doctor" in a terminal.'
+  },
+  api: {
+    unknown_engine: 'Unknown engine.',
+    unknown_model: 'Unknown model for this engine.',
+    bad_prompt: 'The prompt is empty or longer than 20000 characters.',
+    bad_effort: 'This engine does not support that effort level.',
+    no_write: '{{engine}} does not support write mode.',
+    cwd_forbidden: 'The working folder is outside the allowed roots.',
+    too_many: 'At most {{max}} tasks can run at the same time.',
+    not_installed: '{{engine}} is not installed.',
+    limited: '{{engine}} has reached its quota.',
+    bad_token: 'Session token is invalid: reload the page.',
+    bad_origin: 'Only same-origin requests are accepted.',
+    bad_content_type: 'application/json is required.',
+    bad_json: 'Invalid JSON.',
+    too_large: 'The request is too large.',
+    no_active_task: 'No active task.'
+  },
+  foot: { busy: 'You cannot switch chats while a task is running.', disconnected: 'Connection lost, retrying...', startFailed: 'Could not start: {{msg}}', writeOn: 'Write is on.' },
+  engines: {
+    claude: { note: 'Permissions cannot be asked in headless mode: read and answer only.' },
+    codex: { note: '' },
+    opencode: { note: 'In write mode it edits files but does not run shell commands.' },
+    agy: { note: 'No write permission in headless mode. Use sparingly.' }
+  },
+  models: {
+    sonnet: 'Everyday coding and agent work',
+    opus: 'Flagship for complex work',
+    haiku: 'Fastest for quick answers',
+    gpt6astra: 'OpenAI, with ChatGPT sign-in',
+    free: 'Free model',
+    gemini38flash: 'Google, official agy.exe'
+  },
+  lang: { switchTo: 'Türkçe', switchTitle: 'Türkçe\'ye geç' },
+  theme: { toLight: 'Switch to light theme', toDark: 'Switch to dark theme' }
+});
