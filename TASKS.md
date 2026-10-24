@@ -23,6 +23,11 @@
   - [ ] Pilot: küçük gerçek bir işte (kota harcayarak) denemek; onay bekliyor.
   - [ ] Observatory: tek çağrıda çok-model sürüsü (`run_swarm`) ve döngü kaydı; pilot sonucuna göre.
 
+### Yetenekler, telefon, yerel yol kapısı (2026-10-24)
+  - [x] Yetenekler penceresi: her CLI'nin skill / ajan / komut / MCP / eklenti adlarını göster (salt okunur; yalnızca adlar ve açıklamalar, gizli değerler okunmaz).
+  - [ ] Telefondan erişim (mesaj gönderme): erişim yöntemi kararı bekliyor (öneri: Tailscale + eşleştirme kodu).
+  - [ ] GravityGuard: commit'e yerel yol (`C:\Users\<ad>\...`) girmesini engelleyen kapı (`publication_guard.py`); karar bekliyor.
+
 ---
 
 ## ⏳ Backlog

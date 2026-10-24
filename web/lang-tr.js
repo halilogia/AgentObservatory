@@ -5,6 +5,7 @@ ObsI18n.addResources('tr', {
   empty: { title: 'Ne yaptırmak istersin?' },
   composer: { placeholder: 'Bir şey yaz', label: 'İstem', send: 'Gönder', stop: 'Durdur' },
   mode: { read: 'Salt okunur', write: 'Yazabilir', readTitle: 'Dosyalar değiştirilmez', writeTitle: 'Ajan seçili klasörde dosya değiştirebilir', noWrite: '{{engine}}: yazma kipi yok' },
+  caps: { title: 'Yetenekler', search: 'Ara', skills: 'Beceriler', agents: 'Ajanlar', commands: 'Komutlar', mcp: 'MCP sunucuları', plugins: 'Eklentiler', project: 'proje', none: 'Burada hiçbir şey yok.', close: 'Kapat', btn: 'Yetenekler' },
   rewind: { title: 'Buraya dön', askFiles: 'Bu noktadan sonra ajan dosyalarda değişiklik yaptı. Dosyalar da bu noktadaki haline döndürülsün mü?', both: 'Sohbeti ve dosyaları geri al', chatOnly: 'Yalnızca sohbeti geri al', cancel: 'Vazgeç' },
   project: { label: 'Klasör', add: 'Klasör ekle', addPlaceholder: 'Tam yol yaz, Enter ile ekle', remove: 'Listeden çıkar' },
   jump: 'En alta in',

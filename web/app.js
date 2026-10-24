@@ -7,6 +7,7 @@
   const svg = (d, extra = '') => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
   const ICON = {
     chev: svg('<path d="M4 6l4 4 4-4"/>'),
+    caps: svg('<path d="M8 2.5l1.3 3.2 3.2 1.3-3.2 1.3L8 11.5 6.7 8.3 3.5 7l3.2-1.3z"/><path d="M12.5 11v3M11 12.5h3"/>'),
     undo: svg('<path d="M6 3.5L3 6.5l3 3"/><path d="M3 6.5h6.5a3.5 3.5 0 010 7H6"/>'),
     check: svg('<path d="M3.5 8.5l3 3 6-7"/>'),
     folder: svg('<path d="M2 4.5A1.5 1.5 0 013.5 3h2.3l1.4 1.5h5.3A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/>'),
@@ -169,6 +170,41 @@
       ov.onclick = (ev) => { if (ev.target === ov) done(-1); };
       document.addEventListener('keydown', onKey, true); ov.appendChild(box); document.body.appendChild(ov); box.querySelector('button').focus();
     });
+  }
+  /** her CLI'nin skill / ajan / komut / MCP / eklenti adları (salt okunur; gizli değerler sunucuda bile okunmaz) */
+  async function openCaps() {
+    if (document.querySelector('.dlg')) return;
+    let data; try { data = await api('/api/capabilities?cwd=' + encodeURIComponent(st.cwd)); } catch (err) { $('#foot').textContent = err.info ? apiMsg(err) : err.message; return; }
+    let cur = st.engine, q = '';
+    const ov = el('div', 'dlg'); const box = el('div', 'dlgbox caps'); box.setAttribute('role', 'dialog');
+    const tabs = el('div', 'ctabs'), search = el('input', 'addin'), list = el('div', 'clist');
+    search.type = 'text'; search.placeholder = t('caps.search'); search.spellcheck = false;
+    const close = () => { ov.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } };
+    function paint() {
+      tabs.replaceChildren(); list.replaceChildren();
+      st.cfg.engines.forEach((e) => {
+        const b = el('button', 'ctab' + (e.id === cur ? ' on' : ''), e.label.replace(/ \(.*\)$/, '')); b.type = 'button'; b.style.setProperty('--c', e.color);
+        b.onclick = () => { cur = e.id; paint(); }; tabs.appendChild(b);
+      });
+      const c = data[cur] || {}; let any = false; const low = q.toLowerCase();
+      ['skills', 'agents', 'commands', 'mcp', 'plugins'].forEach((k) => {
+        const items = (c[k] || []).filter((i) => !low || i.name.toLowerCase().includes(low) || (i.desc || '').toLowerCase().includes(low));
+        if (!items.length) return; any = true;
+        list.appendChild(el('div', 'hgroup', t('caps.' + k) + ' · ' + items.length));
+        items.forEach((i) => {
+          const row = el('div', 'crow'); const head = el('div', 'cname', i.name);
+          if (i.scope === 'project') head.appendChild(el('span', 'cbadge', t('caps.project')));
+          row.appendChild(head); if (i.desc) row.appendChild(el('div', 'cdesc', i.desc)); list.appendChild(row);
+        });
+      });
+      if (!any) list.appendChild(el('div', 'cnone', t('caps.none')));
+    }
+    search.oninput = () => { q = search.value.trim(); paint(); };
+    const x = el('button', '', t('caps.close')); x.type = 'button'; x.onclick = close;
+    ov.onclick = (ev) => { if (ev.target === ov) close(); };
+    box.append(el('p', 'ctitle', t('caps.title')), tabs, search, list, x);
+    document.addEventListener('keydown', onKey, true); ov.appendChild(box); document.body.appendChild(ov); paint(); search.focus();
   }
   /** sohbeti seçilen kullanıcı mesajından önceki haline geri sarar; Yazabilir kipinde değişen dosyalar da geri alınabilir */
   async function rewind(i) {
@@ -501,7 +537,7 @@
   /** dil değişince arayüzün tamamı yeniden çevrilir */
   function applyLanguage() {
     I18N.applyDom(); document.title = t('app.title');
-    $('#langBtn').textContent = t('lang.switchTo'); $('#langBtn').title = t('lang.switchTitle');
+    $('#capsBtn').title = t('caps.btn'); $('#capsBtn').setAttribute('aria-label', t('caps.btn')); $('#langBtn').textContent = t('lang.switchTo'); $('#langBtn').title = t('lang.switchTitle');
     refreshControls(); refreshSend(); refreshTheme(); renderEngineStatus(); renderHistory(); closeMenus();
     if (!st.running) renderThread();
   }
@@ -532,6 +568,7 @@
     st.effort = e0.efforts.includes(saved.effort) ? saved.effort : e0.efforts.includes('medium') ? 'medium' : e0.efforts[0] || '';
     st.cwd = st.cfg.projects.some((p) => p.path === saved.cwd) ? saved.cwd : st.cfg.defaultCwd;
     if (!narrow() && lsGet('obs-nav') === 'closed') $('#layout').classList.add('nav-closed');
+    $('#capsIco').innerHTML = ICON.caps; $('#capsBtn').onclick = openCaps;
     $('#newIco').innerHTML = ICON.plus; $('#sideIco').innerHTML = ICON.panel;
     applyLanguage();
     I18N.on('languageChanged', applyLanguage);

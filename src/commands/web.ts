@@ -13,6 +13,7 @@ import { startServer } from './serve.ts';
 import type { ExtraCtx } from './serve.ts';
 import { resolveBinary } from '../core/paths.ts';
 import { restoreTree, snapshotTree } from './web_snapshot.ts';
+import { readCapabilities } from './web_capabilities.ts';
 
 export interface ModelDef { id: string; label: string; sub: string }
 export interface EngineDef { id: 'claude' | 'codex' | 'agy' | 'opencode'; label: string; color: string; models: ModelDef[]; efforts: string[]; write: boolean; note?: string }
@@ -65,7 +66,7 @@ export interface RunnerLike {
   cancelTask?(taskId: string, reason?: string): unknown;
 }
 
-export interface WebOptions { opencodeListing?: () => Promise<string>; port?: number; dbPath?: string; roots?: string[]; runner?: RunnerLike; token?: string; pollMs?: number; webDir?: string; configPath?: string }
+export interface WebOptions { opencodeListing?: () => Promise<string>; port?: number; dbPath?: string; roots?: string[]; runner?: RunnerLike; token?: string; pollMs?: number; webDir?: string; configPath?: string; home?: string }
 
 // Ayar dosyası: { roots?: string[]; folders?: string[] }. `roots` = altındaki klasörler listelenir; `folders` = tek tek eklenmiş proje klasörleri.
 interface WebConfig { roots?: string[]; folders?: string[] }
@@ -216,6 +217,13 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
           'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
         });
         res.end(body);
+        return true;
+      }
+
+      // her CLI'nin skill / ajan / komut / MCP / eklenti adları (yalnızca ad ve kısa açıklama; gizli değer okunmaz)
+      if (method === 'GET' && url.pathname === '/api/capabilities') {
+        const q = url.searchParams.get('cwd') || '';
+        json(200, readCapabilities(opts.home || os.homedir(), q && fs.existsSync(q) && allowedDir(q) ? path.resolve(q) : undefined));
         return true;
       }
 

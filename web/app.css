@@ -181,3 +181,15 @@ main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: 
 .dlgbox button { border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; padding: 9px 12px; cursor: pointer; }
 .dlgbox button:hover { background: var(--sunken); }
 .dlgbox button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.dlgbox.caps { width: min(560px, 100%); max-height: min(78vh, 640px); }
+.ctitle { font-weight: 600; margin: 0 !important; }
+.ctabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.dlgbox .ctab { padding: 5px 10px; font-size: 13px; border-radius: 999px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.ctab::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.dlgbox .ctab.on { color: var(--text); border-color: var(--text); }
+.clist { overflow-y: auto; min-height: 120px; flex: 1; padding-right: 4px; }
+.crow { padding: 7px 4px; border-bottom: 1px solid var(--border); }
+.cname { font-size: 14px; font-weight: 600; word-break: break-word; }
+.cbadge { margin-left: 8px; font-size: 11px; font-weight: 500; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; }
+.cdesc { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.cnone { color: var(--faint); font-size: 13px; padding: 14px 4px; }

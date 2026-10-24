@@ -5,6 +5,7 @@ ObsI18n.addResources('en', {
   empty: { title: 'What should we get done?' },
   composer: { placeholder: 'Type something', label: 'Prompt', send: 'Send', stop: 'Stop' },
   mode: { read: 'Read-only', write: 'Can write', readTitle: 'Files are not modified', writeTitle: 'The agent can modify files in the selected folder', noWrite: '{{engine}}: no write mode' },
+  caps: { title: 'Capabilities', search: 'Search', skills: 'Skills', agents: 'Agents', commands: 'Commands', mcp: 'MCP servers', plugins: 'Plugins', project: 'project', none: 'Nothing here.', close: 'Close', btn: 'Capabilities' },
   rewind: { title: 'Rewind to here', askFiles: 'After this point the agent changed files. Restore the files to how they were at this point too?', both: 'Rewind chat and files', chatOnly: 'Rewind chat only', cancel: 'Cancel' },
   project: { label: 'Folder', add: 'Add folder', addPlaceholder: 'Type the full path, press Enter', remove: 'Remove from list' },
   jump: 'Jump to latest',
