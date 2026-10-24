@@ -23,7 +23,7 @@ node bin/observatory.js web --port 9000
 - Menüler pencereye sığar: yer yoksa aşağı açılır, yükseklik sınırlanır ve içeride kaydırılır.
 - Varsayılan klasör, sunucuyu başlattığın proje klasörüdür (izinli kökün içindeyse).
 - **Aydınlık tema varsayılan**; üstteki ay/güneş düğmesiyle koyu temaya geçilir, seçim saklanır. Tema ilk boyamadan önce uygulanır (yanıp sönme yok).
-- **Kahve fincanı** (sağ üst, yalnızca Claude sohbetinde): Claude Code `cache-clock` modundaki piksel-art'ın birebir aynısı (`web/cup.js`, 14x10 piksel, aynı renkler ve duman). Duman = istem önbelleği (prompt cache) sıcak; son mesajdan 60 dk sonra fincan grileşir ve duman biter. Üstüne gelince kalan süre görünür. Görev sürerken her zaman sıcak.
+- **Kahve fincanı** (sağ üst, yalnızca Claude sohbetinde): Claude Code `cache-clock` modundaki piksel-art'ın birebir aynısı (`web/cup.js`, 14x10 piksel, aynı renkler ve duman). Arka planı şeffaftır (aydınlık temada duman ince gölgeyle okunur). Duman = istem önbelleği (prompt cache) sıcak; son mesajdan 60 dk sonra fincan grileşir ve duman biter. Üstüne gelince kalan süre görünür. Görev sürerken her zaman sıcak.
 - **Türkçe ve İngilizce**: üstteki dil düğmesiyle tüm arayüz, menüler, hata mesajları, `/` komutları (`/yeni` / `/new`), tarih ve süre biçimleri anında çevrilir; açık sohbetin süre ve hata satırları da yeniden çevrilir. İlk açılışta tarayıcı dili Türkçeyse Türkçe, değilse İngilizce; seçim saklanır.
 
 ## Motorlar
