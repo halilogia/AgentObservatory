@@ -171,3 +171,13 @@ main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: 
 .addin:focus { border-color: var(--faint); }
 .adderr { color: var(--err); font-size: 12px; padding: 4px 2px 0; min-height: 0; }
 .menu .item.add .t { color: var(--muted); }
+.msg.user { position: relative; }
+.undo { position: absolute; left: -34px; top: 50%; width: 26px; height: 26px; margin-top: -13px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: transparent; color: var(--faint); opacity: 0; cursor: pointer; }
+.msg.user:hover .undo, .undo:focus-visible { opacity: 1; } .undo:hover { background: var(--sunken); color: var(--text); }
+.undo svg { width: 15px; height: 15px; }
+.dlg { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .35); padding: 16px; }
+.dlgbox { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); padding: 18px; width: min(380px, 100%); display: flex; flex-direction: column; gap: 8px; }
+.dlgbox p { margin: 0 0 6px; }
+.dlgbox button { border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; padding: 9px 12px; cursor: pointer; }
+.dlgbox button:hover { background: var(--sunken); }
+.dlgbox button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }

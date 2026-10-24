@@ -141,6 +141,15 @@ try {
     const cfg3 = await (await fetch(base + '/api/config')).json() as any;
     assert.ok(!cfg3.projects.some((p: any) => p.path === outside), 'çıkarılan klasör listede olmamalı');
   }
+  // dosya geri alma uçları: izinli klasör ister; git deposu olmayan klasörde anlık görüntü yok; geçersiz karma reddedilir
+  {
+    const c = async (p: string, body: unknown) => (await post(p, body)).json() as Promise<any>;
+    assert.strictEqual((await c('/api/snapshot', { cwd: os.homedir() })).code, 'cwd_forbidden');
+    assert.strictEqual((await c('/api/restore', { cwd: os.homedir(), snap: 'a'.repeat(40) })).code, 'cwd_forbidden');
+    assert.strictEqual((await c('/api/snapshot', { cwd: path.join(root, 'proj') })).snap, null, 'git deposu değil: anlık görüntü yok');
+    assert.strictEqual((await c('/api/restore', { cwd: path.join(root, 'proj'), snap: 'zzz' })).code, 'bad_snap');
+    assert.strictEqual((await post('/api/snapshot', { cwd: root }, { 'x-observatory-token': 'yanlis' })).status, 403);
+  }
   console.log('✔ web: arayüz + CSP, yapılandırma, jeton/Origin/Sec-Fetch-Site korumaları, doğrulamalar, gönder -> SSE');
 } finally {
   server.close();

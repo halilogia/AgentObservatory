@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { startServer } from './serve.ts';
 import type { ExtraCtx } from './serve.ts';
 import { resolveBinary } from '../core/paths.ts';
+import { restoreTree, snapshotTree } from './web_snapshot.ts';
 
 export interface ModelDef { id: string; label: string; sub: string }
 export interface EngineDef { id: 'claude' | 'codex' | 'agy' | 'opencode'; label: string; color: string; models: ModelDef[]; efforts: string[]; write: boolean; note?: string }
@@ -234,7 +235,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
       }
 
       // ---- yazan uçlar: jeton + aynı köken ----
-      if (method === 'POST' && ['/api/run', '/api/cancel', '/api/folders', '/api/folders/remove'].includes(url.pathname)) {
+      if (method === 'POST' && ['/api/run', '/api/cancel', '/api/folders', '/api/folders/remove', '/api/snapshot', '/api/restore'].includes(url.pathname)) {
         // hata yanıtları `code` taşır: arayüz bunu seçili dile çevirir; `error` Türkçe yedek metindir
         const fail = (status: number, code: string, error: string, params: Record<string, unknown> = {}) => { json(status, { code, error, params }); return true; };
         const site = req.headers['sec-fetch-site'];
@@ -261,6 +262,17 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
           if (tooBroad(dir)) return fail(400, 'folder_too_broad', 'çok geniş klasör: sürücü kökü ya da kullanıcı klasörü eklenemez');
           if (!folders.some((f) => same(f, dir))) { folders.unshift(dir); saveFolders(); }
           json(200, { ok: true, path: dir });
+          return true;
+        }
+
+        if (url.pathname === '/api/snapshot' || url.pathname === '/api/restore') {
+          const dir = typeof b.cwd === 'string' ? b.cwd : '';
+          if (!dir || !fs.existsSync(dir) || !allowedDir(dir)) return fail(400, 'cwd_forbidden', 'çalışma klasörü izinli köklerin dışında');
+          if (url.pathname === '/api/snapshot') { json(200, { snap: await snapshotTree(path.resolve(dir)) }); return true; }
+          if (typeof b.snap !== 'string' || !/^[0-9a-f]{40,64}$/.test(b.snap)) return fail(400, 'bad_snap', 'anlık görüntü kimliği geçersiz');
+          if (active.size) return fail(409, 'busy', 'görev çalışırken dosyalar geri alınamaz');
+          try { json(200, await restoreTree(path.resolve(dir), b.snap)); }
+          catch (e: any) { return fail(e.message === 'snap_missing' ? 410 : 400, ['snap_missing', 'not_git', 'bad_snap'].includes(e.message) ? e.message : 'restore_failed', 'geri alma başarısız'); }
           return true;
         }
 

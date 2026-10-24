@@ -7,6 +7,7 @@
   const svg = (d, extra = '') => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
   const ICON = {
     chev: svg('<path d="M4 6l4 4 4-4"/>'),
+    undo: svg('<path d="M6 3.5L3 6.5l3 3"/><path d="M3 6.5h6.5a3.5 3.5 0 010 7H6"/>'),
     check: svg('<path d="M3.5 8.5l3 3 6-7"/>'),
     folder: svg('<path d="M2 4.5A1.5 1.5 0 013.5 3h2.3l1.4 1.5h5.3A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/>'),
     lock: svg('<rect x="3.5" y="7" width="9" height="6" rx="1.5"/><path d="M5.5 7V5.5a2.5 2.5 0 015 0V7"/>'),
@@ -129,7 +130,7 @@
     clearThread();
     if (!chat || !chat.messages.length) { showThread(false); return; }
     showThread(true);
-    chat.messages.forEach((m) => { if (m.r === 'u') addUserDom(m.text); else createBot(m, false); });
+    chat.messages.forEach((m, i) => { if (m.r === 'u') addUserDom(m.text, i); else createBot(m, false); });
   }
   function newChat() {
     if (st.running) return;
@@ -151,7 +152,46 @@
   }
 
   // ---------- mesaj DOM'u ----------
-  function addUserDom(text) { showThread(true); $('#thread').appendChild(el('div', 'msg user', text)); scrollDown(); }
+  function addUserDom(text, idx) {
+    showThread(true);
+    const d = el('div', 'msg user', text);
+    const b = el('button', 'undo'); b.type = 'button'; b.title = t('rewind.title'); b.setAttribute('aria-label', t('rewind.title')); b.innerHTML = ICON.undo;
+    b.onclick = () => rewind(idx);
+    d.appendChild(b); $('#thread').appendChild(d); scrollDown();
+  }
+  /** küçük onay penceresi: seçilen düğmenin sırasını döndürür, kapatılırsa -1 */
+  function ask(text, labels) {
+    return new Promise((resolve) => {
+      const ov = el('div', 'dlg'); const box = el('div', 'dlgbox'); box.setAttribute('role', 'dialog'); box.append(el('p', '', text));
+      const done = (n) => { ov.remove(); document.removeEventListener('keydown', onKey, true); resolve(n); };
+      const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); done(-1); } };
+      labels.forEach((l, n) => { const b = el('button', n === 0 ? 'primary' : '', l); b.type = 'button'; b.onclick = () => done(n); box.appendChild(b); });
+      ov.onclick = (ev) => { if (ev.target === ov) done(-1); };
+      document.addEventListener('keydown', onKey, true); ov.appendChild(box); document.body.appendChild(ov); box.querySelector('button').focus();
+    });
+  }
+  /** sohbeti seçilen kullanıcı mesajından önceki haline geri sarar; Yazabilir kipinde değişen dosyalar da geri alınabilir */
+  async function rewind(i) {
+    if (st.running || !chat) return;
+    const removed = chat.messages.slice(i);
+    const snapRec = removed.find((m) => m.r === 'b' && m.snap);
+    let files = false;
+    if (snapRec) {
+      const c = await ask(t('rewind.askFiles'), [t('rewind.both'), t('rewind.chatOnly'), t('rewind.cancel')]);
+      if (c === 2 || c < 0) return;
+      files = c === 0;
+    }
+    if (files) {
+      try { await api('/api/restore', { cwd: snapRec.snapCwd, snap: snapRec.snap }); }
+      catch (err) { $('#foot').textContent = err.info ? apiMsg(err) : err.message; return; }
+    }
+    const text = removed[0].text;
+    chat.messages = chat.messages.slice(0, i);
+    chat.session = null; // CLI oturumu geri alınan turları hâlâ hatırlar: yeni oturum açılır, bağlam özetle taşınır
+    if (chat.messages.length) persist(); else { ObsStore.remove(chat.id); chat = null; }
+    renderThread(); renderHistory();
+    const box = $('#prompt'); box.value = text; autosize(); box.focus();
+  }
   function fullText(rec) { return rec.parts.filter((p) => p.k === 'text').map((p) => p.v).join('\n\n'); }
   function engineLabel(rec) { const e = st.cfg && engineById(rec.engine); return e ? e.label : rec.engine; }
 
@@ -276,6 +316,9 @@
     const view = createBot(rec, true);
     st.running = 'pending'; stick = true; refreshSend(); persist();
     try {
+      if (e.write && st.mode === 'write') { // dosya geri alma için: görev başlamadan önce klasörün anlık görüntüsü (git deposu değilse yok)
+        try { rec.snap = (await api('/api/snapshot', { cwd: st.cwd })).snap || null; rec.snapCwd = st.cwd; } catch { rec.snap = null; }
+      }
       const r = await api('/api/run', { engine: e.id, model: m.id, effort: e.efforts.length ? st.effort : undefined, prompt: sendText, mode: e.write ? st.mode : 'read', cwd: st.cwd, sessionId: resume });
       rec.taskId = r.taskId; views.set(r.taskId, view); st.running = r.taskId;
       const buffered = early.filter((x) => x.taskId === r.taskId); early = early.filter((x) => x.taskId !== r.taskId);

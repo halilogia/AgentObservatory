@@ -14,7 +14,7 @@
   - [x] Sade arayüz (alt yazı, öneri çipleri, boş durum metni kaldırıldı) + kahve fincanı (şeffaf).
   - [x] Klasör ekle: yol yazarak proje klasörü ekleme, `~/.agent-observatory/web.json`, varsayılan kök = başlatılan klasörün üstü.
   - [x] Model/motor değişiminde bağlamı taşı (önceki konuşma özeti yeni motora ilk istemle gider).
-  - [ ] Eski noktaya dön: sohbeti seçilen mesaja geri sar; Yazabilir kipinde dosyaları git ağacı anlık görüntüsüyle geri al.
+  - [x] Eski noktaya dön: sohbeti seçilen mesaja geri sar; Yazabilir kipinde dosyaları git ağacı anlık görüntüsüyle geri al.
 
 ---
 
