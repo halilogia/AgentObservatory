@@ -19,6 +19,7 @@ node bin/observatory.js web --port 9000
 - **`/` komutları**: kutuya `/` yazınca liste açılır: `/model`, `/yeni`, `/klasor`, `/yaz`, `/gecmis`, `/kopyala`. Oklar ve Enter ile seçilir.
 - **Markdown**: başlık, liste, tablo, alıntı, kod bloğu (her birinde Kopyala), kalın, italik, satır içi kod, bağlantı (yalnızca http/https, yeni sekmede). HTML hiçbir zaman çizilmez.
 - **Akıllı kaydırma**: yeni metin geldikçe en alta iner, ama sen yukarı kaydırdıysan seni çekmez; "En alta in" düğmesi çıkar.
+- **Bağlam taşıma**: Motor, klasör ya da kayıtlı oturum değişince CLI yeni oturum açar ve yeni model eski konuşmayı bilmezdi. Artık önceki turlar (istem, yanıt, araç özeti) `<CONTEXT_SUMMARY>` etiketiyle yeni isteme eklenir (`web/context.js`): en yeni iki tur tam, eskiler kısaltılmış, toplam en çok ~9000 karakter. Özet yapay zekâyla değil kuralla çıkar (ek maliyet ve gecikme yok). Ekranda yalnızca senin yazdığın görünür. Aynı motor ve klasörde oturum zaten sürdüğü için özet eklenmez.
 - **Sohbet devamı**: Aynı motor ve klasörde ikinci mesaj, önceki oturumu sürdürür (Claude `--resume`, Codex `exec resume`, agy `--conversation`, OpenCode `--session`). Motor veya klasör değişince yeni oturum başlar.
 - **Durdur** düğmesi çalışan görevi iptal eder. **Yeni sohbet** oturumu sıfırlar.
 - Sol altta motor durumu (kurulu mu, kota dolu mu); 60 sn'de bir yenilenir.

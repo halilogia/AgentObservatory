@@ -141,7 +141,9 @@
     chat = c; renderThread();
     const lastBot = [...c.messages].reverse().find((m) => m.r === 'b');
     if (lastBot && engineById(lastBot.engine)) {
-      st.engine = lastBot.engine; st.model = lastBot.model; if (lastBot.effort) st.effort = lastBot.effort;
+      const le = engineById(lastBot.engine); // model listeden kalkmış olabilir (OpenCode ücretsiz listesi değişir): ilk modele düş
+      st.engine = lastBot.engine; st.model = le.models.some((x) => x.id === lastBot.model) ? lastBot.model : le.models[0].id;
+      if (lastBot.effort && le.efforts.includes(lastBot.effort)) st.effort = lastBot.effort;
       if (st.cfg.projects.some((p) => p.path === lastBot.cwd)) st.cwd = lastBot.cwd;
       if (!engineById(st.engine).write) st.mode = 'read';
     }
@@ -265,14 +267,16 @@
     if (st.running || !text.trim()) return;
     ensureChat(text);
     const e = engineById(st.engine); const m = e.models.find((x) => x.id === st.model);
+    // oturum sürdürülemiyorsa (motor ya da klasör değişti) önceki konuşma özet olarak yeni isteme eklenir
+    const resume = chat.session && chat.session.engine === e.id && chat.session.cwd === st.cwd ? chat.session.id : undefined;
+    const sendText = resume ? text : ObsCtx.build(chat.messages, text) || text;
     if (o.bubble !== false) { chat.messages.push({ r: 'u', text }); addUserDom(text); }
     const rec = { r: 'b', engine: e.id, model: m.id, label: m.label, color: e.color, parts: [], notice: null, meta: null, prompt: text, cwd: st.cwd, taskId: null, effort: e.efforts.length ? st.effort : '' };
     chat.messages.push(rec);
     const view = createBot(rec, true);
-    const resume = chat.session && chat.session.engine === e.id && chat.session.cwd === st.cwd ? chat.session.id : undefined;
     st.running = 'pending'; stick = true; refreshSend(); persist();
     try {
-      const r = await api('/api/run', { engine: e.id, model: m.id, effort: e.efforts.length ? st.effort : undefined, prompt: text, mode: e.write ? st.mode : 'read', cwd: st.cwd, sessionId: resume });
+      const r = await api('/api/run', { engine: e.id, model: m.id, effort: e.efforts.length ? st.effort : undefined, prompt: sendText, mode: e.write ? st.mode : 'read', cwd: st.cwd, sessionId: resume });
       rec.taskId = r.taskId; views.set(r.taskId, view); st.running = r.taskId;
       const buffered = early.filter((x) => x.taskId === r.taskId); early = early.filter((x) => x.taskId !== r.taskId);
       buffered.forEach(onEvent); refreshSend();
