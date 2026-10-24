@@ -131,8 +131,9 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
       const method = req.method || 'GET';
 
       // ---- statik arayüz ----
-      if (method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/app.js' || url.pathname === '/app.css')) {
-        const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+      const staticFile = url.pathname === '/' ? 'index.html' : /^\/[\w-]+\.(html|js|css)$/.test(url.pathname) ? url.pathname.slice(1) : '';
+      if (method === 'GET' && staticFile && fs.existsSync(path.join(webDir, staticFile))) {
+        const file = staticFile;
         let body = fs.readFileSync(path.join(webDir, file), 'utf8');
         if (file === 'index.html') body = body.replace('__OBS_TOKEN__', token);
         res.writeHead(200, {
@@ -147,9 +148,13 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
 
       if (method === 'GET' && url.pathname === '/api/config') {
         const projects = listProjects(roots);
+        // varsayılan klasör: sunucunun başlatıldığı proje (izinli kökün içindeyse, kökün kendisi değilse); yoksa en son değişen proje
+        const here = path.resolve(process.cwd());
+        const hereOk = fs.existsSync(here) && insideRoots(here, roots) && !roots.some((r) => path.resolve(r).toLowerCase() === here.toLowerCase());
+        if (hereOk && !projects.some((p) => path.resolve(p.path).toLowerCase() === here.toLowerCase())) projects.unshift({ name: path.basename(here), path: here });
         json(200, {
           engines: ENGINES.map((e) => ({ ...e, ...engineStatus(db, e) })),
-          roots, projects, defaultCwd: projects[0]?.path || roots[0] || os.homedir(), maxActive: MAX_ACTIVE
+          roots, projects, defaultCwd: hereOk ? here : projects[0]?.path || roots[0] || os.homedir(), maxActive: MAX_ACTIVE
         });
         return true;
       }

@@ -8,37 +8,52 @@
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand">Agent Observatory</div>
-  <div class="engines" id="engineStatus" aria-label="Motor durumları"></div>
-  <button class="ghost" id="newChat" type="button">Yeni sohbet</button>
-</header>
-<main id="main">
-  <section class="empty" id="empty">
-    <h1>Ne yaptırmak istersin?</h1>
-    <p class="sub">İstemi bir motora ver: Claude Code, Codex, OpenCode ya da Antigravity.</p>
-  </section>
-  <section class="thread" id="thread" aria-live="polite"></section>
-</main>
-<footer class="dock">
-  <div class="composer" id="composer">
-    <textarea id="prompt" rows="1" placeholder="Bir şey yaz ve Enter'a bas. Satır atlamak için Shift+Enter"></textarea>
-    <div class="bar">
-      <div class="left">
-        <button class="pill" id="projectBtn" type="button" aria-haspopup="listbox"><span class="ico" id="projectIco"></span><span id="projectLabel">Klasör</span><span class="ico chev"></span></button>
-        <button class="pill" id="modeBtn" type="button" title="Salt okunur: dosya değiştirilmez"><span class="ico" id="modeIco"></span><span id="modeLabel">Salt okunur</span></button>
-      </div>
-      <div class="right">
-        <button class="pill model" id="modelBtn" type="button" aria-haspopup="listbox"><span class="dot" id="modelDot"></span><span id="modelLabel">Model</span><span class="ico chev"></span></button>
-        <button class="send" id="send" type="button" aria-label="Gönder"></button>
-      </div>
+<div class="layout" id="layout">
+  <aside class="side" id="side" aria-label="Sohbet geçmişi">
+    <div class="side-head">
+      <button class="newbtn" id="newChat" type="button"><span class="ico" id="newIco"></span>Yeni sohbet</button>
     </div>
-    <div class="menu" id="modelMenu" hidden></div>
-    <div class="menu small" id="projectMenu" hidden></div>
+    <nav class="history" id="history"></nav>
+    <div class="side-foot" id="engineStatus" aria-label="Motor durumları"></div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+  <div class="content">
+    <header class="top">
+      <button class="iconbtn" id="sideToggle" type="button" aria-label="Geçmişi aç veya kapat"><span class="ico" id="sideIco"></span></button>
+      <div class="brand">Agent Observatory</div>
+    </header>
+    <main id="main">
+      <section class="empty" id="empty">
+        <h1>Ne yaptırmak istersin?</h1>
+        <p class="sub">İstemi bir motora ver: Claude Code, Codex, OpenCode ya da Antigravity.</p>
+      </section>
+      <section class="thread" id="thread" aria-live="polite"></section>
+    </main>
+    <button class="jump" id="jump" type="button" hidden>En alta in</button>
+    <footer class="dock">
+      <div class="composer" id="composer">
+        <textarea id="prompt" rows="1" placeholder="Bir şey yaz. Komutlar için / yaz. Enter gönderir, Shift+Enter satır atlar" aria-label="İstem"></textarea>
+        <div class="bar">
+          <div class="left">
+            <button class="pill" id="projectBtn" type="button" aria-haspopup="listbox"><span class="ico" id="projectIco"></span><span id="projectLabel">Klasör</span><span class="ico chev"></span></button>
+            <button class="pill" id="modeBtn" type="button"><span class="ico" id="modeIco"></span><span id="modeLabel">Salt okunur</span></button>
+          </div>
+          <div class="right">
+            <button class="pill model" id="modelBtn" type="button" aria-haspopup="listbox"><span class="dot" id="modelDot"></span><span id="modelLabel">Model</span><span class="ico chev"></span></button>
+            <button class="send" id="send" type="button" aria-label="Gönder"></button>
+          </div>
+        </div>
+        <div class="menu" id="modelMenu" hidden></div>
+        <div class="menu small" id="projectMenu" hidden></div>
+        <div class="menu small slash" id="slashMenu" hidden></div>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="foot" id="foot"></div>
+    </footer>
   </div>
-  <div class="chips" id="chips"></div>
-  <div class="foot" id="foot"></div>
-</footer>
+</div>
+<script src="/md.js"></script>
+<script src="/store.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

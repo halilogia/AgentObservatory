@@ -60,3 +60,8 @@ assert.strictEqual(describeTool('run_command', { CommandLine: 'npm test' }).kind
 assert.strictEqual(describeTool('Grep', { pattern: 'foo' }).kind, 'search');
 assert.strictEqual(describeTool('replace_file_content', { TargetFile: 'a.ts' }).kind, 'edit');
 console.log('✔ transcript: claude / codex / agy / opencode görünümleri, kısaltma, hata türü, renk kipi');
+
+// token alan adları adaptörlere göre değişir: camelCase (codex, claude) da toplanmalı
+const camel = render('codex', [['task.started', { prompt: 'x' }], ['usage.updated', { usage: { inputTokens: 1500, outputTokens: 20 } }], ['task.completed', { exitCode: 0 }]]);
+assert.ok(camel.includes('in 1.5k') && camel.includes('out 20'), 'inputTokens/outputTokens okunmalı');
+console.log('✔ transcript: camelCase token alanları');

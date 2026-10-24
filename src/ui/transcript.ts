@@ -120,8 +120,9 @@ export class TranscriptRenderer {
       }
       case 'usage.updated': {
         const u = d.usage || {};
-        this.tokensIn += Number(u.input_tokens ?? u.input ?? 0) || 0;
-        this.tokensOut += Number(u.output_tokens ?? u.output ?? 0) || 0;
+        // adaptörlere göre alan adı değişir: input_tokens (agy, ingest), inputTokens (codex, claude), input (opencode)
+        this.tokensIn += Number(u.input_tokens ?? u.inputTokens ?? u.input ?? 0) || 0;
+        this.tokensOut += Number(u.output_tokens ?? u.outputTokens ?? u.output ?? 0) || 0;
         break;
       }
       case 'task.completed':

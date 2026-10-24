@@ -11,10 +11,17 @@ node bin/observatory.js web --port 9000
 - **Model seçici** (sağ alt): motor + model listesi, her satırda renkli nokta, ad ve alt açıklama, seçili olanda onay işareti. Altında **Düşünme çabası** (Düşük / Orta / Yüksek / Çok yüksek / En yüksek). Kurulu olmayan veya kotası dolu motor soluk görünür ve seçilemez.
 - **Klasör seçici** (sol alt): ajanın çalışacağı proje. Liste izinli köklerin altındaki projelerdir, en son değişen önce.
 - **Kip düğmesi**: `Salt okunur` (varsayılan) veya `Yazabilir`. Yazma yalnızca destekleyen motorlarda açılır.
-- **Canlı yanıt**: metin akar, araç çağrıları katlanabilir kartlarda görünür (komut ve çıktısı), altta süre ve token. Hata olursa türüne göre Türkçe açıklama (ör. "Kota doldu, başka motor seç").
+- **Canlı yanıt**: metin akar, araç çağrıları katlanabilir kartlarda görünür (komut ve çıktısı), altta süre ve token, **Kopyala** düğmesi. Hata olursa türüne göre Türkçe açıklama.
+- **Başka motorla dene**: Görev hata verirse (kota, model, giriş...) altında kullanılabilir diğer motorların düğmeleri çıkar; tıklayınca aynı istem o motorla yeniden çalışır.
+- **Sohbet geçmişi** (sol kenar çubuğu): sohbetler tarayıcıda saklanır (`localStorage`, sunucuya gitmez), Bugün / Dün / Daha önce diye gruplanır. Bir sohbeti açınca mesajlar, araç kartları ve model ayarı geri gelir; yazdığın her şey o oturumu sürdürür. Silme düğmesi satırın üzerine gelince çıkar. Kenar çubuğu açılıp kapanır (dar ekranda üstten kayar).
+- **`/` komutları**: kutuya `/` yazınca liste açılır: `/model`, `/yeni`, `/klasor`, `/yaz`, `/gecmis`, `/kopyala`. Oklar ve Enter ile seçilir.
+- **Markdown**: başlık, liste, tablo, alıntı, kod bloğu (her birinde Kopyala), kalın, italik, satır içi kod, bağlantı (yalnızca http/https, yeni sekmede). HTML hiçbir zaman çizilmez.
+- **Akıllı kaydırma**: yeni metin geldikçe en alta iner, ama sen yukarı kaydırdıysan seni çekmez; "En alta in" düğmesi çıkar.
 - **Sohbet devamı**: Aynı motor ve klasörde ikinci mesaj, önceki oturumu sürdürür (Claude `--resume`, Codex `exec resume`, agy `--conversation`, OpenCode `--session`). Motor veya klasör değişince yeni oturum başlar.
 - **Durdur** düğmesi çalışan görevi iptal eder. **Yeni sohbet** oturumu sıfırlar.
-- Üstteki rozetler motor durumunu gösterir (kurulu mu, kota dolu mu).
+- Sol altta motor durumu (kurulu mu, kota dolu mu); 60 sn'de bir yenilenir.
+- Menüler pencereye sığar: yer yoksa aşağı açılır, yükseklik sınırlanır ve içeride kaydırılır.
+- Varsayılan klasör, sunucuyu başlattığın proje klasörüdür (izinli kökün içindeyse).
 - Açık ve koyu tema (sistem ayarına uyar).
 
 ## Motorlar
@@ -59,5 +66,5 @@ Dosyalar: `src/commands/web.ts` (sunucu ve motor tablosu), `web/index.html`, `we
 ## Bilinen sınırlar
 - **Çok büyük klasörlerde** OpenCode takılabilir (denemede `Desktop\GitHub` kökünde yanıt metni gelmedi). Bu yüzden kök seçilemez, proje seçilir; yanıt gelmezse arayüz bunu bildirir.
 - Codex şu an kotası dolu olabilir; durum rozetinde görünür.
-- Arayüz Markdown'ı sadeleştirilmiş gösterir (kod bloğu, madde, kalın, satır içi kod); tablo ve bağlantı çizmez.
-- Konuşma geçmişi tarayıcıda saklanmaz; sayfa yenilenince sohbet temizlenir (görevler yine de `observatory chat` ile görülebilir).
+- Geçmiş yalnızca bu tarayıcıda ve bu adreste (`127.0.0.1:8788`) saklanır; başka tarayıcıda veya portta görünmez. En çok 40 sohbet tutulur, araç çıktıları 2000 karaktere kısaltılır. Çalışırken (görev sürerken) sohbet değiştirilemez.
+- **Sunucuyu yeniden başlat:** Arayüz dosyaları (`web/`) diskten okunur ama sunucu kodu (`web.ts`) bellekte kalır. Güncellemeden sonra çalışan `observatory web` işlemini kapatıp yeniden başlat; eski sunucu yeni dosyaları (`md.js`, `store.js`) sunmaz ve sayfa açılmaz.
