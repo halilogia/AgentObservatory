@@ -106,7 +106,7 @@
   function renderHistory() {
     const box = $('#history'); box.replaceChildren();
     const list = ObsStore.list();
-    if (!list.length) { box.appendChild(el('div', 'hempty', t('history.empty'))); return; }
+    if (!list.length) return;
     const day = (ts) => { const d = new Date(ts), n = new Date(); const diff = Math.floor((new Date(n.getFullYear(), n.getMonth(), n.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5); return diff <= 0 ? t('history.today') : diff === 1 ? t('history.yesterday') : t('history.older'); };
     let last = '';
     list.forEach((c) => {
@@ -124,7 +124,7 @@
     });
   }
   function clearThread() { $('#thread').replaceChildren(); views.clear(); }
-  function showThread(has) { $('#empty').hidden = has; $('#chips').hidden = has; }
+  function showThread(has) { $('#empty').hidden = has; }
   function renderThread() {
     clearThread();
     if (!chat || !chat.messages.length) { showThread(false); return; }
@@ -319,12 +319,12 @@
     refreshFoot();
   }
   function refreshFoot() {
-    const e = engineById(st.engine);
-    $('#foot').textContent = [e.note ? t(e.note) : '', st.mode === 'write' && e.write ? t('foot.writeOn') : ''].filter(Boolean).join(' ');
+    $('#foot').textContent = '';
   }
   function renderEngineStatus() {
     const box = $('#engineStatus'); box.replaceChildren();
-    st.cfg.engines.forEach((e) => {
+    // yalnızca sorunlu motor gösterilir (kurulu değil / kota dolu)
+    st.cfg.engines.filter((e) => !e.installed || e.limitedUntil).forEach((e) => {
       const c = el('span', 'eng' + (!e.installed || e.limitedUntil ? ' off' : '')); c.style.setProperty('--c', e.color);
       const label = e.limitedUntil ? t('status.limitUntil', { engine: e.label, time: new Date(e.limitedUntil).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) }) : !e.installed ? `${e.label} · ${t('status.notInstalled')}` : e.label;
       c.append(el('i'), document.createTextNode(label)); box.appendChild(c);
@@ -428,15 +428,11 @@
     const label = dark ? t('theme.toLight') : t('theme.toDark');
     $('#themeBtn').title = label; $('#themeBtn').setAttribute('aria-label', label);
   }
-  function renderChips() {
-    const chips = $('#chips'); chips.replaceChildren();
-    ['s1', 's2', 's3', 's4'].forEach((k) => { const s = t('suggest.' + k); const b = el('button', 'chip', s); b.type = 'button'; b.onclick = () => { $('#prompt').value = s; autosize(); $('#prompt').focus(); }; chips.appendChild(b); });
-  }
   /** dil değişince arayüzün tamamı yeniden çevrilir */
   function applyLanguage() {
     I18N.applyDom(); document.title = t('app.title');
     $('#langBtn').textContent = t('lang.switchTo'); $('#langBtn').title = t('lang.switchTitle');
-    renderChips(); refreshControls(); refreshSend(); refreshTheme(); renderEngineStatus(); renderHistory(); closeMenus();
+    refreshControls(); refreshSend(); refreshTheme(); renderEngineStatus(); renderHistory(); closeMenus();
     if (!st.running) renderThread();
   }
 
