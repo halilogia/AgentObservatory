@@ -8,7 +8,7 @@ node bin/observatory.js web --port 9000
 ```
 
 ## Ne var?
-- **Model seçici** (sağ alt): motor + model listesi, her satırda renkli nokta, ad ve alt açıklama, seçili olanda onay işareti. Altında **Düşünme çabası** (Düşük / Orta / Yüksek / Çok yüksek / En yüksek). Kurulu olmayan veya kotası dolu motor soluk görünür ve seçilemez.
+- **Model seçici** (sağ alt): motor + model listesi, her satırda renkli nokta, ad ve alt açıklama, seçili olanda onay işareti. **Düşünme çabası** (Düşük / Orta / Yüksek / X-yüksek / Maks) model seçiciden ayrıdır: yanındaki kendi düğmesinden seçilir; çabası olmayan motorda (OpenCode) düğme görünmez. Kurulu olmayan veya kotası dolu motor soluk görünür ve seçilemez.
 - **Klasör seçici** (sol alt): ajanın çalışacağı proje. Liste izinli köklerin altındaki projelerdir, en son değişen önce.
   - **Klasör ekle** (listenin altı): tam yolu yaz, Enter. Klasör kökten bağımsız tek başına proje olarak eklenir, `~/.agent-observatory/web.json` içinde saklanır; eklenenin üstüne gelince çıkan çarpı listeden çıkarır (diskteki klasöre dokunulmaz). Sürücü kökü, kullanıcı klasörü ve üstleri reddedilir.
   - **Kökler** (altındaki klasörler listelenir): `--root <klasör>` (tekrarlanabilir) > `OBSERVATORY_WEB_ROOTS` > ayar dosyasındaki `roots` > **başlatılan klasörün üstü** (yanındaki projeler). GitHub'dan indirip kuran biri için varsayılan bu: `git clone` ettiği klasörün yanındaki projeler görünür, başkasını "Klasör ekle" ile ekler.

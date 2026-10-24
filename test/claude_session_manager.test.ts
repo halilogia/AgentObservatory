@@ -9,7 +9,7 @@ import {
 
 console.log('🧪 Testing ClaudeSessionManager...');
 
-const testCwd = 'C:\\Users\\Halil Emre\\Desktop\\GitHub\\Public\\GravityGuard';
+const testCwd = 'C:\\Users\\Kullanici\\Desktop\\GitHub\\Public\\GravityGuard';
 const testSessionId = 'e51dd8ae-022c-43e5-ae41-6ec94b71e973';
 
 // 1. Update session map

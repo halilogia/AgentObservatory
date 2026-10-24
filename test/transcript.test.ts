@@ -13,9 +13,9 @@ function render(agent: string, events: Array<[string, any]>, color = false): str
 }
 
 const flow: Array<[string, any]> = [
-  ['task.started', { prompt: 'Dosyayı oku', cwd: 'C:\\Users\\Halil Emre\\Desktop\\proje' }],
+  ['task.started', { prompt: 'Dosyayı oku', cwd: 'C:\\Users\\Kullanici\\Desktop\\proje' }],
   ['message.delta', { text: 'Bakıyorum.\nİkinci satır' }],
-  ['tool.invoked', { name: 'Read', input: { file_path: 'C:\\Users\\Halil Emre\\Desktop\\proje\\src\\a.ts' } }],
+  ['tool.invoked', { name: 'Read', input: { file_path: 'C:\\Users\\Kullanici\\Desktop\\proje\\src\\a.ts' } }],
   ['tool.completed', { output: 'l1\nl2\nl3\nl4\nl5' }],
   ['usage.updated', { usage: { input_tokens: 2000, output_tokens: 50 } }],
   ['task.completed', { exitCode: 0 }]

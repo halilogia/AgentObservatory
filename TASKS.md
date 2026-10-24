@@ -27,7 +27,9 @@
   - [x] Yetenekler penceresi: her CLI'nin skill / ajan / komut / MCP / eklenti adlarını göster (salt okunur; yalnızca adlar ve açıklamalar, gizli değerler okunmaz).
   - [x] Düşünme çabasını model seçiciden ayır (kendi düğmesi, daha kolay arayüz).
   - [/] Telefondan erişim (mesaj gönderme): Tailscale + tek kullanımlık eşleştirme kodu/QR, cihaz çerezi, cihaz listesi/iptal, telefondan yazma izni varsayılan kapalı. CLI'lar bilgisayarda çalışır, telefon yalnızca ekran/klavye.
-  - [/] GravityGuard: commit'e yerel yol (`C:\Users\<ad>\...`) girmesini engelleyen kapı (`publication_guard.py`, varsayılan: engelle, izin listesi + tek seferlik kaçış).
+  - [x] GravityGuard: commit'e yerel yol girmesini engelleyen kapı (varsayılan: engelle, izin listesi + tek seferlik kaçış). GravityGuard reposunda (`e6e58c5`) ve `~/.git-template` şablonunda hazır; testler geçti.
+  - [ ] Yerel yol kapısını mevcut 25 deponun `.git/hooks` klasörüne dağıtmak: toplu kanca değişikliği otomatik izne takıldı, kullanıcı çalıştıracak (`python ~/.git-template/rollout_path_gate.py --apply`).
+  - [x] AgentObservatory test verilerindeki yerel yollar `Kullanici` ile değiştirildi (eski commit geçmişinde duruyor; geçmişi yeniden yazmak kullanıcı kararı).
 
 ---
 
