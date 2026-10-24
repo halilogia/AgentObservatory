@@ -18,7 +18,11 @@ function parseRow(row: any) {
   };
 }
 
-export function startServer(opts: { port?: number; dbPath?: string; pollMs?: number } = {}): http.Server {
+/** Ek yollar (ör. web arayüzü): true dönerse yanıt verilmiştir. Host/Origin korumasından SONRA çağrılır. */
+export interface ExtraCtx { req: http.IncomingMessage; res: http.ServerResponse; url: URL; json: (code: number, body: unknown) => void; db: DatabaseSync }
+export type ExtraHandler = (ctx: ExtraCtx) => boolean | Promise<boolean>;
+
+export function startServer(opts: { port?: number; dbPath?: string; pollMs?: number; allowedOrigins?: string[]; extra?: ExtraHandler } = {}): http.Server {
   const dbPath = opts.dbPath || process.env.OBSERVATORY_DB || path.join(os.homedir(), '.observatory', 'observatory.sqlite');
   if (!fs.existsSync(dbPath)) throw new Error(`Veritabanı yok: ${dbPath} (önce bir görev çalıştır)`);
   const db = new DatabaseSync(dbPath);
@@ -47,14 +51,18 @@ export function startServer(opts: { port?: number; dbPath?: string; pollMs?: num
     }
   }, pollMs);
 
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const host = String(req.headers.host || '');
     if (!LOCAL_HOST_RE.test(host)) { res.writeHead(403).end('forbidden host'); return; }
     const origin = String(req.headers.origin || '');
     if (origin) {
-      if (!LOCAL_ORIGIN_RE.test(origin)) { res.writeHead(403).end('forbidden origin'); return; }
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Vary', 'Origin');
+      // allowedOrigins verilirse (web arayüzü) yalnızca o kökenler; aksi halde herhangi bir yerel köken (salt okunur API)
+      const ok = opts.allowedOrigins ? opts.allowedOrigins.includes(origin) : LOCAL_ORIGIN_RE.test(origin);
+      if (!ok) { res.writeHead(403).end('forbidden origin'); return; }
+      if (!opts.allowedOrigins) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+      }
     }
     const url = new URL(req.url || '/', `http://${host}`);
     const json = (code: number, body: unknown) => {
@@ -62,6 +70,7 @@ export function startServer(opts: { port?: number; dbPath?: string; pollMs?: num
       res.end(JSON.stringify(body));
     };
     try {
+      if (opts.extra && (await opts.extra({ req, res, url, json, db }))) return;
       if (url.pathname === '/health') return json(200, { ok: true, db: dbPath, lastSeq: Number((q.maxSeq.get() as any).m) });
       if (url.pathname === '/tasks') {
         const limit = Math.min(Number(url.searchParams.get('limit')) || 50, 500);

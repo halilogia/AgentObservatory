@@ -20,6 +20,7 @@ npm test
 | `node bin/observatory.js sessions` | Son oturumlar listesi. Yukarı/aşağı ok ile seç, `C` canlı, `S` liste, `Q` çıkış |
 | `node bin/observatory.js inspect <taskId>` | Tek görevin tüm olayları |
 | `node bin/observatory.js mcp` | MCP sunucusunu stdio üzerinde başlatır |
+| `node bin/observatory.js web [--port 8788]` | Tarayıcıda model seçicili sohbet arayüzü ([ayrıntı](13-sohbet-arayuzu-web.md)) |
 | `node bin/observatory.js chat [taskId] [--follow]` | Oturumu ajanın CLI görünümünde gösterir ([ayrıntı](11-oturum-gorunumu.md)) |
 | `node bin/observatory.js doctor` | Hangi ajan kurulu, sürümü ne |
 | `node bin/observatory.js doctor --live` | Her ajana kısa bir "OK" görevi verip gerçekten yanıt veriyor mu bakar |

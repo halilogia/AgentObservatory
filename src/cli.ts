@@ -87,6 +87,9 @@ async function main(): Promise<void> {
   } else if (command === 'mcp') {
     const { startMcpServer } = await import('./mcp/mcp_server.ts');
     await startMcpServer();
+  } else if (command === 'web') {
+    const { runWeb } = await import('./commands/web.ts');
+    await runWeb(args.slice(1));
   } else if (command === 'ingest') {
     const { runIngest } = await import('./ingest/index.ts');
     await runIngest(args.slice(1));
@@ -111,6 +114,7 @@ async function main(): Promise<void> {
     console.log('  node --experimental-strip-types src/cli.ts sessions                - Son oturumları listeler, seçileni inceler');
     console.log('  node --experimental-strip-types src/cli.ts inspect <taskId>        - Tek bir görevin tüm olaylarını gösterir');
     console.log('  node --experimental-strip-types src/cli.ts mcp                     - Antigravity MCP sunucu modu');
+    console.log('  node --experimental-strip-types src/cli.ts web [--port 8788]       - Sohbet arayüzü (model seçici: Claude Code, Codex, OpenCode, agy)');
     console.log('  node --experimental-strip-types src/cli.ts ingest [--follow] [--sources claude,codex,opencode] [--backfill] - Elle başlatılan oturumları (Tier 3) olay deposuna ekler');
     console.log('  node --experimental-strip-types src/cli.ts chat [taskId|latest] [--follow] [--skin X] - Oturumu ajanın CLI görünümünde gösterir');
     console.log('  node --experimental-strip-types src/cli.ts doctor [--live]        - Kurulu ajanları ve (--live) gerçek yanıtı denetler');

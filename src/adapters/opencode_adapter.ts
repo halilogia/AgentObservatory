@@ -65,7 +65,8 @@ export class OpenCodeAdapter extends BaseAdapter {
     }
 
     const task = store.getTask(taskId);
-    const sessionId = task ? task.sessionId : null;
+    // gerçek `--format json` satırları üst düzeyde sessionID taşır: oturum devamı (--session) için kaydedilir
+    const sessionId = (typeof parsed.sessionID === 'string' && parsed.sessionID) || (task ? task.sessionId : null);
 
     if (parsed.type === 'step_start') {
       return; // gerçek `--format json` akışında yalnızca adım işareti

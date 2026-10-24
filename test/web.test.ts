@@ -1,0 +1,110 @@
+// observatory web: arayüz, yapılandırma, yazan uçların korumaları ve sahte bir runner ile gönder -> SSE akışı
+import assert from 'node:assert';
+import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import { SqliteStore } from '../src/core/sqlite_store.ts';
+import { createEvent } from '../src/core/types.ts';
+import { startWeb } from '../src/commands/web.ts';
+
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'obs-web-'));
+const root = path.join(dir, 'GitHub');
+fs.mkdirSync(path.join(root, 'proj'), { recursive: true });
+const dbPath = path.join(dir, 'test.sqlite');
+const writer = new SqliteStore(dbPath);
+writer.recordEvent(createEvent({ taskId: 'task_seed', agent: 'codex', type: 'task.started', data: { prompt: 'x' } }));
+
+const calls: any[] = [];
+const fakeRunner = {
+  startTask(o: any) {
+    calls.push(o);
+    const taskId = 'task_fake_' + calls.length;
+    const promise = new Promise<void>((resolve) => {
+      setTimeout(() => writer.recordEvent(createEvent({ taskId, agent: o.agent, type: 'task.started', data: { prompt: o.prompt } })), 20);
+      setTimeout(() => writer.recordEvent(createEvent({ taskId, agent: o.agent, type: 'message.delta', data: { text: 'merhaba' } })), 80);
+      setTimeout(() => { writer.recordEvent(createEvent({ taskId, agent: o.agent, type: 'task.completed', data: { exitCode: 0 } })); resolve(); }, 140);
+    });
+    return { taskId, promise };
+  },
+  cancelTask() { return true; }
+};
+
+const PORT = 18990 + Math.floor(Math.random() * 9);
+const TOKEN = 'a'.repeat(48);
+const { server } = startWeb({ port: PORT, dbPath, roots: [root], runner: fakeRunner, token: TOKEN, pollMs: 50 });
+await new Promise((r) => server.once('listening', r));
+const base = `http://127.0.0.1:${PORT}`;
+const post = (p: string, body: unknown, headers: Record<string, string> = {}) =>
+  fetch(base + p, { method: 'POST', headers: { 'content-type': 'application/json', 'x-observatory-token': TOKEN, ...headers }, body: JSON.stringify(body) });
+const rawPost = (headers: Record<string, string>, payload = '{}'): Promise<number> => new Promise((resolve, reject) => {
+  const req = http.request({ host: '127.0.0.1', port: PORT, path: '/api/run', method: 'POST', headers }, (res) => { res.resume(); resolve(res.statusCode || 0); });
+  req.on('error', reject); req.end(payload);
+});
+
+try {
+  // arayüz dosyaları
+  const page = await fetch(base + '/');
+  const html = await page.text();
+  assert.strictEqual(page.status, 200);
+  assert.ok(html.includes(`content="${TOKEN}"`), 'jeton sayfaya meta etiketiyle verilmeli');
+  assert.ok(!/https?:\/\//.test(html), 'sayfa dış kaynak yüklememeli');
+  assert.ok((page.headers.get('content-security-policy') || '').includes("script-src 'self'"), 'sıkı CSP');
+  assert.strictEqual(page.headers.get('x-frame-options'), 'DENY');
+  const js = await fetch(base + '/app.js');
+  assert.ok((js.headers.get('content-type') || '').startsWith('text/javascript'));
+  assert.ok(!(await js.text()).includes('innerHTML = text'), 'app.js ham metni innerHTML ile basmamalı');
+
+  // yapılandırma
+  const cfg = await (await fetch(base + '/api/config')).json() as any;
+  assert.deepStrictEqual(cfg.engines.map((e: any) => e.id), ['claude', 'codex', 'opencode', 'agy'], 'dört motor');
+  assert.ok(cfg.projects.some((p: any) => p.name === 'proj'), 'proje listesi');
+  assert.ok(cfg.defaultCwd.startsWith(root) && cfg.defaultCwd !== root, 'varsayılan klasör kök değil, bir proje olmalı');
+  assert.ok(cfg.engines.every((e: any) => typeof e.installed === 'boolean'));
+
+  // yazan uçların korumaları
+  const ok = { engine: 'codex', model: 'gpt-6-astra', prompt: 'x', cwd: path.join(root, 'proj') };
+  assert.strictEqual((await fetch(base + '/api/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ok) })).status, 403, 'jetonsuz reddedilmeli');
+  assert.strictEqual((await post('/api/run', ok, { 'x-observatory-token': 'yanlis' })).status, 403, 'yanlış jeton');
+  assert.strictEqual((await post('/api/run', ok, { 'sec-fetch-site': 'cross-site' })).status, 403, 'çapraz site');
+  assert.strictEqual(await rawPost({ host: `127.0.0.1:${PORT}`, origin: 'https://evil.com', 'content-type': 'application/json', 'x-observatory-token': TOKEN }), 403, 'yabancı Origin');
+  assert.strictEqual(await rawPost({ host: `127.0.0.1:${PORT}`, origin: 'http://localhost:3000', 'content-type': 'application/json', 'x-observatory-token': TOKEN }), 403, 'başka yerel port da reddedilmeli');
+  assert.strictEqual(await rawPost({ host: `127.0.0.1:${PORT}`, 'content-type': 'text/plain', 'x-observatory-token': TOKEN }), 415, 'content-type denetimi');
+
+  // doğrulamalar
+  assert.strictEqual((await post('/api/run', { ...ok, engine: 'agy', model: 'gemini-3.8-flash', mode: 'write' })).status, 400, 'agy yazma kipi yok');
+  assert.strictEqual((await post('/api/run', { ...ok, engine: 'claude', model: 'sonnet', mode: 'write' })).status, 400, 'claude yazma kipi yok');
+  assert.strictEqual((await post('/api/run', { ...ok, model: 'yok' })).status, 400, 'bilinmeyen model');
+  assert.strictEqual((await post('/api/run', { ...ok, prompt: '  ' })).status, 400, 'boş istem');
+  assert.strictEqual((await post('/api/run', { ...ok, cwd: os.homedir() })).status, 400, 'izinli kök dışı klasör');
+  assert.strictEqual((await post('/api/run', { ...ok, effort: 'ultra' })).status, 400, 'geçersiz çaba');
+  assert.strictEqual((await post('/api/cancel', { taskId: 'task_yok' })).status, 404, 'etkin olmayan görev iptal edilemez');
+  assert.strictEqual(calls.length, 0, 'reddedilen isteklerde runner çağrılmamalı');
+
+  // gerçek akış: kurulu bir motorla gönder, SSE'den olayları al
+  const installed = cfg.engines.find((e: any) => e.installed && !e.limitedUntil);
+  if (!installed) {
+    console.log('ℹ kurulu motor yok: gönder -> akış adımı atlandı');
+  } else {
+    const es = await fetch(base + '/stream');
+    const reader = es.body!.getReader(); const dec = new TextDecoder();
+    await reader.read();
+    const model = installed.models[0].id;
+    const r = await post('/api/run', { engine: installed.id, model, prompt: 'merhaba', cwd: path.join(root, 'proj'), mode: 'read', effort: installed.efforts.length ? 'medium' : undefined });
+    assert.strictEqual(r.status, 200, 'geçerli istek kabul edilmeli');
+    const { taskId } = await r.json() as any;
+    assert.strictEqual(calls.length, 1);
+    const call = calls[0];
+    assert.strictEqual(call.sandbox, 'read-only', 'varsayılan kip salt okunur');
+    assert.strictEqual(call.dangerouslySkipPermissions, false);
+    assert.ok(path.resolve(call.cwd).startsWith(path.resolve(root)));
+    let buf = ''; const deadline = Date.now() + 6000;
+    while (!buf.includes('task.completed') && Date.now() < deadline) { const { value, done } = await reader.read(); if (done) break; buf += dec.decode(value); }
+    assert.ok(buf.includes(taskId) && buf.includes('merhaba') && buf.includes('task.completed'), 'SSE görevin olaylarını akıtmalı');
+    await reader.cancel();
+  }
+  console.log('✔ web: arayüz + CSP, yapılandırma, jeton/Origin/Sec-Fetch-Site korumaları, doğrulamalar, gönder -> SSE');
+} finally {
+  server.close();
+  server.closeAllConnections?.();
+}

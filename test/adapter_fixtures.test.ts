@@ -78,3 +78,14 @@ class MissingBinaryAdapter extends BaseAdapter {
   assert.strictEqual((failEvent!.data as any).errorKind, 'spawn_failed', 'runner yolu errorKind taşımalı');
 }
 console.log('✔ runner başarısızlık yolu: errorKind');
+
+// Codex "try again at 2:29 AM": bir sonraki yerel 02:29'a kadar bekleme
+{
+  const now = new Date(2026, 9, 24, 0, 20, 0);
+  const r = classifyFailure("You've hit your usage limit. try again at 2:29 AM.", now);
+  assert.strictEqual(r.kind, 'rate_limit');
+  assert.strictEqual(r.cooldownMs, (2 * 60 + 9) * 60000, '00:20 -> 02:29 = 2 sa 9 dk');
+  const pm = classifyFailure('rate limit, try again at 1:05 PM', new Date(2026, 9, 24, 14, 0, 0));
+  assert.strictEqual(pm.cooldownMs, (23 * 60 + 5) * 60000, 'geçmiş saat ertesi güne sarkar');
+  console.log('✔ kota bitiş saati ayrıştırma');
+}
