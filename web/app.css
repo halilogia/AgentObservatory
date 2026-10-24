@@ -159,3 +159,5 @@ main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: 
   .empty h1 { font-size: 26px; }
   .pill { max-width: 130px; }
 }
+.cup { width: 42px; height: 30px; padding: 4px 6px; box-sizing: content-box; background: #1c1c1f; border-radius: 10px; image-rendering: pixelated; margin-right: 8px; }
+.cup[hidden] { display: none; }

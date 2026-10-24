@@ -436,6 +436,20 @@
     if (!st.running) renderThread();
   }
 
+  // kahve fincanı: yalnızca Claude sohbetinde görünür; duman = istem önbelleği (prompt cache) hâlâ sıcak
+  const CUP_TTL = 60 * 60000;
+  let cupFrame = 0;
+  function refreshCup() {
+    const cv = $('#cup');
+    const lastBot = chat && [...chat.messages].reverse().find((m) => m.r === 'b');
+    if (!lastBot || lastBot.engine !== 'claude') { cv.hidden = true; return; }
+    const now = Date.now(), busy = !!st.running;
+    const state = ObsCup.stateOf(chat.updated, now, CUP_TTL, busy);
+    cv.hidden = false; ObsCup.draw(cv, state, cupFrame++);
+    const left = Math.max(0, Math.ceil((chat.updated + CUP_TTL - now) / 1000));
+    cv.title = busy || state === 'cold' ? '' : Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+  }
+
   async function refreshConfig() { try { st.cfg = await api('/api/config'); renderEngineStatus(); } catch { /* sunucu yok */ } }
 
   async function init() {
@@ -472,6 +486,7 @@
     document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeMenus(); });
     window.addEventListener('resize', () => { ['#modelMenu', '#projectMenu', '#slashMenu'].forEach((s) => { if (!$(s).hidden) placeMenu($(s)); }); });
     setInterval(refreshConfig, 60000);
+    setInterval(refreshCup, 250);
     connect(); $('#prompt').focus();
   }
   init().catch((err) => { const m = err && err.info ? apiMsg(err) : (err && err.message) || String(err); $('#foot').textContent = t('foot.startFailed', { msg: m }); });
