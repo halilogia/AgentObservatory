@@ -15,7 +15,8 @@
 ## ⏳ Backlog
 
 - [ ] Claude Code ve Antigravity için yerel HTTP/IPC Hook sunucusu (Tier 2).
-- [ ] Tier 3 Session File Fallback entegrasyonu.
+- [x] Tier 3 Session File Fallback entegrasyonu (`src/ingest/`, Claude/Codex/OpenCode).
+- [x] Web sohbet arayüzü (`observatory web`): aydınlık/koyu tema, TR/EN, geçmiş, markdown.
 - [ ] Hermes Agent ve Ollama adaptörleri.
 
 ---

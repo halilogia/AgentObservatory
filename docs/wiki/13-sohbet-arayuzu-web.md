@@ -68,7 +68,7 @@ Dosyalar: `src/commands/web.ts` (sunucu ve motor tablosu), `web/index.html`, `we
 - **Çok büyük klasörlerde** OpenCode takılabilir (denemede `Desktop\GitHub` kökünde yanıt metni gelmedi). Bu yüzden kök seçilemez, proje seçilir; yanıt gelmezse arayüz bunu bildirir.
 - Codex şu an kotası dolu olabilir; durum rozetinde görünür.
 - Geçmiş yalnızca bu tarayıcıda ve bu adreste (`127.0.0.1:8788`) saklanır; başka tarayıcıda veya portta görünmez. En çok 40 sohbet tutulur, araç çıktıları 2000 karaktere kısaltılır. Çalışırken (görev sürerken) sohbet değiştirilemez.
-- **Sunucuyu yeniden başlat:** Arayüz dosyaları (`web/`) diskten okunur ama sunucu kodu (`web.ts`) bellekte kalır. Güncellemeden sonra çalışan `observatory web` işlemini kapatıp yeniden başlat; eski sunucu yeni dosyaları (`md.js`, `store.js`, `i18n.js`...) sunmaz ve sayfa açılmaz.
+- **Sunucuyu yeniden başlat:** Arayüz dosyaları (`web/`) her istekte diskten okunur, ama sunucu kodu (`web.ts`) bellekte kalır. `web.ts` değiştiyse (API, motor tablosu, dosya sunum kuralı) çalışan `observatory web` işlemini kapatıp yeniden başlat. Eski bir sunucu yeni dosyaları (`i18n.js`, `theme.js`...) 404 verir, `app.js` `ObsI18n is not defined` ile çöker ve arayüz boş görünür (2026-10-24'te yaşandı). Çözüm: sunucuyu yeniden başlat, sayfayı Ctrl+Shift+R ile yenile.
 - Eski sürümde kaydedilmiş sohbetlerin süre ve hata satırları sabit Türkçe metin olarak kalır (dil değişince çevrilmez); yeni sohbetler dile göre çevrilir.
 
 ## Çok dillilik (i18n) nasıl çalışır?
