@@ -97,8 +97,9 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
       roots.push(t);
     }
   }
-  // çalışanlar üstte, sonra yeniden eskiye
-  const order = (a: TaskSummary, b: TaskSummary) => Number(running(b)) - Number(running(a)) || b.startTime - a.startTime;
+  // en yeni etkinlik üstte: çalışanlar şu an, biten görevler bitiş (yoksa başlangıç) zamanıyla
+  const lastActive = (t: TaskSummary) => (running(t) ? now : t.endTime ?? t.startTime);
+  const order = (a: TaskSummary, b: TaskSummary) => lastActive(b) - lastActive(a) || b.startTime - a.startTime;
   roots.sort(order);
 
   const counts = { run: 0, ok: 0, fail: 0 };
