@@ -9,6 +9,7 @@ ObsI18n.addResources('en', {
   remote: { noWrite: 'Write access is off for this device. Turn it on from the Phone section on your computer.' },
   caps: { title: 'Capabilities', search: 'Search', skills: 'Skills', agents: 'Agents', commands: 'Commands', mcp: 'MCP servers', plugins: 'Plugins', project: 'project', none: 'Nothing here.', close: 'Close', btn: 'Capabilities' },
   rewind: { title: 'Rewind to here', askFiles: 'After this point the agent changed files. Restore the files to how they were at this point too?', both: 'Rewind chat and files', chatOnly: 'Rewind chat only', cancel: 'Cancel' },
+  proj: { title: 'Projects', add: 'New project', edit: 'Edit project', delete: 'Delete project', leave: 'Leave project', save: 'Save', namePh: 'Project name', folder: 'Folder', instructions: 'Instructions', instructionsPh: 'E.g. Keep the UI minimal, no filler text. Answer in English.', instructionsHint: 'Given to the model at the start of every new session in this project.', nameNeeded: 'Enter a name.', deleteAsk: 'Delete this project? Chats are kept and become project-less.' },
   project: { label: 'Folder', add: 'Add folder', addPlaceholder: 'Type the full path, press Enter', remove: 'Remove from list' },
   jump: 'Jump to latest',
   effort: { title: 'Thinking effort', none: 'not available for this engine', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Xhigh', max: 'Max', ultra: 'Ultra' },

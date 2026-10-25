@@ -23,7 +23,7 @@
     moon: svg('<path d="M13 9.6A5.4 5.4 0 016.4 3 5.4 5.4 0 108 13.4a5.4 5.4 0 005-3.8z"/>'),
     stop: '<svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg>'
   };
-  const st = { cfg: null, engine: 'claude', model: 'sonnet', effort: 'medium', mode: 'read', cwd: '', running: null };
+  const st = { cfg: null, engine: 'claude', model: 'sonnet', effort: 'medium', mode: 'read', cwd: '', running: null, project: null };
   const views = new Map();
   let chat = null;
   let early = [];
@@ -35,7 +35,7 @@
   const fmtTok = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n));
   const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* yoksay */ } };
-  const saveSettings = () => lsSet('obs-web', JSON.stringify({ engine: st.engine, model: st.model, effort: st.effort, cwd: st.cwd }));
+  const saveSettings = () => lsSet('obs-web', JSON.stringify({ engine: st.engine, model: st.model, effort: st.effort, cwd: st.cwd, project: st.project }));
 
   async function api(path, body) {
     const r = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json', 'x-observatory-token': TOKEN }, body: JSON.stringify(body) });
@@ -99,7 +99,7 @@
   // ---------- sohbet verisi ve geçmiş ----------
   function ensureChat(firstText) {
     if (chat) return;
-    chat = { id: ObsStore.newId(), title: firstText.replace(/\s+/g, ' ').slice(0, 48), created: Date.now(), updated: Date.now(), session: null, messages: [] };
+    chat = { id: ObsStore.newId(), title: firstText.replace(/\s+/g, ' ').slice(0, 48), created: Date.now(), updated: Date.now(), session: null, project: st.project || null, messages: [] };
   }
   function persist() { if (chat && chat.messages.length) { ObsStore.save(chat); renderHistory(); } }
   function when(ts) {
@@ -107,24 +107,96 @@
     if (m < 1) return t('time.now'); if (m < 60) return t('time.min', { n: m }); if (m < 1440) return t('time.hour', { n: Math.round(m / 60) });
     return new Date(ts).toLocaleDateString(locale(), { day: 'numeric', month: 'short' });
   }
+  // ---------- projeler: ad + klasör + talimatlar; sohbetler `chat.project` ile bağlanır ----------
+  const pcol = () => { try { return new Set(JSON.parse(lsGet('obs-pcol') || '[]')); } catch { return new Set(); } };
+  const savePcol = (s) => lsSet('obs-pcol', JSON.stringify([...s]));
+  function renderCrumb() {
+    const p = st.project ? ObsProjects.get(st.project) : null; if (st.project && !p) st.project = null;
+    const c = $('#crumb'); c.hidden = !p; if (!p) return;
+    const x = el('span', 'ico'); x.innerHTML = ICON.x;
+    c.replaceChildren(el('span', '', p.name), x); c.title = t('proj.leave'); c.setAttribute('aria-label', t('proj.leave') + ': ' + p.name);
+  }
+  function selectProject(id) {
+    if (st.running) { $('#foot').textContent = t('foot.busy'); return; }
+    const p = ObsProjects.get(id); if (!p) return;
+    st.project = id; ObsProjects.touch(id); if (p.cwd) st.cwd = p.cwd;
+    saveSettings(); newChat(); refreshControls(); renderCrumb(); renderHistory(); closeNavOnMobile();
+  }
+  function leaveProject() { st.project = null; saveSettings(); renderCrumb(); renderHistory(); }
+  function openProjectDialog(p) {
+    if (document.querySelector('.dlg')) return;
+    const ov = el('div', 'dlg'); const box = el('div', 'dlgbox caps'); box.setAttribute('role', 'dialog');
+    const close = () => { ov.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (ev) => { if (ev.key === 'Escape' && document.querySelectorAll('.dlg').length === 1) { ev.stopPropagation(); close(); } };
+    const name = el('input', 'addin'); name.type = 'text'; name.maxLength = ObsProjects.NAME_MAX; name.placeholder = t('proj.namePh'); name.value = p ? p.name : '';
+    const folder = el('select', 'addin'); const paths = st.cfg.projects.map((x) => x.path); const cur = (p && p.cwd) || st.cwd;
+    if (cur && !paths.includes(cur)) paths.unshift(cur);
+    paths.forEach((pt) => { const o = el('option', '', pt.split(/[\\/]/).filter(Boolean).pop() || pt); o.value = pt; o.title = pt; o.selected = pt === cur; folder.appendChild(o); });
+    const instr = el('textarea', 'addin ptext'); instr.maxLength = ObsProjects.INSTR_MAX; instr.rows = 6; instr.placeholder = t('proj.instructionsPh'); instr.value = p ? p.instructions : '';
+    const err = el('p', 'adderr', '');
+    const save = el('button', 'primary', t('proj.save')); save.type = 'button';
+    save.onclick = () => {
+      const r = ObsProjects.save({ id: p ? p.id : ObsProjects.newId(), name: name.value, cwd: folder.value, instructions: instr.value, created: p ? p.created : Date.now(), touched: Date.now() });
+      if (!r) { err.textContent = t('proj.nameNeeded'); name.focus(); return; }
+      close();
+      if (!p) { selectProject(r.id); return; }
+      if (st.project === r.id && r.cwd) { st.cwd = r.cwd; saveSettings(); refreshControls(); }
+      renderCrumb(); renderHistory();
+    };
+    const cancel = el('button', '', t('rewind.cancel')); cancel.type = 'button'; cancel.onclick = close;
+    box.append(el('p', 'ctitle', p ? t('proj.edit') : t('proj.add')), name, el('div', 'hgroup', t('proj.folder')), folder, el('div', 'hgroup', t('proj.instructions')), instr, el('p', 'cdesc', t('proj.instructionsHint')), err, save);
+    if (p) {
+      const del = el('button', '', t('proj.delete')); del.type = 'button';
+      del.onclick = async () => {
+        const c = await ask(t('proj.deleteAsk'), [t('proj.delete'), t('rewind.cancel')]); if (c !== 0) return;
+        ObsProjects.remove(p.id); if (st.project === p.id) st.project = null; close(); saveSettings(); renderCrumb(); renderHistory();
+      };
+      box.appendChild(del);
+    }
+    box.appendChild(cancel);
+    ov.onclick = (ev) => { if (ev.target === ov) close(); };
+    document.addEventListener('keydown', onKey, true); ov.appendChild(box); document.body.appendChild(ov); name.focus();
+  }
+
+  function chatRow(c, nested) {
+    const item = el('div', 'hitem' + (nested ? ' nested' : '') + (chat && chat.id === c.id ? ' on' : ''));
+    const title = c.title || t('history.untitled');
+    const main1 = el('button', 'hmain'); main1.type = 'button'; main1.title = title;
+    const lastBot = [...c.messages].reverse().find((m) => m.r === 'b');
+    const dot = el('span', 'dot'); if (lastBot) dot.style.setProperty('--c', lastBot.color);
+    main1.append(dot, el('span', 't', title), el('span', 'when', when(c.updated)));
+    main1.onclick = () => loadChat(c.id);
+    const del = el('button', 'del'); del.type = 'button'; del.setAttribute('aria-label', t('history.delete')); del.innerHTML = ICON.x;
+    del.onclick = (ev) => { ev.stopPropagation(); ObsStore.remove(c.id); if (chat && chat.id === c.id) newChat(); else renderHistory(); };
+    item.append(main1, del);
+    return item;
+  }
   function renderHistory() {
     const box = $('#history'); box.replaceChildren();
-    const list = ObsStore.list();
-    if (!list.length) return;
+    const list = ObsStore.list(); const projects = ObsProjects.list(); const collapsed = pcol();
+    const head = el('div', 'hgroup phead'); head.appendChild(el('span', '', t('proj.title')));
+    const add = el('button', 'padd'); add.type = 'button'; add.title = t('proj.add'); add.setAttribute('aria-label', t('proj.add')); add.innerHTML = ICON.plus; add.onclick = () => openProjectDialog(null);
+    head.appendChild(add); box.appendChild(head);
+    projects.forEach((p) => {
+      const mine = list.filter((c) => c.project === p.id); const open = !collapsed.has(p.id);
+      const row = el('div', 'hitem pitem' + (st.project === p.id ? ' on' : ''));
+      const tog = el('button', 'ptog' + (open ? ' open' : '')); tog.type = 'button'; tog.setAttribute('aria-expanded', String(open)); tog.innerHTML = ICON.chev;
+      tog.onclick = (ev) => { ev.stopPropagation(); if (open) collapsed.add(p.id); else collapsed.delete(p.id); savePcol(collapsed); renderHistory(); };
+      const main1 = el('button', 'hmain'); main1.type = 'button'; main1.title = p.cwd;
+      const ic = el('span', 'ico'); ic.innerHTML = ICON.folder; main1.append(ic, el('span', 't', p.name), el('span', 'when', String(mine.length)));
+      main1.onclick = () => selectProject(p.id);
+      const ed = el('button', 'del'); ed.type = 'button'; ed.title = t('proj.edit'); ed.setAttribute('aria-label', t('proj.edit')); ed.innerHTML = ICON.pen;
+      ed.onclick = (ev) => { ev.stopPropagation(); openProjectDialog(p); };
+      row.append(tog, main1, ed); box.appendChild(row);
+      if (open) mine.forEach((c) => box.appendChild(chatRow(c, true)));
+    });
+    const free = list.filter((c) => !c.project || !projects.some((p) => p.id === c.project));
+    if (!free.length) return;
     const day = (ts) => { const d = new Date(ts), n = new Date(); const diff = Math.floor((new Date(n.getFullYear(), n.getMonth(), n.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5); return diff <= 0 ? t('history.today') : diff === 1 ? t('history.yesterday') : t('history.older'); };
     let last = '';
-    list.forEach((c) => {
+    free.forEach((c) => {
       const g = day(c.updated); if (g !== last) { box.appendChild(el('div', 'hgroup', g)); last = g; }
-      const item = el('div', 'hitem' + (chat && chat.id === c.id ? ' on' : ''));
-      const title = c.title || t('history.untitled');
-      const main1 = el('button', 'hmain'); main1.type = 'button'; main1.title = title;
-      const lastBot = [...c.messages].reverse().find((m) => m.r === 'b');
-      const dot = el('span', 'dot'); if (lastBot) dot.style.setProperty('--c', lastBot.color);
-      main1.append(dot, el('span', 't', title), el('span', 'when', when(c.updated)));
-      main1.onclick = () => loadChat(c.id);
-      const del = el('button', 'del'); del.type = 'button'; del.setAttribute('aria-label', t('history.delete')); del.innerHTML = ICON.x;
-      del.onclick = (ev) => { ev.stopPropagation(); ObsStore.remove(c.id); if (chat && chat.id === c.id) newChat(); else renderHistory(); };
-      item.append(main1, del); box.appendChild(item);
+      box.appendChild(chatRow(c, false));
     });
   }
   function clearThread() { $('#thread').replaceChildren(); views.clear(); }
@@ -143,6 +215,7 @@
     if (st.running) { $('#foot').textContent = t('foot.busy'); return; }
     const c = ObsStore.get(id); if (!c) return;
     chat = c; renderThread();
+    st.project = c.project && ObsProjects.get(c.project) ? c.project : null; renderCrumb();
     const lastBot = [...c.messages].reverse().find((m) => m.r === 'b');
     if (lastBot && engineById(lastBot.engine)) {
       const le = engineById(lastBot.engine); // model listeden kalkmış olabilir (OpenCode ücretsiz listesi değişir): ilk modele düş
@@ -390,7 +463,8 @@
     const e = engineById(st.engine); const m = e.models.find((x) => x.id === st.model);
     // oturum sürdürülemiyorsa (motor ya da klasör değişti) önceki konuşma özet olarak yeni isteme eklenir
     const resume = chat.session && chat.session.engine === e.id && chat.session.cwd === st.cwd ? chat.session.id : undefined;
-    const sendText = resume ? text : ObsCtx.build(chat.messages, text) || text;
+    const proj = chat.project ? ObsProjects.get(chat.project) : null; // proje talimatları her YENİ CLI oturumunun başında verilir
+    const sendText = resume ? text : ObsCtx.build(chat.messages, text, { instructions: proj && proj.instructions }) || text;
     if (o.bubble !== false) { chat.messages.push({ r: 'u', text }); addUserDom(text); }
     const rec = { r: 'b', engine: e.id, model: m.id, label: m.label, color: e.color, parts: [], notice: null, meta: null, prompt: text, cwd: st.cwd, taskId: null, effort: e.efforts.length ? st.effort : '' };
     chat.messages.push(rec);
@@ -440,10 +514,14 @@
     box.style.setProperty('--c', e.color); box.dataset.n = e.efforts.length;
     if (box.dataset.engine !== e.id) { // motor değişti: çubuk sayısı farklı olabilir, yeniden kur
       box.replaceChildren(); box.dataset.engine = e.id; box.setAttribute('aria-label', t('effort.title'));
+      const track = el('div', 'tb-track');
       e.efforts.forEach((x, i) => {
         const b = el('button', 'tb'); b.type = 'button'; b.setAttribute('role', 'radio'); b.style.setProperty('--i', i); b.style.setProperty('--n', e.efforts.length);
-        b.appendChild(el('i')); b.onclick = () => { st.effort = x; saveSettings(); refreshControls(); }; box.appendChild(b);
+        b.appendChild(el('i'));
+        b.onclick = (ev) => { ev.stopPropagation(); st.effort = x; saveSettings(); refreshControls(); };
+        track.appendChild(b);
       });
+      box.appendChild(track);
       box.appendChild(el('span', 'tl'));
     }
     const idx = Math.max(0, e.efforts.indexOf(st.effort));
@@ -453,6 +531,62 @@
     });
     box.querySelector('.tl').textContent = effortLabel(st.effort);
     box.classList.toggle('run', !!st.running);
+  }
+  let scrubbingThink = false;
+  function scrubEffort(clientX) {
+    const e = engineById(st.engine);
+    if (!e || !e.efforts.length) return;
+    const box = $('#think');
+    const track = box.querySelector('.tb-track') || box;
+    const rect = track.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const clampedX = Math.max(0, Math.min(clientX - rect.left, rect.width));
+    const ratio = clampedX / rect.width;
+    const idx = Math.min(e.efforts.length - 1, Math.max(0, Math.floor(ratio * e.efforts.length)));
+    const targetEffort = e.efforts[idx];
+    if (st.effort !== targetEffort) {
+      st.effort = targetEffort;
+      saveSettings();
+      refreshControls();
+    }
+  }
+  function initThinkScrub() {
+    const box = $('#think');
+    box.addEventListener('pointerdown', (ev) => {
+      if (ev.button !== 0) return;
+      const e = engineById(st.engine);
+      if (!e || !e.efforts.length) return;
+      scrubbingThink = true;
+      box.classList.add('scrubbing');
+      try { box.setPointerCapture(ev.pointerId); } catch {}
+      scrubEffort(ev.clientX);
+    });
+    box.addEventListener('pointermove', (ev) => {
+      if (!scrubbingThink) return;
+      scrubEffort(ev.clientX);
+    });
+    const stopScrub = (ev) => {
+      if (!scrubbingThink) return;
+      scrubbingThink = false;
+      box.classList.remove('scrubbing');
+      try { box.releasePointerCapture(ev.pointerId); } catch {}
+      saveSettings();
+    };
+    box.addEventListener('pointerup', stopScrub);
+    box.addEventListener('pointercancel', stopScrub);
+    box.addEventListener('wheel', (ev) => {
+      const e = engineById(st.engine);
+      if (!e || !e.efforts.length) return;
+      ev.preventDefault();
+      const dir = ev.deltaY < 0 ? 1 : -1;
+      const curIdx = Math.max(0, e.efforts.indexOf(st.effort));
+      const nextIdx = Math.min(e.efforts.length - 1, Math.max(0, curIdx + dir));
+      if (nextIdx !== curIdx) {
+        st.effort = e.efforts[nextIdx];
+        saveSettings();
+        refreshControls();
+      }
+    }, { passive: false });
   }
   function thinkKey(ev) {
     const e = engineById(st.engine); const d = ev.key === 'ArrowRight' || ev.key === 'ArrowUp' ? 1 : ev.key === 'ArrowLeft' || ev.key === 'ArrowDown' ? -1 : 0;
@@ -609,7 +743,7 @@
     I18N.applyDom(); document.title = t('app.title');
     $('#phoneBtn').title = t('phone.btn'); $('#phoneBtn').setAttribute('aria-label', t('phone.btn'));
     $('#capsBtn').title = t('caps.btn'); $('#capsBtn').setAttribute('aria-label', t('caps.btn')); $('#langBtn').textContent = t('lang.switchTo'); $('#langBtn').title = t('lang.switchTitle');
-    refreshControls(); refreshSend(); refreshTheme(); renderEngineStatus(); renderHistory(); closeMenus();
+    refreshControls(); refreshSend(); refreshTheme(); renderEngineStatus(); renderCrumb(); renderHistory(); closeMenus();
     if (!st.running) renderThread();
   }
 
@@ -638,19 +772,21 @@
     st.model = e0.models.some((m) => m.id === saved.model) ? saved.model : e0.models[0].id;
     st.effort = e0.efforts.includes(saved.effort) ? saved.effort : e0.efforts.includes('medium') ? 'medium' : e0.efforts[0] || '';
     st.cwd = st.cfg.projects.some((p) => p.path === saved.cwd) ? saved.cwd : st.cfg.defaultCwd;
+    st.project = saved.project && ObsProjects.get(saved.project) ? saved.project : null;
     if (!narrow() && lsGet('obs-nav') === 'closed') $('#layout').classList.add('nav-closed');
     $('#capsIco').innerHTML = ICON.caps; $('#capsBtn').onclick = openCaps;
     $('#phoneIco').innerHTML = ICON.phone; $('#phoneBtn').onclick = openPhone; $('#phoneBtn').hidden = !!st.cfg.remote;
     $('#newIco').innerHTML = ICON.plus; $('#sideIco').innerHTML = ICON.panel;
     applyLanguage();
     I18N.on('languageChanged', applyLanguage);
-    $('#send').onclick = send; $('#newChat').onclick = newChat;
+    $('#crumb').onclick = leaveProject; $('#send').onclick = send; $('#newChat').onclick = newChat;
     $('#sideToggle').onclick = toggleNav; $('#scrim').onclick = closeNavOnMobile;
     $('#langBtn').onclick = () => I18N.changeLanguage(I18N.language === 'tr' ? 'en' : 'tr');
     $('#themeBtn').onclick = () => { ObsTheme.set(ObsTheme.get() === 'dark' ? 'light' : 'dark'); refreshTheme(); };
     $('#jump').onclick = () => { scrollDown(true); $('#jump').hidden = true; };
     $('#modelBtn').onclick = (ev) => { ev.stopPropagation(); openModelMenu(); };
     $('#think').addEventListener('keydown', thinkKey);
+    initThinkScrub();
     $('#projectBtn').onclick = (ev) => { ev.stopPropagation(); openProjectMenu(); };
     $('#modeBtn').onclick = toggleMode;
     main().addEventListener('scroll', onScroll, { passive: true });

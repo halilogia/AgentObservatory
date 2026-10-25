@@ -210,19 +210,124 @@ main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: 
 .dlgbox .clist button { margin-top: 6px; }
 .drow button { margin-top: 0 !important; font-size: 12.5px; padding: 6px 9px; } .drow button.on { border-color: var(--text); }
 .pairbox input, .pairbox button { width: 100%; box-sizing: border-box; }
-/* düşünme çubuğu: motor renginde, soldan sağa dolan, üstteki çubuk nabız atar; görev sürerken dalga */
-.think { display: inline-flex; align-items: flex-end; gap: 2px; height: 32px; padding: 0 6px; border: 1px solid var(--border); border-radius: 999px; --c: var(--text); }
+/* düşünme çubuğu: motor renginde, zarif kapsül, interaktif çekme/kaydırma (scrubbing) */
+.think {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  --c: var(--text);
+  cursor: ew-resize;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  position: relative;
+  transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease, transform .15s ease;
+}
 .think[hidden] { display: none; }
-.tb { width: 14px; height: 100%; padding: 0 0 7px; border: 0; background: transparent; display: flex; align-items: flex-end; justify-content: center; cursor: pointer; }
-.tb i { display: block; width: 5px; height: calc(8px + var(--i) * 15px / (var(--n) - 1)); border-radius: 3px; background: var(--border-strong); transform-origin: bottom; transition: background-color .28s ease, transform .28s ease, box-shadow .28s ease; transition-delay: calc(var(--i) * 28ms); }
-.tb:hover i { transform: scaleY(1.18); }
-.tb.on i { background: var(--c); }
-.tb.top i { box-shadow: 0 0 8px var(--c); animation: thinkpulse 2.2s ease-in-out infinite; }
-.tb:focus-visible { outline: 2px solid var(--c); outline-offset: -2px; border-radius: 6px; }
-.tl { align-self: center; font-size: 12px; color: var(--muted); padding: 0 4px 0 6px; min-width: 3.4em; white-space: nowrap; }
-.think.run .tb.on i { animation: thinkwave 1s ease-in-out infinite; animation-delay: calc(var(--i) * 90ms); }
-@keyframes thinkpulse { 0%, 100% { box-shadow: 0 0 3px var(--c); } 50% { box-shadow: 0 0 10px var(--c); } }
-@keyframes thinkwave { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.55); } }
-@media (prefers-reduced-motion: reduce) { .tb i, .tb.top i, .think.run .tb.on i { animation: none; transition: none; } }
+.think:hover {
+  border-color: color-mix(in srgb, var(--c) 45%, var(--border));
+  background: color-mix(in srgb, var(--c) 4%, var(--surface));
+}
+.think.scrubbing {
+  border-color: var(--c);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--c) 30%, transparent), 0 2px 6px rgba(0, 0, 0, .06);
+  background: color-mix(in srgb, var(--c) 8%, var(--surface));
+  transform: scale(1.02);
+}
+.tb-track {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 22px;
+  padding: 0 1px;
+}
+.tb {
+  width: 14px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: ew-resize;
+  border-radius: 4px;
+}
+.tb i {
+  display: block;
+  width: 5px;
+  height: calc(8px + var(--i) * 14px / (var(--n) - 1));
+  border-radius: 3px;
+  background: var(--border-strong);
+  transform-origin: bottom;
+  transition: background-color .22s ease, transform .22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow .22s ease;
+}
+.tb:hover i, .think.scrubbing .tb.top i {
+  transform: scaleY(1.22);
+}
+.tb.on i {
+  background: var(--c);
+}
+.tb.top i {
+  box-shadow: 0 0 10px var(--c), 0 0 2px rgba(255, 255, 255, .8);
+  animation: thinkpulse 2.2s ease-in-out infinite;
+}
+.tb:focus-visible {
+  outline: 2px solid var(--c);
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+.tl {
+  align-self: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0 2px 0 4px;
+  min-width: 3.2em;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: color .2s ease, text-shadow .2s ease;
+}
+.think:hover .tl {
+  color: var(--text);
+}
+.think.scrubbing .tl {
+  color: var(--c);
+  text-shadow: 0 0 6px color-mix(in srgb, var(--c) 35%, transparent);
+}
+.think.run .tb.on i {
+  animation: thinkwave 1s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 90ms);
+}
+@keyframes thinkpulse {
+  0%, 100% { box-shadow: 0 0 3px var(--c); }
+  50% { box-shadow: 0 0 11px var(--c); }
+}
+@keyframes thinkwave {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(.52); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tb i, .tb.top i, .think.run .tb.on i { animation: none; transition: none; }
+}
 /* uzun menüler: ince kaydırma çubuğu */
 .menu { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+/* projeler */
+.phead { display: flex; align-items: center; justify-content: space-between; }
+.padd { width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); padding: 3px; cursor: pointer; }
+.padd:hover { background: var(--border); color: var(--text); } .padd svg { width: 14px; height: 14px; }
+.pitem { padding-left: 2px; }
+.ptog { flex: none; width: 20px; height: 22px; border: 0; background: transparent; color: var(--faint); padding: 0; cursor: pointer; transform: rotate(-90deg); transition: transform .15s ease; }
+.ptog.open { transform: none; } .ptog svg { width: 12px; height: 12px; }
+.pitem .ico { flex: none; width: 15px; height: 15px; color: var(--muted); } .pitem .ico svg { width: 15px; height: 15px; }
+.hitem.nested { margin-left: 20px; width: calc(100% - 20px); font-size: 13.5px; }
+.crumb { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; padding: 2px 8px 2px 10px; cursor: pointer; max-width: 40vw; }
+.crumb > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crumb[hidden] { display: none; } .crumb:hover { color: var(--text); border-color: var(--border-strong); } .crumb .ico svg { width: 11px; height: 11px; }
+.ptext { resize: vertical; min-height: 110px; line-height: 1.5; }
+select.addin { appearance: auto; }

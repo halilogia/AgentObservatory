@@ -9,6 +9,7 @@ ObsI18n.addResources('tr', {
   remote: { noWrite: 'Bu cihazdan yazma izni kapalı. Bilgisayardaki Telefon bölümünden açılır.' },
   caps: { title: 'Yetenekler', search: 'Ara', skills: 'Beceriler', agents: 'Ajanlar', commands: 'Komutlar', mcp: 'MCP sunucuları', plugins: 'Eklentiler', project: 'proje', none: 'Burada hiçbir şey yok.', close: 'Kapat', btn: 'Yetenekler' },
   rewind: { title: 'Buraya dön', askFiles: 'Bu noktadan sonra ajan dosyalarda değişiklik yaptı. Dosyalar da bu noktadaki haline döndürülsün mü?', both: 'Sohbeti ve dosyaları geri al', chatOnly: 'Yalnızca sohbeti geri al', cancel: 'Vazgeç' },
+  proj: { title: 'Projeler', add: 'Yeni proje', edit: 'Projeyi düzenle', delete: 'Projeyi sil', leave: 'Projeden çık', save: 'Kaydet', namePh: 'Proje adı', folder: 'Klasör', instructions: 'Talimatlar', instructionsPh: 'Örn. Sade arayüz, gereksiz yazı yok. Türkçe yanıtla.', instructionsHint: 'Bu projedeki her yeni oturumun başında modele verilir.', nameNeeded: 'Bir ad yaz.', deleteAsk: 'Proje silinsin mi? Sohbetler silinmez, projesiz kalır.' },
   project: { label: 'Klasör', add: 'Klasör ekle', addPlaceholder: 'Tam yol yaz, Enter ile ekle', remove: 'Listeden çıkar' },
   jump: 'En alta in',
   effort: { title: 'Düşünme çabası', none: 'bu motorda yok', low: 'Düşük', medium: 'Orta', high: 'Yüksek', xhigh: 'X-yüksek', max: 'Maks', ultra: 'Ultra' },

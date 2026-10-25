@@ -31,15 +31,18 @@
   }
 
   /**
-   * prior: bu istemden ÖNCEKİ mesajlar. Özet yoksa (ilk mesaj) null döner; istem olduğu gibi gider.
-   * Dönen metin: <CONTEXT_SUMMARY> + <USER_REQUEST>.
+   * prior: bu istemden ÖNCEKİ mesajlar. Ne özet ne proje talimatı varsa (ilk mesaj) null döner; istem olduğu gibi gider.
+   * opts.instructions: projenin talimatları; yeni bir CLI oturumunun başında <PROJECT_INSTRUCTIONS> olarak verilir.
+   * Dönen metin: [<PROJECT_INSTRUCTIONS>] + [<CONTEXT_SUMMARY>] + <USER_REQUEST>.
    */
   function build(prior, text, opts) {
     var budget = (opts && opts.budget) || BUDGET;
+    var instr = opts && opts.instructions ? String(opts.instructions).trim() : '';
+    var instrBlock = instr ? '<PROJECT_INSTRUCTIONS>\n' + instr + '\n</PROJECT_INSTRUCTIONS>\n\n' : '';
     var list = turns(prior);
     // aynı istem yeniden denenirken (başka motorla dene) son tur zaten bu istemin kendisidir
     if (list.length && list[list.length - 1].user === text) list.pop();
-    if (!list.length) return null;
+    if (!list.length) return instr ? instrBlock + '<USER_REQUEST>\n' + text + '\n</USER_REQUEST>' : null;
     var picked = [], used = 0, omitted = 0;
     for (var i = list.length - 1; i >= 0; i--) {
       var recent = list.length - i <= 2;               // en yeni iki tur tam, eskiler kısa
@@ -49,7 +52,7 @@
     }
     var head = 'The conversation below happened earlier in this same chat, possibly with a different model or engine. Use it only as background; do not repeat it. Answer only the USER_REQUEST.';
     var body = (omitted ? '(' + omitted + ' earlier turn' + (omitted > 1 ? 's' : '') + ' omitted)\n\n' : '') + picked.join('\n\n');
-    return '<CONTEXT_SUMMARY>\n' + head + '\n\n# Previous turns\n' + body + '\n</CONTEXT_SUMMARY>\n\n<USER_REQUEST>\n' + text + '\n</USER_REQUEST>';
+    return instrBlock + '<CONTEXT_SUMMARY>\n' + head + '\n\n# Previous turns\n' + body + '\n</CONTEXT_SUMMARY>\n\n<USER_REQUEST>\n' + text + '\n</USER_REQUEST>';
   }
 
   root.ObsCtx = { build: build, turns: turns, BUDGET: BUDGET };
