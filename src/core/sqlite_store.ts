@@ -142,6 +142,8 @@ export class SqliteStore {
       const existing = this.db.prepare('SELECT * FROM tasks WHERE task_id = ?').get(event.taskId) as any;
 
       if (existing && !wasInserted) {
+        // Aynı olayı eski sürüm modelsiz yazmış olabilir: yeni sürüm modeli getiriyorsa boş alanı doldur (metrikler yine tekrar sayılmaz)
+        if (!existing.model && event.data?.model) this.db.prepare('UPDATE tasks SET model = ? WHERE task_id = ?').run(String(event.data.model), event.taskId);
         // Duplicate event: do not accumulate metrics a second time
         this.db.exec('COMMIT;');
         return;

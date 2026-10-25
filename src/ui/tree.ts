@@ -68,10 +68,10 @@ function lastActivity(t: TaskSummary, width: number): string {
 
 function nodeLines(t: TaskSummary, prefix: string, childPrefix: string, cols: number, now: number, selected: boolean): string[] {
   const dur = fmtDuration(isLive(t, now) ? now - t.startTime : t.durationMs);
-  const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', t.agent));
+  const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
   const tokens = t.usage?.totalTokens ? paint('gray', ' · ' + fmtTokens(t.usage.totalTokens) + ' tok') : '';
   const mark = selected ? paint('cyan', '▸') : ' ';
-  const head = `${mark}${prefix}${statusGlyph(t, now)} ${tag} ${modelName(t)} ${paint('gray', t.taskId.slice(-8))} ${paint('gray', 'başladı ' + hms(t.startTime) + ' · ' + (isLive(t, now) ? 'sürüyor ' : 'sürdü ') + dur)}${tokens}`;
+  const head = `${mark}${prefix}${statusGlyph(t, now)} ${tag} ${paint('gray', t.taskId.slice(-8))} ${paint('gray', 'başladı ' + hms(t.startTime) + ' · ' + (isLive(t, now) ? 'sürüyor ' : 'sürdü ') + dur)}${tokens}`;
   return [head, ` ${childPrefix}${lastActivity(t, Math.max(20, cols - childPrefix.length - 5))}`];
 }
 
@@ -161,9 +161,9 @@ export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: 
   const width = Math.max(40, cols - 1);
   const live = isLive(t, now);
   const out: string[] = [];
-  const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', t.agent));
+  const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
   out.push(`${paint('bold', 'Sohbet')}  ${paint('gray', hms(now))}   ${paint('gray', '[Esc] geri  [↑↓] kaydır  [Q] çıkış')}`);
-  out.push(`${statusGlyph(t, now)} ${tag} ${paint('bold', modelName(t))}   ${paint('gray', t.taskId + ' · ' + fmtDuration(live ? now - t.startTime : t.durationMs))}`);
+  out.push(`${statusGlyph(t, now)} ${tag}   ${paint('gray', t.taskId + ' · ' + fmtDuration(live ? now - t.startTime : t.durationMs))}`);
   out.push(paint('gray', '─'.repeat(Math.min(width, 120))));
 
   let buf = '';
