@@ -92,7 +92,7 @@ export class AgentRunner {
         child = spawn(cmd.exe, cmd.args, {
           cwd: cmd.cwd,
           env: cmd.env,
-          stdio: ['ignore', 'pipe', 'pipe'],
+          stdio: ['pipe', 'pipe', 'pipe'],
           windowsHide: true
         });
       } catch (err: any) {
@@ -106,6 +106,9 @@ export class AgentRunner {
         }));
         return reject(err);
       }
+
+      // OpenCode may keep waiting for stdin EOF after completing a prompt passed in argv.
+      if (adapter.name === 'opencode') child.stdin?.end();
 
       // Record task.started WITH child.pid for process tree tracking
       this.store.recordEvent(createEvent({

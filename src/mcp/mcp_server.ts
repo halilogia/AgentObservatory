@@ -116,7 +116,7 @@ export async function startMcpServer(): Promise<void> {
       timeout_seconds: z.number().optional().default(1800).describe('Execution timeout in seconds (default 1800s / 30m; 0 for unlimited)'),
       detailed: z.boolean().optional().default(false).describe('Return verbose tool logs and full output (default false)'),
       effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().describe('Reasoning effort level (low, medium, high, xhigh, max). Used by Claude.'),
-      model: z.string().optional().describe('Model override (e.g. sonnet, opus, haiku). Used by Claude.')
+      model: z.string().optional().describe('Optional model override. For OpenCode, pass a model ID returned by opencode models (example: opencode/deepseek-v4.1-flash-free).')
     },
     async ({ agent, prompt, cwd, session_id, dangerously_skip_permissions, sandbox, timeout_seconds, detailed, effort, model }) => {
       try {
@@ -159,7 +159,7 @@ export async function startMcpServer(): Promise<void> {
       timeout_seconds: z.number().optional().default(1800).describe('Execution timeout in seconds (default 1800s / 30m; 0 for unlimited)'),
       parent_task_id: z.string().optional().describe('Optional parent task ID (hierarchy)'),
       effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().describe('Reasoning effort level (low, medium, high, xhigh, max). Used by Claude.'),
-      model: z.string().optional().describe('Model override (e.g. sonnet, opus, haiku). Used by Claude.')
+      model: z.string().optional().describe('Optional model override. For OpenCode, pass a model ID returned by opencode models (example: opencode/deepseek-v4.1-flash-free).')
     },
     async ({ agent, prompt, cwd, session_id, dangerously_skip_permissions, sandbox, timeout_seconds, parent_task_id, effort, model }) => {
       try {
