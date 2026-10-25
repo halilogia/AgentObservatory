@@ -59,7 +59,8 @@ export class ClaudeLineParser implements LineParser {
       }
       if (m.usage && m.id && m.id !== this.lastMsgId) {
         this.lastMsgId = m.id;
-        out.push(this.ev('usage.updated', { usage: { input_tokens: m.usage.input_tokens ?? 0, output_tokens: m.usage.output_tokens ?? 0 } }, ts, `${key}:usage`));
+        // model adı yalnızca asistan satırlarında bulunur; depo boş modeli ilk gelen olayla doldurur (sqlite_store: existing.model || event.data.model)
+        out.push(this.ev('usage.updated', { usage: { input_tokens: m.usage.input_tokens ?? 0, output_tokens: m.usage.output_tokens ?? 0 }, ...(m.model ? { model: String(m.model) } : {}) }, ts, `${key}:usage`));
       }
       if (m.stop_reason === 'end_turn') {
         out.push(this.ev('task.completed', { exitCode: 0 }, ts, `${key}:end`));
