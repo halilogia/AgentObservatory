@@ -107,5 +107,5 @@ assert.strictEqual(mem.getEvents('ext_claude_024d25c1eb_1').length, 7, 'aynı sa
 assert.strictEqual(mem.getTask('ext_claude_024d25c1eb_1')?.status, 'completed');
 assert.ok(isInjectedText('<recommended_plugins>\nx\n</recommended_plugins>'), 'etiketli bağlam bloğu enjekte sayılmalı');
 assert.ok(!isInjectedText('Normal bir istem'), 'normal istem enjekte sayılmamalı');
-assert.ok(isInjectedText('[Image: source: C:\Users\x\1.png]'), 'ekran görüntüsü yol satırı yeni istem sayılmamalı');
+assert.ok(isInjectedText('[Image: source: C:/Users/x/1.png]'), 'ekran görüntüsü yol satırı yeni istem sayılmamalı');
 console.log('✔ ingest: claude / codex (kota hatası dahil) / opencode ayrıştırma, tekrar yazma güvenliği');
