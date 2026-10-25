@@ -1,6 +1,7 @@
 import { EventStore, globalStore } from '../core/event_store.ts';
 import { globalSqlite } from '../core/sqlite_store.ts';
 import type { TaskEvent, TaskStatus, TaskSummary } from '../core/types.ts';
+import { TranscriptRenderer } from './transcript.ts';
 
 export const COLORS = {
   reset: '\x1b[0m',
@@ -492,17 +493,15 @@ export function inspectTask(taskId: string): void {
       if (task.error) console.log(` ${paint('red', 'Hata')}: ${task.error}`);
     }
     console.log(paint('gray', '─'.repeat(80)));
-    console.log(paint('bold', ` Olaylar (${events.length})`));
+    console.log(paint('bold', ` Sohbet (${events.length} olay)`) + '\n');
 
-    const pending = new Map<string, ToolInfo>();
-    for (const evt of events) printEvent(evt, pending);
-    closeMessageBlockIfNeeded();
-
-    if (task?.assistantText) {
-      console.log(paint('cyan', '\n' + '═'.repeat(80)));
-      console.log(paint('bold', ' Nihai Yanıt:'));
-      console.log(task.assistantText);
+    // Sohbet görünümü: görevi başlatan CLI'ın kendi ekranı (Claude/Codex/agy/OpenCode skin'i).
+    const renderer = new TranscriptRenderer((s) => process.stdout.write(s), { color: true });
+    for (const evt of events) {
+      if (evt.type === 'task.started' && !evt.data?.model && task?.model) evt.data = { ...evt.data, model: task.model };
+      renderer.push(evt);
     }
+    renderer.end();
   }
 
   console.log(paint('cyan', '═'.repeat(80)));
