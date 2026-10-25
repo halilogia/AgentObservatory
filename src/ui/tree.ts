@@ -66,19 +66,47 @@ function lastActivity(t: TaskSummary, width: number): string {
   return paint('gray', truncate(cleanText(t.prompt), width));
 }
 
-function nodeLines(t: TaskSummary, prefix: string, childPrefix: string, cols: number, now: number, selected: boolean): string[] {
+function nodeLines(t: TaskSummary, prefix: string, childPrefix: string, cols: number, now: number, selected: boolean, label?: string): string[] {
   const dur = fmtDuration(isLive(t, now) ? now - t.startTime : t.durationMs);
-  const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
+  const tag = (label ? paint('gray', label + ' ') : '') + paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
   const tokens = t.usage?.totalTokens ? paint('gray', ' · ' + fmtTokens(t.usage.totalTokens) + ' tok') : '';
   const mark = selected ? paint('cyan', '▸') : ' ';
   const head = `${mark}${prefix}${statusGlyph(t, now)} ${tag} ${paint('gray', t.taskId.slice(-8))} ${paint('gray', 'başladı ' + hms(t.startTime) + ' · ' + (isLive(t, now) ? 'sürüyor ' : 'sürdü ') + dur)}${tokens}`;
   return [head, ` ${childPrefix}${lastActivity(t, Math.max(20, cols - childPrefix.length - 5))}`];
 }
 
+const AGENT_EMOJI: Record<string, string> = { claude: '🟠', codex: '🔴', agy: '🔵' };
+
+/** Oturum satırı süresi: dk/sa biçimi ("12dk"). */
+function fmtSpan(ms: number): string {
+  const sec = Math.max(0, Math.round(ms / 1000));
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  return min < 60 ? `${min}dk` : `${Math.floor(min / 60)}sa${String(min % 60).padStart(2, '0')}dk`;
+}
+
+export const sessionKey = (sessionId: string) => `session:${sessionId}`;
+
+/** Aynı oturumun turları (eskiden yeniye) tek satırda: durum · ajan/model · oturum · mesaj sayısı · süre · token › son etkinlik. */
+function sessionLine(turns: TaskSummary[], cols: number, now: number, selected: boolean, expanded: boolean): string {
+  const last = turns[turns.length - 1];
+  const live = turns.some((t) => isLive(t, now));
+  const span = live ? now - turns[0].startTime : turns.reduce((a, t) => a + t.durationMs, 0);
+  const tokens = turns.reduce((a, t) => a + (t.usage?.totalTokens || 0), 0);
+  const name = last.model && last.model !== last.agent ? `${last.agent} (${last.model})` : last.agent;
+  const emoji = AGENT_EMOJI[last.agent] ? AGENT_EMOJI[last.agent] + ' ' : '';
+  const glyph = live ? paint('yellow', '●') : statusGlyph(last, now);
+  const fold = paint('gray', expanded ? '▾' : '▸');
+  const mark = selected ? paint('cyan', '▸') : ' ';
+  const head = `${mark}${fold} ${glyph} ${emoji}${paint(AGENT_COLOR[last.agent] || 'white', paint('bold', name))} ${paint('gray', String(last.sessionId).slice(0, 8) + ' · ' + turns.length + ' mesaj · ' + (live ? 'sürüyor ' : 'sürdü ') + fmtSpan(span) + (tokens ? ' · ' + fmtTokens(tokens) + ' tok' : ''))}`;
+  const room = Math.max(10, cols - 2 - 60);
+  return head + ' ' + lastActivity(last, room);
+}
+
 export interface TreeFrame { text: string; order: string[] }
 
 /** Ağaç: metin + ekrandaki görev sırası (seçim için). */
-export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; cols: number; rows: number; now: number; selectedId?: string | null }): TreeFrame {
+export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; cols: number; rows: number; now: number; selectedId?: string | null; expanded?: Set<string> }): TreeFrame {
   const { cols, now } = opts;
   const running = (t: TaskSummary) => isLive(t, now);
   const recent = tasks.filter((t) => running(t) || now - (t.endTime ?? t.startTime) < RECENT_WINDOW_MS);
@@ -108,21 +136,48 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
   }
   const out: string[] = [];
   const ids: string[] = [];
-  out.push(`${paint('bold', 'Observatory · Ağaç')}  ${paint('gray', hms(now))}   ${paint('yellow', '● ' + counts.run + ' çalışıyor')}  ${paint('green', '✔ ' + counts.ok)}  ${paint('red', '✖ ' + counts.fail)}   ${paint('gray', '[↑↓] seç  [Enter] ayrıntı  [A] ' + (opts.onlyRunning ? 'hepsini göster' : 'sadece çalışanları göster') + '  [Q] çıkış')}`);
+  out.push(`${paint('bold', 'Observatory · Ağaç')}  ${paint('gray', hms(now))}   ${paint('yellow', '● ' + counts.run + ' çalışıyor')}  ${paint('green', '✔ ' + counts.ok)}  ${paint('red', '✖ ' + counts.fail)}   ${paint('gray', '[↑↓] seç  [Space/→/←] aç/kapat  [Enter] ayrıntı  [A] ' + (opts.onlyRunning ? 'hepsini göster' : 'sadece çalışanları göster') + '  [Q] çıkış')}`);
   out.push(paint('gray', '─'.repeat(Math.max(20, Math.min(cols, 120)))));
   if (roots.length === 0) out.push(paint('gray', '(gösterilecek görev yok)'));
 
-  const walk = (t: TaskSummary, prefix: string, childPrefix: string) => {
+  const walk = (t: TaskSummary, prefix: string, childPrefix: string, label?: string, inSession = false) => {
     ids.push(t.taskId);
-    out.push(...nodeLines(t, prefix, childPrefix + (children.has(t.taskId) ? '│ ' : '  '), cols, now, t.taskId === opts.selectedId));
+    out.push(...nodeLines(t, prefix, childPrefix + (children.has(t.taskId) ? '│ ' : '  '), cols, now, t.taskId === opts.selectedId, label));
     const kids = (children.get(t.taskId) ?? []).sort(order);
     kids.forEach((k, i) => {
       const last = i === kids.length - 1;
-      walk(k, childPrefix + (last ? '└─ ' : '├─ '), childPrefix + (last ? '   ' : '│  '));
+      walk(k, childPrefix + (last ? '└─ ' : '├─ '), childPrefix + (last ? '   ' : '│  '), inSession ? '[ALT AJAN]' : undefined, inSession);
     });
   };
+  // aynı oturumun (≥2) kök turları tek satırda toplanır; sessionId'siz / tekil görevler olduğu gibi kalır
+  const bySession = new Map<string, TaskSummary[]>();
   for (const r of roots) {
-    walk(r, '', '');
+    if (!r.sessionId) continue;
+    const list = bySession.get(r.sessionId) ?? [];
+    list.push(r);
+    bySession.set(r.sessionId, list);
+  }
+  const done = new Set<string>();
+  for (const r of roots) {
+    const turns = r.sessionId ? bySession.get(r.sessionId) : undefined;
+    if (!turns || turns.length < 2) {
+      walk(r, '', '');
+      out.push('');
+      continue;
+    }
+    if (done.has(r.sessionId!)) continue;
+    done.add(r.sessionId!);
+    turns.sort((a, b) => a.startTime - b.startTime);
+    const key = sessionKey(r.sessionId!);
+    const open = !!opts.expanded?.has(r.sessionId!);
+    ids.push(key);
+    out.push(sessionLine(turns, cols, now, key === opts.selectedId, open));
+    if (open) {
+      turns.forEach((t, i) => {
+        const lastTurn = i === turns.length - 1;
+        walk(t, lastTurn ? ' └─ ' : ' ├─ ', lastTurn ? '    ' : ' │  ', `Turn ${i + 1}`, true);
+      });
+    }
     out.push('');
   }
   // ekrana sığmayan kısmı kes (üstteki çalışanlar kalır; seçili satır görünürse kaydır)
@@ -184,6 +239,26 @@ export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: 
   return out.join('\n');
 }
 
+/** Oturumun tüm turlarını tek sohbet akışına birleştirir; alt ajan olayları ve sahte "Interrupted for 0s" kayıtları çıkarılır. */
+export function sessionTranscript(sessionId: string): { task: TaskSummary; events: TaskEvent[] } | null {
+  const turns = globalSqlite.getTasksForSession(sessionId).filter((t) => !t.parentTaskId);
+  if (turns.length === 0) return null;
+  const lastTurn = turns[turns.length - 1];
+  const started = new Map(turns.map((t) => [t.taskId, t.startTime]));
+  const events = globalSqlite.getEventsForSession(sessionId).filter((e) => {
+    if (e.parentTaskId || !started.has(e.taskId)) return false;
+    if (e.type === 'task.cancelled') return e.taskId === lastTurn.taskId && e.timestamp - (started.get(e.taskId) ?? 0) >= 1000;
+    return true;
+  });
+  const task: TaskSummary = {
+    ...lastTurn,
+    taskId: `${sessionId.slice(0, 8)} · ${turns.length} mesaj`,
+    startTime: turns[0].startTime,
+    durationMs: turns.reduce((a, t) => a + t.durationMs, 0)
+  };
+  return { task, events };
+}
+
 export function runTree(args: string[]): void {
   const once = args.includes('--once');
   let onlyRunning = false;
@@ -191,22 +266,32 @@ export function runTree(args: string[]): void {
   let detailId: string | null = null;
   let detailScroll = 0;
   let lastOrder: string[] = [];
+  const expanded = new Set<string>();
+  const sessionOf = (id: string | null): string | null =>
+    !id ? null : id.startsWith('session:') ? id.slice(8) : globalSqlite.getTask(id)?.sessionId ?? null;
 
   const frame = (): string => {
     const cols = process.stdout.columns || 120;
     const rows = process.stdout.rows || 40;
     const now = Date.now();
     if (detailId) {
-      const t = globalSqlite.getTask(detailId);
-      if (t) return renderDetail(t, globalSqlite.getEvents(detailId), { cols, rows, now, scroll: detailScroll });
-      detailId = null;
+      if (detailId.startsWith('session:')) {
+        const st = sessionTranscript(detailId.slice(8));
+        if (st) return renderDetail(st.task, st.events, { cols, rows, now, scroll: detailScroll });
+        detailId = null;
+      }
+      if (detailId) {
+        const t = globalSqlite.getTask(detailId);
+        if (t) return renderDetail(t, globalSqlite.getEvents(detailId), { cols, rows, now, scroll: detailScroll });
+        detailId = null;
+      }
     }
     const tasks = globalSqlite.getRecentTasks(TASK_LIMIT);
-    const f = renderTree(tasks, { onlyRunning, cols, rows, now, selectedId });
+    const f = renderTree(tasks, { onlyRunning, cols, rows, now, selectedId, expanded });
     lastOrder = f.order;
     if (!selectedId || !f.order.includes(selectedId)) {
       selectedId = f.order[0] ?? null;
-      if (selectedId && !once) return renderTree(tasks, { onlyRunning, cols, rows, now, selectedId }).text;
+      if (selectedId && !once) return renderTree(tasks, { onlyRunning, cols, rows, now, selectedId, expanded }).text;
     }
     return f.text;
   };
@@ -252,6 +337,17 @@ export function runTree(args: string[]): void {
     if (k === '\x1b[A' || k === 'k' || k === 'K') move(-1);
     else if (k === '\x1b[B' || k === 'j' || k === 'J') move(1);
     else if (k === '\r' || k === '\n') { if (selectedId) { detailId = selectedId; detailScroll = 0; redraw(); } }
+    else if (k === ' ' || k === '[C' || k === '[D') {
+      const sid = sessionOf(selectedId);
+      if (sid && lastOrder.includes(sessionKey(sid))) {
+        const open = expanded.has(sid);
+        if (k === '[D' ? open : k === '[C' ? !open : true) {
+          if (open) expanded.delete(sid); else expanded.add(sid);
+          if (!expanded.has(sid)) selectedId = sessionKey(sid);
+          redraw();
+        }
+      }
+    }
     else if (k === 'a' || k === 'A') { onlyRunning = !onlyRunning; redraw(); }
   });
 }

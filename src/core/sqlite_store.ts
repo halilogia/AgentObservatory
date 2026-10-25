@@ -303,6 +303,28 @@ export class SqliteStore {
     }));
   }
 
+  /** Bir oturumun tüm görevleri, kronolojik (eskiden yeniye). */
+  getTasksForSession(sessionId: string): TaskSummary[] {
+    const rows = this.db.prepare('SELECT * FROM tasks WHERE session_id = ? ORDER BY start_time ASC, rowid ASC').all(sessionId) as any[];
+    return rows.map((r) => this.mapTaskSummary(r));
+  }
+
+  /** Bir oturumun tüm görevlerinin olayları tek kronolojik akışta (rowid sırası). */
+  getEventsForSession(sessionId: string): TaskEvent[] {
+    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id FROM events WHERE session_id = ? ORDER BY rowid ASC').all(sessionId) as any[];
+    return rows.map((r) => ({
+      id: r.id,
+      taskId: r.task_id,
+      sessionId: r.session_id,
+      agent: r.agent,
+      tier: r.tier,
+      type: r.type,
+      data: JSON.parse(r.data || '{}'),
+      timestamp: r.timestamp,
+      ...(r.parent_task_id ? { parentTaskId: r.parent_task_id } : {})
+    }));
+  }
+
   getMaxSeq(): number {
     try {
       const row = this.db.prepare('SELECT COALESCE(MAX(rowid), 0) AS maxSeq FROM events').get() as any;
