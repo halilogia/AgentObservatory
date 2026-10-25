@@ -72,6 +72,9 @@ async function main(): Promise<void> {
     const tui = new TerminalUI(globalStore);
     tui.startWatchMode(300, !isHistory);
     console.log(paint('gray', isHistory ? 'Tüm geçmiş olaylar ve canlı akış dinleniyor...' : 'Temiz oturum: Sadece yeni gelen canlı olaylar dinleniyor (Geçmiş için --history/--all veya [H] tuşu)...'));
+  } else if (command === 'tree') {
+    const { runTree } = await import('./ui/tree.ts');
+    runTree(args.slice(1));
   } else if (command === 'sessions') {
     const tasks = showSessionPicker();
     if (tasks.length === 0) process.exit(0);
