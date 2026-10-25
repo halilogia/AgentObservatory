@@ -233,7 +233,13 @@ export function runTree(args: string[]): void {
     console.log(frame());
     process.exit(0);
   }
-  const draw = () => process.stdout.write('\x1b[H' + frame().split('\n').map((l) => l + '\x1b[K').join('\n') + '\n\x1b[J');
+  // Kare terminal yüksekliğine kırpılır, sona satır sonu basılmaz: aksi halde her çizimde ekran bir satır kayar ve başlık alta yığılır.
+  const draw = () => {
+    const lines = frame().split('\n').slice(0, process.stdout.rows || 40);
+    process.stdout.write('\x1b[H' + lines.map((l) => l + '\x1b[K').join('\n') + '\x1b[J');
+  };
+  process.stdout.write('\x1b[?1049h');
+  process.on('exit', () => process.stdout.write('\x1b[?1049l'));
   const redraw = () => { process.stdout.write('\x1b[2J'); draw(); };
   redraw();
   const timer = setInterval(draw, 800);
