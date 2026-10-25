@@ -1,15 +1,13 @@
-import { spawn } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { globalSqlite } from '../core/sqlite_store.ts';
 import type { TaskEvent, TaskSummary } from '../core/types.ts';
+import { TranscriptRenderer } from './transcript.ts';
 import { paint, cleanText, truncate, describeTool, hms } from './tui.ts';
 
 // Ağaç görünümü: aynı anda çalışan birçok ajanı tek akışa karıştırmadan, ajan başına 2 satırla gösterir.
 // Mevcut `watch` / `chat` görünümlerine dokunmaz; yalnızca SQLite'taki görev kayıtlarını okur.
 //   node --experimental-strip-types src/cli.ts tree [--once]
-// Ağaç:   ↑/↓ (veya J/K) seç · Enter ayrıntı · A çalışanlar/son görevler · Q çıkış
-// Ayrıntı: Esc/Backspace geri · O ajanın tam sohbet görünümünü yeni pencerede aç · Q çıkış
+// Ağaç:   ↑/↓ (veya J/K) seç · Enter ayrıntı · A sadece çalışanlar/hepsi · Q çıkış
+// Ayrıntı: ajanın kendi sohbet görünümü (canlı); ↑/↓ kaydır · Esc/Backspace geri · Q çıkış
 
 const RECENT_WINDOW_MS = 30 * 60 * 1000;
 const STALE_MS = 60 * 60 * 1000;   // bir saatten uzun "çalışıyor" görünen kayıtlar büyük olasılıkla bitmemiş eski oturumlardır
@@ -110,7 +108,7 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
   }
   const out: string[] = [];
   const ids: string[] = [];
-  out.push(`${paint('bold', 'Observatory · Ağaç')}  ${paint('gray', hms(now))}   ${paint('yellow', '● ' + counts.run + ' çalışıyor')}  ${paint('green', '✔ ' + counts.ok)}  ${paint('red', '✖ ' + counts.fail)}   ${paint('gray', '[↑↓] seç  [Enter] ayrıntı  [A] ' + (opts.onlyRunning ? 'son görevler' : 'yalnız çalışanlar') + '  [Q] çıkış')}`);
+  out.push(`${paint('bold', 'Observatory · Ağaç')}  ${paint('gray', hms(now))}   ${paint('yellow', '● ' + counts.run + ' çalışıyor')}  ${paint('green', '✔ ' + counts.ok)}  ${paint('red', '✖ ' + counts.fail)}   ${paint('gray', '[↑↓] seç  [Enter] ayrıntı  [A] ' + (opts.onlyRunning ? 'hepsini göster' : 'sadece çalışanları göster') + '  [Q] çıkış')}`);
   out.push(paint('gray', '─'.repeat(Math.max(20, Math.min(cols, 120)))));
   if (roots.length === 0) out.push(paint('gray', '(gösterilecek görev yok)'));
 
@@ -139,70 +137,51 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
   return { text: out.join('\n'), order: ids };
 }
 
-function wrap(text: string, width: number): string[] {
-  const words = cleanText(text).split(' ');
-  const lines: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    if ((cur + ' ' + w).trim().length > width) {
-      if (cur) lines.push(cur);
-      cur = w.length > width ? w.slice(0, width) : w;
-    } else {
-      cur = (cur + ' ' + w).trim();
-    }
-  }
-  if (cur) lines.push(cur);
-  return lines;
-}
-
-/** Tek ajanın ayrıntı sayfası: üst bilgi, istem, araç zaman çizelgesi, yanıtın sonu. */
-export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: number; rows: number; now: number }): string {
-  const { cols, rows, now } = opts;
-  const width = Math.max(40, Math.min(cols, 120)) - 2;
-  const live = isLive(t, now);
-  const u = t.usage;
+/** Görünür genişliğe göre (ANSI kaçışlarını saymadan) satırı böler; kare yüksekliği doğru kalsın diye. */
+function wrapAnsi(line: string, width: number): string[] {
   const out: string[] = [];
-  out.push(`${paint('bold', 'Ayrıntı')}  ${paint('gray', hms(now))}   ${paint('gray', '[Esc] geri  [O] tam sohbet görünümünü aç  [Q] çıkış')}`);
-  out.push(paint('gray', '─'.repeat(width)));
-  const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', t.agent));
-  out.push(`${statusGlyph(t, now)} ${tag} ${paint('bold', modelName(t))}   ${paint('gray', t.taskId)}`);
-  out.push(paint('gray', `süre ${fmtDuration(live ? now - t.startTime : t.durationMs)} · başladı ${hms(t.startTime)}${t.endTime ? ' · bitti ' + hms(t.endTime) : ''} · durum ${t.status}`));
-  out.push(paint('gray', `token: girdi ${fmtTokens(u.inputTokens)} · önbellek ${fmtTokens(u.cachedTokens)} · çıktı ${fmtTokens(u.outputTokens)} · akıl yürütme ${fmtTokens(u.reasoningTokens)} · toplam ${fmtTokens(u.totalTokens)}`));
-  if (t.parentTaskId) out.push(paint('gray', `üst görev: ${t.parentTaskId}`));
-  if (t.error) out.push(paint('red', 'hata: ' + truncate(cleanText(t.error), width - 6)));
-  out.push('');
-  out.push(paint('bold', 'İstem'));
-  for (const l of wrap(t.prompt, width - 2).slice(0, 4)) out.push('  ' + l);
-  out.push('');
-
-  // araç zaman çizelgesi: tool.invoked olayları + izin/sonuç satırları
-  const timeline: string[] = [];
-  for (const e of events) {
-    if (e.type === 'tool.invoked') timeline.push(`  ${paint('gray', hms(e.timestamp))} › ${truncate(toolLine(String(e.data.name || 'tool'), e.data.input || {}), width - 14)}`);
-    else if (e.type === 'permission.requested') timeline.push(`  ${paint('gray', hms(e.timestamp))} ${paint('yellow', 'izin istendi')} ${truncate(cleanText(JSON.stringify(e.data)), width - 28)}`);
-    else if (e.type === 'task.failed' || e.type === 'task.cancelled') timeline.push(`  ${paint('gray', hms(e.timestamp))} ${paint('red', e.type)} ${truncate(cleanText(String(e.data.reason || e.data.error || '')), width - 28)}`);
+  let cur = '';
+  let vis = 0;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '\x1b') {
+      const m = /^\x1b\[[0-9;?]*[A-Za-z]/.exec(line.slice(i));
+      if (m) { cur += m[0]; i += m[0].length - 1; continue; }
+    }
+    if (vis >= width) { out.push(cur + '\x1b[0m'); cur = ''; vis = 0; }
+    cur += line[i];
+    vis++;
   }
-  const reply = wrap(t.assistantText || '', width - 2);
-  // ekranı paylaştır: araçlara en çok 40%, yanıta kalan
-  const room = Math.max(6, rows - out.length - 4);
-  const toolRows = Math.min(timeline.length, Math.max(3, Math.floor(room * 0.4)));
-  out.push(paint('bold', `Araçlar (${t.toolsUsed.length})`));
-  if (timeline.length === 0) out.push(paint('gray', '  (henüz araç çağrısı yok)'));
-  out.push(...timeline.slice(-toolRows));
-  out.push('');
-  out.push(paint('bold', 'Yanıt'));
-  const replyRows = Math.max(3, room - toolRows - 2);
-  if (reply.length === 0) out.push(paint('gray', '  (henüz yanıt yok)'));
-  else {
-    if (reply.length > replyRows) out.push(paint('gray', `  … ${reply.length - replyRows} satır yukarıda`));
-    for (const l of reply.slice(-replyRows)) out.push('  ' + l);
-  }
-  return out.slice(0, Math.max(8, rows - 1)).join('\n');
+  out.push(cur);
+  return out;
 }
 
-function openChatWindow(taskId: string): void {
-  const cli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'cli.ts');
-  spawn('cmd.exe', ['/c', 'start', 'node', '--experimental-strip-types', cli, 'chat', taskId, '--follow'], { stdio: 'ignore', windowsHide: false, detached: true }).unref();
+/** Tek ajanın ayrıntı sayfası: görevi başlatan CLI'ın kendi sohbet görünümü (skin), en altı canlı izlenir; ↑/↓ ile kaydırılır. */
+export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: number; rows: number; now: number; scroll?: number }): string {
+  const { cols, rows, now } = opts;
+  const width = Math.max(40, cols - 1);
+  const live = isLive(t, now);
+  const out: string[] = [];
+  const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', t.agent));
+  out.push(`${paint('bold', 'Sohbet')}  ${paint('gray', hms(now))}   ${paint('gray', '[Esc] geri  [↑↓] kaydır  [Q] çıkış')}`);
+  out.push(`${statusGlyph(t, now)} ${tag} ${paint('bold', modelName(t))}   ${paint('gray', t.taskId + ' · ' + fmtDuration(live ? now - t.startTime : t.durationMs))}`);
+  out.push(paint('gray', '─'.repeat(Math.min(width, 120))));
+
+  let buf = '';
+  const r = new TranscriptRenderer((x) => { buf += x; }, { color: true });
+  for (const e of events) {
+    if (e.type === 'task.started' && !e.data?.model && t.model) e.data = { ...e.data, model: t.model };
+    r.push(e);
+  }
+  r.end();
+  const lines = buf.replace(/\s+$/, '').split('\n').flatMap((l) => wrapAnsi(l, width));
+  const room = Math.max(4, rows - out.length - 1);
+  const maxScroll = Math.max(0, lines.length - room);
+  const scroll = Math.min(Math.max(0, opts.scroll ?? 0), maxScroll);
+  const end = lines.length - scroll;
+  const view = lines.slice(Math.max(0, end - room), end);
+  out.push(...view);
+  if (scroll > 0) out[out.length - 1] = paint('gray', `… ${scroll} satır aşağıda (↓ ile in)`);
+  return out.join('\n');
 }
 
 export function runTree(args: string[]): void {
@@ -210,6 +189,7 @@ export function runTree(args: string[]): void {
   let onlyRunning = false;
   let selectedId: string | null = null;
   let detailId: string | null = null;
+  let detailScroll = 0;
   let lastOrder: string[] = [];
 
   const frame = (): string => {
@@ -218,7 +198,7 @@ export function runTree(args: string[]): void {
     const now = Date.now();
     if (detailId) {
       const t = globalSqlite.getTask(detailId);
-      if (t) return renderDetail(t, globalSqlite.getEvents(detailId), { cols, rows, now });
+      if (t) return renderDetail(t, globalSqlite.getEvents(detailId), { cols, rows, now, scroll: detailScroll });
       detailId = null;
     }
     const tasks = globalSqlite.getRecentTasks(TASK_LIMIT);
@@ -261,13 +241,17 @@ export function runTree(args: string[]): void {
     }
     if (detailId) {
       if (k === '\x1b' || k === '\x7f' || k === '\b') { detailId = null; redraw(); }
-      else if (k === 'o' || k === 'O') openChatWindow(detailId);
+      else if (k === '\x1b[A' || k === 'k' || k === 'K') { detailScroll += 1; draw(); }
+      else if (k === '\x1b[B' || k === 'j' || k === 'J') { detailScroll = Math.max(0, detailScroll - 1); draw(); }
+      else if (k === '\x1b[5~') { detailScroll += 10; draw(); }
+      else if (k === '\x1b[6~') { detailScroll = Math.max(0, detailScroll - 10); draw(); }
+      else if (k === '\x1b[F' || k === 'G') { detailScroll = 0; draw(); }
       return;
     }
     if (k === '\x1b') { clearInterval(timer); process.stdout.write('\x1b[2J\x1b[H'); process.exit(0); }
     if (k === '\x1b[A' || k === 'k' || k === 'K') move(-1);
     else if (k === '\x1b[B' || k === 'j' || k === 'J') move(1);
-    else if (k === '\r' || k === '\n') { if (selectedId) { detailId = selectedId; redraw(); } }
+    else if (k === '\r' || k === '\n') { if (selectedId) { detailId = selectedId; detailScroll = 0; redraw(); } }
     else if (k === 'a' || k === 'A') { onlyRunning = !onlyRunning; redraw(); }
   });
 }
