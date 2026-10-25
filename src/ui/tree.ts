@@ -71,7 +71,7 @@ function nodeLines(t: TaskSummary, prefix: string, childPrefix: string, cols: nu
   const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', t.agent));
   const tokens = t.usage?.totalTokens ? paint('gray', ' · ' + fmtTokens(t.usage.totalTokens) + ' tok') : '';
   const mark = selected ? paint('cyan', '▸') : ' ';
-  const head = `${mark}${prefix}${statusGlyph(t, now)} ${tag} ${modelName(t)} ${paint('gray', t.taskId.slice(-8))} ${paint('gray', dur)}${tokens}`;
+  const head = `${mark}${prefix}${statusGlyph(t, now)} ${tag} ${modelName(t)} ${paint('gray', t.taskId.slice(-8))} ${paint('gray', 'başladı ' + hms(t.startTime) + ' · ' + (isLive(t, now) ? 'sürüyor ' : 'sürdü ') + dur)}${tokens}`;
   return [head, ` ${childPrefix}${lastActivity(t, Math.max(20, cols - childPrefix.length - 5))}`];
 }
 
