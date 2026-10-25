@@ -48,6 +48,8 @@ export function flattenOutput(v: unknown): string {
 
 /** Sistemin eklediği istem parçaları gerçek kullanıcı metni değildir. */
 export function isInjectedText(t: string): boolean {
+  // Ekran görüntülü mesajlarda Claude, görselin yolunu ayrı bir kullanıcı satırı olarak yazar; yeni istem sayılmamalı (aksi halde önceki görev sahte "yeni istem geldi" ile iptal olur)
+  if (/^\s*\[Image(?: #\d+)?(?:: source:|\])/i.test(t)) return true;
   if (/^\s*<(system-reminder|ide_|command-|environment_context|user_instructions|local-command)/i.test(t) || /^\s*# AGENTS\.md instructions/.test(t)) return true;
   // genel kural: <etiket ...> ile başlayıp </etiket> ile biten blok, ajanın eklediği bağlamdır (ör. <recommended_plugins>)
   const m = /^\s*<([a-z][\w-]*)[^>]*>/i.exec(t);
