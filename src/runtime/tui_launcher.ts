@@ -8,11 +8,11 @@ const LAUNCH_GUI_PS1 = process.env.OBSERVATORY_LAUNCH_GUI || path.join(os.homedi
 const LOCK_FILE = path.join(os.tmpdir(), 'agent_observatory_tui.lock');
 const DEBOUNCE_MS = 15000;
 
-// Açılan pencere: varsayılan "chat" = oturumu ajanın CLI görünümünde canlı gösterir (skins). Eski pano için OBSERVATORY_TUI_MODE=watch.
-// OBSERVATORY_TUI_MODE=tree: birden fazla ajanı ajan başına 2 satırla gösteren ağaç görünümü.
+// Açılan pencere: varsayılan "tree" = birden fazla ajanı ajan başına 2 satırla gösteren ağaç paneli (Enter ayrıntı, O tam sohbet).
+// OBSERVATORY_TUI_MODE=chat: son oturumu ajanın CLI görünümünde canlı gösterir; =watch: eski pano.
 const VIEW_ARGS = process.env.OBSERVATORY_TUI_MODE === 'watch' ? 'watch'
-  : process.env.OBSERVATORY_TUI_MODE === 'tree' ? 'tree'
-  : 'chat latest --follow';
+  : process.env.OBSERVATORY_TUI_MODE === 'chat' ? 'chat latest --follow'
+  : 'tree';
 
 let lastLaunchAt = 0;
 
