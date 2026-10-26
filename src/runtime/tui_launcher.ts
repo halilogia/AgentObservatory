@@ -55,6 +55,9 @@ export function launchTuiWindow(): void {
 }
 
 function isDisabled(): boolean {
+  // Otomatik TUI/pencere açma varsayılan olarak devre dışı (kullanıcı talebiyle kapatıldı).
+  // Yalnızca OBSERVATORY_AUTO_TUI === '1' açıkça tanımlanmışsa otomatik açılır.
+  if (process.env.OBSERVATORY_AUTO_TUI !== '1') return true;
   if (process.env.OBSERVATORY_NO_AUTO_TUI === '1') return true;
   if (process.env.NODE_ENV === 'test') return true;
   if (process.platform !== 'win32') return true;
