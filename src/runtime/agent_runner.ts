@@ -261,6 +261,27 @@ export class AgentRunner {
     return this.store.cancelTask ? this.store.cancelTask(taskId, reason) : false;
   }
 
+  approveTask(taskId: string, approved: boolean): boolean {
+    const entry = this.activeProcesses.get(taskId);
+    if (!entry || !entry.child || !entry.child.stdin || entry.child.stdin.destroyed) {
+      return false;
+    }
+    try {
+      entry.child.stdin.write(approved ? 'y\n' : 'n\n');
+      this.store.recordEvent(createEvent({
+        taskId,
+        sessionId: null,
+        agent: entry.options.agent as any,
+        tier: 1,
+        type: 'permission.resolved',
+        data: { approved }
+      }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   getActiveTasks(): string[] {
     return Array.from(this.activeProcesses.keys());
   }

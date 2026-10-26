@@ -5,6 +5,8 @@ export type EventType =
   | 'turn.started'
   | 'tool.invoked'
   | 'tool.completed'
+  | 'permission.requested'
+  | 'permission.resolved'
   | 'message.delta'
   | 'usage.updated'
   | 'turn.completed'

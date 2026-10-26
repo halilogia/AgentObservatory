@@ -25,7 +25,7 @@ export type ExtraHandler = (ctx: ExtraCtx) => boolean | Promise<boolean>;
 /** Uzaktan erişim (ör. Tailscale): yerel olmayan Host yalnızca açıkça izin verilenlerse kabul edilir; `gate` her istekte (Host/Origin sonrası) kimlik denetimi yapar. */
 export type GateHandler = (ctx: ExtraCtx & { remote: boolean }) => boolean | Promise<boolean>;
 
-export function startServer(opts: { port?: number; dbPath?: string; pollMs?: number; allowedOrigins?: string[] | (() => string[]); extra?: ExtraHandler; allowedHosts?: () => string[]; gate?: GateHandler } = {}): http.Server {
+export function startServer(opts: { port?: number; host?: string; dbPath?: string; pollMs?: number; allowedOrigins?: string[] | (() => string[]); extra?: ExtraHandler; allowedHosts?: () => string[]; gate?: GateHandler } = {}): http.Server {
   const dbPath = opts.dbPath || process.env.OBSERVATORY_DB || path.join(os.homedir(), '.observatory', 'observatory.sqlite');
   if (!fs.existsSync(dbPath)) throw new Error(`Veritabanı yok: ${dbPath} (önce bir görev çalıştır)`);
   const db = new DatabaseSync(dbPath);
@@ -111,6 +111,6 @@ export function startServer(opts: { port?: number; dbPath?: string; pollMs?: num
   });
 
   server.on('close', () => { clearInterval(timer); db.close(); });
-  server.listen(opts.port ?? 8787, '127.0.0.1');
+  server.listen(opts.port ?? 8787, opts.host ?? '0.0.0.0');
   return server;
 }

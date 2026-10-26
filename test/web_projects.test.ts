@@ -4,7 +4,9 @@ import assert from 'node:assert';
 // localStorage taklidi (tarayıcı dışında)
 const store = new Map<string, string>();
 (globalThis as any).localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); }, removeItem: (k: string) => { store.delete(k); } };
+// @ts-ignore
 await import('../web/projects.js');
+// @ts-ignore
 await import('../web/context.js');
 const P = (globalThis as any).ObsProjects, C = (globalThis as any).ObsCtx;
 assert.ok(P && C);

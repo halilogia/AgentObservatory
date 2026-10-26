@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>AI Güncellemeleri · Agent Observatory</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Agent Observatory AI Güncellemeleri ana sayfa"><span class="brand-mark">AO</span><span>AGENT OBSERVATORY</span></a>
+      <div class="top-actions"><span class="live-dot"></span><span>Resmî kaynaklar</span><button id="refresh" class="refresh" type="button"><span aria-hidden="true">↻</span> Yenile</button></div>
+    </header>
+    <section class="intro">
+      <p class="eyebrow">ÜRÜN RADARI</p>
+      <h1>AI araçlarında neler yeni?</h1>
+      <p class="lede">Codex, Claude, Antigravity ve OpenCode duyuruları tek yerde. İçerik, bu araçların resmî yayın akışlarından alınır.</p>
+      <div class="source-links">
+        <a href="https://learn.chatgpt.com/docs/changelog" target="_blank" rel="noopener noreferrer">Codex <span>↗</span></a>
+        <a href="https://support.claude.com/en/articles/12138966-release-notes" target="_blank" rel="noopener noreferrer">Claude ürün notları <span>↗</span></a>
+        <a href="https://antigravity.google/changelog" target="_blank" rel="noopener noreferrer">Antigravity <span>↗</span></a>
+        <a href="https://opencode.ai/changelog" target="_blank" rel="noopener noreferrer">OpenCode <span>↗</span></a>
+      </div>
+    </section>
+    <section class="toolbar" aria-label="Akış filtreleri">
+      <div class="filter-stack">
+        <div id="filters" class="filters" role="group" aria-label="Ürüne göre filtrele">
+          <button class="filter active" data-filter="all" type="button">Tümü</button>
+          <button class="filter" data-filter="codex" type="button">Codex</button>
+          <button class="filter" data-filter="claude-code" type="button">Claude</button>
+          <button class="filter" data-filter="antigravity" type="button">Antigravity</button>
+          <button class="filter" data-filter="opencode" type="button">OpenCode</button>
+        </div>
+        <div id="origin-filters" class="origin-filter" role="group" aria-label="Kaynak türüne göre filtrele">
+          <span class="origin-label">Kaynak türü</span>
+          <button class="filter active" data-origin="all" type="button">Tümü</button>
+          <button class="filter" data-origin="site" type="button">Resmî siteler</button>
+          <button class="filter" data-origin="github" type="button">GitHub</button>
+        </div>
+      </div>
+      <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Güncellemelerde ara" autocomplete="off"></label>
+    </section>
+    <section class="status-row"><p id="checked">Akışlar kontrol ediliyor…</p><div id="source-status" class="source-status" aria-live="polite"></div></section>
+    <section id="feed" class="feed" aria-live="polite" aria-busy="true"></section>
+    <footer><span>Otomatik yenileme: 10 dakikada bir</span><span>Veri kaynakları ve bağlantılar yayıncılarına aittir.</span></footer>
+  </main>
+</body>
+</html>

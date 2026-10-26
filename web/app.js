@@ -13,17 +13,19 @@
     undo: svg('<path d="M6 3.5L3 6.5l3 3"/><path d="M3 6.5h6.5a3.5 3.5 0 010 7H6"/>'),
     check: svg('<path d="M3.5 8.5l3 3 6-7"/>'),
     folder: svg('<path d="M2 4.5A1.5 1.5 0 013.5 3h2.3l1.4 1.5h5.3A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/>'),
+    folderPlus: svg('<path d="M2 4.5A1.5 1.5 0 013.5 3h2.3l1.4 1.5h5.3A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/><path d="M10 9.5h3M11.5 8v3"/>'),
     lock: svg('<rect x="3.5" y="7" width="9" height="6" rx="1.5"/><path d="M5.5 7V5.5a2.5 2.5 0 015 0V7"/>'),
     pen: svg('<path d="M3 13l.7-2.8L10.9 3a1.2 1.2 0 011.7 0l.4.4a1.2 1.2 0 010 1.7L5.8 12.3z"/>'),
     up: svg('<path d="M8 13V3M3.5 7.5L8 3l4.5 4.5"/>'),
     plus: svg('<path d="M8 3v10M3 8h10"/>'),
+    paperclip: svg('<path d="M13.2 7.1l-6.4 6.4a3.5 3.5 0 01-5-5l6.4-6.4a2.4 2.4 0 013.4 3.4L5.2 11.9a1.2 1.2 0 01-1.7-1.7L9.2 4.5"/>'),
     panel: svg('<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M6 3v10"/>'),
     x: svg('<path d="M4 4l8 8M12 4l-8 8"/>'),
     sun: svg('<circle cx="8" cy="8" r="2.8"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/>'),
     moon: svg('<path d="M13 9.6A5.4 5.4 0 016.4 3 5.4 5.4 0 108 13.4a5.4 5.4 0 005-3.8z"/>'),
     stop: '<svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg>'
   };
-  const st = { cfg: null, engine: 'claude', model: 'sonnet', effort: 'medium', mode: 'read', cwd: '', running: null, project: null };
+  const st = { cfg: null, engine: 'claude', model: 'sonnet', effort: 'medium', mode: 'write', cwd: '', running: null, project: null };
   const views = new Map();
   let chat = null;
   let early = [];
@@ -69,8 +71,30 @@
   }
   const renderMd = (box, text) => ObsMd.render(document, box, text, { onCopy: copyText, copyLabel: t('common.copy') });
 
+  function toolKind(name) {
+    const n = String(name || '').toLowerCase();
+    if (['edit', 'write', 'patch', 'multiedit', 'notebookedit'].includes(n)) return 'diff';
+    if (['task', 'tasks', 'subtask'].includes(n)) return 'task';
+    if (['bash', 'powershell', 'exec', 'command_execution', 'terminal'].includes(n)) return 'term';
+    if (['read', 'glob', 'grep', 'dir', 'list'].includes(n)) return 'read';
+    return 'generic';
+  }
+
   function toolSummary(name, input) {
     const o = input && typeof input === 'object' ? input : {};
+    const kind = toolKind(name);
+    if (kind === 'term') {
+      const cmd = o.command ?? o.CommandLine ?? o.cmd ?? '';
+      return cmd ? '$ ' + String(cmd).replace(/\s+/g, ' ').slice(0, 140) : name;
+    }
+    if (kind === 'diff') {
+      const fp = o.file_path ?? o.filePath ?? o.path ?? '';
+      return fp ? '📄 ' + String(fp).split(/[\\/]/).pop() : name;
+    }
+    if (kind === 'task') {
+      const title = o.title ?? o.description ?? o.prompt ?? '';
+      return title ? '📋 ' + String(title).slice(0, 100) : name;
+    }
     const v = o.command ?? o.CommandLine ?? o.cmd ?? o.file_path ?? o.filePath ?? o.path ?? o.pattern ?? o.query ?? Object.values(o).find((x) => typeof x === 'string') ?? '';
     return String(v).replace(/\s+/g, ' ').slice(0, 140);
   }
@@ -97,9 +121,27 @@
   }
 
   // ---------- sohbet verisi ve geçmiş ----------
+  function smartTitle(raw) {
+    if (!raw) return '';
+    let text = String(raw).replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+    text = text.replace(/^[`#>*_\-\s]+/, '').trim();
+    const noise = /^(lütfen\s+|bana\s+|acaba\s+|merhaba[,!\s]*|selam[,!\s]*|hey[,!\s]*|hi[,!\s]*|hello[,!\s]*|please\s+|can you\s+|could you\s+|how to\s+|yardımcı olur musun[,?\s]*)+/i;
+    while (noise.test(text)) {
+      text = text.replace(noise, '').trim();
+    }
+    if (text.length > 0) {
+      text = text.charAt(0).toLocaleUpperCase('tr-TR') + text.slice(1);
+    }
+    if (text.length > 48) {
+      const cut = text.slice(0, 48);
+      const lastSpace = cut.lastIndexOf(' ');
+      text = (lastSpace > 18 ? cut.slice(0, lastSpace) : cut).trim() + '…';
+    }
+    return text || String(raw).slice(0, 48);
+  }
   function ensureChat(firstText) {
     if (chat) return;
-    chat = { id: ObsStore.newId(), title: firstText.replace(/\s+/g, ' ').slice(0, 48), created: Date.now(), updated: Date.now(), session: null, project: st.project || null, messages: [] };
+    chat = { id: ObsStore.newId(), title: smartTitle(firstText), created: Date.now(), updated: Date.now(), session: null, project: st.project || null, messages: [] };
   }
   function persist() { if (chat && chat.messages.length) { ObsStore.save(chat); renderHistory(); } }
   function when(ts) {
@@ -114,7 +156,9 @@
     const p = st.project ? ObsProjects.get(st.project) : null; if (st.project && !p) st.project = null;
     const c = $('#crumb'); c.hidden = !p; if (!p) return;
     const x = el('span', 'ico'); x.innerHTML = ICON.x;
-    c.replaceChildren(el('span', '', p.name), x); c.title = t('proj.leave'); c.setAttribute('aria-label', t('proj.leave') + ': ' + p.name);
+    const label = el('span', 'crumb-content');
+    label.innerHTML = '<span class="crumb-prefix">' + (I18N.language === 'tr' ? 'PROJE' : 'PROJECT') + '</span> ' + p.name;
+    c.replaceChildren(label, x); c.title = t('proj.leave'); c.setAttribute('aria-label', t('proj.leave') + ': ' + p.name);
   }
   function selectProject(id) {
     if (st.running) { $('#foot').textContent = t('foot.busy'); return; }
@@ -122,40 +166,112 @@
     st.project = id; ObsProjects.touch(id); if (p.cwd) st.cwd = p.cwd;
     saveSettings(); newChat(); refreshControls(); renderCrumb(); renderHistory(); closeNavOnMobile();
   }
-  function leaveProject() { st.project = null; saveSettings(); renderCrumb(); renderHistory(); }
+  function leaveProject() {
+    st.project = null;
+    saveSettings();
+    newChat();
+    refreshControls();
+    renderCrumb();
+    renderHistory();
+  }
   function openProjectDialog(p) {
     if (document.querySelector('.dlg')) return;
     const ov = el('div', 'dlg'); const box = el('div', 'dlgbox caps'); box.setAttribute('role', 'dialog');
     const close = () => { ov.remove(); document.removeEventListener('keydown', onKey, true); };
     const onKey = (ev) => { if (ev.key === 'Escape' && document.querySelectorAll('.dlg').length === 1) { ev.stopPropagation(); close(); } };
-    const name = el('input', 'addin'); name.type = 'text'; name.maxLength = ObsProjects.NAME_MAX; name.placeholder = t('proj.namePh'); name.value = p ? p.name : '';
-    const folder = el('select', 'addin'); const paths = st.cfg.projects.map((x) => x.path); const cur = (p && p.cwd) || st.cwd;
+
+    if (!p) {
+      // Kaynak klasörleri (Image 2 Mimarisi) - Doğrudan OS klasör seçimi
+      const head = el('p', 'ctitle', t('proj.sourcesTitle'));
+      const list = el('div', 'pcard-list');
+      const paths = (st.cfg.projects || []).map((x) => x.path);
+
+      if (paths.length) {
+        paths.forEach((pt) => {
+          const base = pt.split(/[\\/]/).filter(Boolean).pop() || pt;
+          const card = el('div', 'pcard');
+          const ico = el('span', 'pcard-ico'); ico.innerHTML = ICON.folder;
+          const info = el('div', 'pcard-info');
+          info.append(el('div', 'pcard-title', base), el('div', 'pcard-path', pt));
+          const act = el('span', 'pcard-action', t('proj.addProject'));
+          card.append(ico, info, act);
+          card.onclick = () => {
+            const r = ObsProjects.save({ id: ObsProjects.newId(), name: base, cwd: pt, instructions: '', created: Date.now(), touched: Date.now() });
+            close();
+            if (r) selectProject(r.id);
+          };
+          list.appendChild(card);
+        });
+      } else {
+        list.appendChild(el('div', 'source-empty-hint', t('proj.noSources')));
+      }
+
+      // Kaynak klasörü ekleme kartı: "Bu bilgisayara klasör ekle ˅" + [📁+ Ekle]
+      // Kaynak klasörü ekleme: sadece [📁+ Ekle] düğmesi
+      const scard = el('div', 'source-card');
+      const sbtn = el('button', 'btn-source-add');
+      sbtn.type = 'button';
+      const sico = el('span', 'ico'); sico.innerHTML = ICON.folderPlus;
+      const slbl = el('span', '', t('proj.browse'));
+      sbtn.append(sico, slbl);
+
+      sbtn.onclick = async () => {
+        sbtn.disabled = true;
+        try {
+          const r = await api('/api/folders/browse', {});
+          if (r && r.path) {
+            await refreshConfig();
+            const pName = r.name || r.path.split(/[\\/]/).filter(Boolean).pop() || r.path;
+            const saved = ObsProjects.save({ id: ObsProjects.newId(), name: pName, cwd: r.path, instructions: '', created: Date.now(), touched: Date.now() });
+            close();
+            if (saved) selectProject(saved.id);
+          }
+        } catch (err) {
+          // yerel dialog kapandı
+        } finally {
+          sbtn.disabled = false;
+        }
+      };
+      scard.appendChild(sbtn);
+
+      const cancel = el('button', '', t('rewind.cancel'));
+      cancel.type = 'button';
+      cancel.onclick = close;
+
+      box.append(head, list, scard, cancel);
+      document.addEventListener('keydown', onKey, true);
+      ov.onclick = (ev) => { if (ev.target === ov) close(); };
+      ov.appendChild(box);
+      document.body.appendChild(ov);
+      return;
+    }
+
+    // Mevcut Projeyi Düzenleme (Ad ve Klasör - Talimat Angaryası Yok)
+    const name = el('input', 'addin'); name.type = 'text'; name.maxLength = ObsProjects.NAME_MAX; name.placeholder = t('proj.namePh'); name.value = p.name;
+    const folder = el('select', 'addin'); const paths = st.cfg.projects.map((x) => x.path); const cur = p.cwd || st.cwd;
     if (cur && !paths.includes(cur)) paths.unshift(cur);
     paths.forEach((pt) => { const o = el('option', '', pt.split(/[\\/]/).filter(Boolean).pop() || pt); o.value = pt; o.title = pt; o.selected = pt === cur; folder.appendChild(o); });
-    const instr = el('textarea', 'addin ptext'); instr.maxLength = ObsProjects.INSTR_MAX; instr.rows = 6; instr.placeholder = t('proj.instructionsPh'); instr.value = p ? p.instructions : '';
     const err = el('p', 'adderr', '');
     const save = el('button', 'primary', t('proj.save')); save.type = 'button';
     save.onclick = () => {
-      const r = ObsProjects.save({ id: p ? p.id : ObsProjects.newId(), name: name.value, cwd: folder.value, instructions: instr.value, created: p ? p.created : Date.now(), touched: Date.now() });
+      const r = ObsProjects.save({ id: p.id, name: name.value, cwd: folder.value, instructions: p.instructions || '', created: p.created, touched: Date.now() });
       if (!r) { err.textContent = t('proj.nameNeeded'); name.focus(); return; }
       close();
-      if (!p) { selectProject(r.id); return; }
       if (st.project === r.id && r.cwd) { st.cwd = r.cwd; saveSettings(); refreshControls(); }
       renderCrumb(); renderHistory();
     };
     const cancel = el('button', '', t('rewind.cancel')); cancel.type = 'button'; cancel.onclick = close;
-    box.append(el('p', 'ctitle', p ? t('proj.edit') : t('proj.add')), name, el('div', 'hgroup', t('proj.folder')), folder, el('div', 'hgroup', t('proj.instructions')), instr, el('p', 'cdesc', t('proj.instructionsHint')), err, save);
-    if (p) {
-      const del = el('button', '', t('proj.delete')); del.type = 'button';
-      del.onclick = async () => {
-        const c = await ask(t('proj.deleteAsk'), [t('proj.delete'), t('rewind.cancel')]); if (c !== 0) return;
-        ObsProjects.remove(p.id); if (st.project === p.id) st.project = null; close(); saveSettings(); renderCrumb(); renderHistory();
-      };
-      box.appendChild(del);
-    }
-    box.appendChild(cancel);
+    const del = el('button', '', t('proj.delete')); del.type = 'button';
+    del.onclick = async () => {
+      const c = await ask(t('proj.deleteAsk'), [t('proj.delete'), t('rewind.cancel')]); if (c !== 0) return;
+      ObsProjects.remove(p.id); if (st.project === p.id) st.project = null; close(); saveSettings(); renderCrumb(); renderHistory();
+    };
+    box.append(el('p', 'ctitle', t('proj.edit')), el('div', 'hgroup', t('proj.namePh')), name, el('div', 'hgroup', t('proj.folder')), folder, err, save, del, cancel);
+    document.addEventListener('keydown', onKey, true);
     ov.onclick = (ev) => { if (ev.target === ov) close(); };
-    document.addEventListener('keydown', onKey, true); ov.appendChild(box); document.body.appendChild(ov); name.focus();
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+    name.focus();
   }
 
   function chatRow(c, nested) {
@@ -164,11 +280,50 @@
     const main1 = el('button', 'hmain'); main1.type = 'button'; main1.title = title;
     const lastBot = [...c.messages].reverse().find((m) => m.r === 'b');
     const dot = el('span', 'dot'); if (lastBot) dot.style.setProperty('--c', lastBot.color);
-    main1.append(dot, el('span', 't', title), el('span', 'when', when(c.updated)));
+    const titleSpan = el('span', 't', title);
+    main1.append(dot, titleSpan, el('span', 'when', when(c.updated)));
     main1.onclick = () => loadChat(c.id);
-    const del = el('button', 'del'); del.type = 'button'; del.setAttribute('aria-label', t('history.delete')); del.innerHTML = ICON.x;
+
+    function startRename(ev) {
+      if (ev) ev.stopPropagation();
+      if (item.classList.contains('renaming')) return;
+      item.classList.add('renaming');
+      const input = el('input', 'htitle-input');
+      input.type = 'text';
+      input.value = c.title || '';
+      input.maxLength = 64;
+      titleSpan.replaceWith(input);
+      input.focus();
+      input.select();
+
+      let done = false;
+      const finish = (save) => {
+        if (done) return;
+        done = true;
+        const val = input.value.trim();
+        if (save && val && val !== c.title) {
+          c.title = val;
+          if (chat && chat.id === c.id) chat.title = val;
+          ObsStore.save(c);
+        }
+        renderHistory();
+      };
+      input.onkeydown = (ke) => {
+        if (ke.key === 'Enter') { ke.preventDefault(); finish(true); }
+        else if (ke.key === 'Escape') { ke.preventDefault(); finish(false); }
+      };
+      input.onblur = () => finish(true);
+    }
+
+    titleSpan.ondblclick = (ev) => { ev.stopPropagation(); startRename(ev); };
+
+    const ren = el('button', 'ren'); ren.type = 'button'; ren.setAttribute('aria-label', t('history.rename')); ren.title = t('history.rename'); ren.innerHTML = ICON.pen;
+    ren.onclick = (ev) => { ev.stopPropagation(); startRename(ev); };
+
+    const del = el('button', 'del'); del.type = 'button'; del.setAttribute('aria-label', t('history.delete')); del.title = t('history.delete'); del.innerHTML = ICON.x;
     del.onclick = (ev) => { ev.stopPropagation(); ObsStore.remove(c.id); if (chat && chat.id === c.id) newChat(); else renderHistory(); };
-    item.append(main1, del);
+
+    item.append(main1, ren, del);
     return item;
   }
   function renderHistory() {
@@ -200,19 +355,70 @@
     });
   }
   function clearThread() { $('#thread').replaceChildren(); views.clear(); }
-  function showThread(has) { $('#empty').hidden = has; }
+  function showThread(has) {
+    $('#empty').hidden = has;
+    if (!has) {
+      const p = st.project ? ObsProjects.get(st.project) : null;
+      const emptyBox = $('#empty');
+      if (emptyBox) {
+        if (p) {
+          emptyBox.innerHTML = '<div class="empty-project-pill"><span>' + (I18N.language === 'tr' ? 'Çalışma Alanı' : 'Workspace') + '</span></div>' +
+            '<h1 class="empty-project-name">' + p.name + '</h1>' +
+            '<p class="empty-project-path">' + p.cwd + '</p>';
+        } else {
+          emptyBox.innerHTML = '<h1 data-i18n="empty.title">' + t('empty.title') + '</h1>';
+        }
+      }
+    }
+  }
   function renderThread() {
     clearThread();
     if (!chat || !chat.messages.length) { showThread(false); return; }
     showThread(true);
     chat.messages.forEach((m, i) => { if (m.r === 'u') addUserDom(m.text, i); else createBot(m, false); });
   }
+  let officeActive = false;
+  function setOfficeView(show) {
+    officeActive = !!show;
+    const officeView = $('#officeView');
+    const mainEl = $('#main');
+    const dockEl = $('.dock');
+    const jumpEl = $('#jump');
+    const officeBtn = $('#officeBtn');
+
+    if (officeActive) {
+      if (mainEl) mainEl.hidden = true;
+      if (dockEl) dockEl.hidden = true;
+      if (jumpEl) jumpEl.hidden = true;
+      if (officeView) officeView.hidden = false;
+      if (officeBtn) officeBtn.classList.add('on');
+      const frame = $('#officeFrame');
+      if (frame && frame.contentWindow) {
+        try {
+          frame.contentWindow.dispatchEvent(new Event('resize'));
+        } catch (err) {
+          console.warn('[Observatory] office frame resize error:', err);
+        }
+      }
+    } else {
+      if (officeView) officeView.hidden = true;
+      if (mainEl) mainEl.hidden = false;
+      if (dockEl) dockEl.hidden = false;
+      if (officeBtn) officeBtn.classList.remove('on');
+      onScroll();
+    }
+  }
+  function toggleOfficeView() {
+    setOfficeView(!officeActive);
+  }
   function newChat() {
     if (st.running) return;
+    setOfficeView(false);
     chat = null; clearThread(); showThread(false); renderHistory(); $('#prompt').focus(); stick = true; onScroll();
   }
   function loadChat(id) {
     if (st.running) { $('#foot').textContent = t('foot.busy'); return; }
+    setOfficeView(false);
     const c = ObsStore.get(id); if (!c) return;
     chat = c; renderThread();
     st.project = c.project && ObsProjects.get(c.project) ? c.project : null; renderCrumb();
@@ -281,48 +487,109 @@
     box.append(el('p', 'ctitle', t('caps.title')), tabs, search, list, x);
     document.addEventListener('keydown', onKey, true); ov.appendChild(box); document.body.appendChild(ov); paint(); search.focus();
   }
-  /** Telefondan erişim (yalnızca yerel sayfa): Tailscale durumu, açma/kapama, eşleştirme kodu, cihaz listesi ve yazma izni */
+  /** Telefondan erişim: QR kod ile tek tıkla eşleşme (Sıfır terminal komutu, sıfır elle kod girme) */
   async function openPhone() {
     if (document.querySelector('.dlg')) return;
     let s; try { s = await api('/api/remote'); } catch (err) { $('#foot').textContent = err.info ? apiMsg(err) : err.message; return; }
-    let shown = null, msg = '';
-    const ov = el('div', 'dlg'); const box = el('div', 'dlgbox caps'); box.setAttribute('role', 'dialog');
-    const body = el('div', 'clist');
-    const close = () => { ov.remove(); document.removeEventListener('keydown', onKey, true); };
-    const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } };
-    const btn = (label, fn, cls) => { const b = el('button', cls || '', label); b.type = 'button'; b.onclick = async () => { try { msg = ''; await fn(); } catch (err) { msg = err.info ? apiMsg(err) : err.message; } paint(); }; return b; };
-    const reload = async () => { s = await api('/api/remote'); };
-    const copyBtn = (text) => { const b = btn(t('phone.copy'), async () => { try { await navigator.clipboard.writeText(text); } catch { /* pano kapalı */ } }); return b; };
+
+    // Remote kapalıysa otomatik aç ve eşleştirme kodu üret
+    let pairData = null;
+    try {
+      if (!s.enabled) { await api('/api/remote', { enabled: true }); s = await api('/api/remote'); }
+      pairData = await api('/api/pair/new', {});
+      s = await api('/api/remote');
+    } catch (err) {
+      console.debug('Otomatik remote başlatma hatası:', err);
+    }
+
+    const ov = el('div', 'dlg'); const box = el('div', 'dlgbox phone-box'); box.setAttribute('role', 'dialog');
+    const body = el('div', 'pbody');
+    let pollTimer = setInterval(async () => {
+      try {
+        const fresh = await api('/api/remote');
+        if (fresh.devices.length !== s.devices.length) {
+          s = fresh;
+          paint();
+        }
+      } catch (err) {
+        console.debug('Uzak cihaz durum sorgusu hatası:', err);
+      }
+    }, 2000);
+
+    const close = () => { clearInterval(pollTimer); ov.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (ev) => { if (ev.key === 'Escape' && document.querySelectorAll('.dlg').length === 1) { ev.stopPropagation(); close(); } };
+
     function paint() {
       body.replaceChildren();
-      body.appendChild(el('p', 'cdesc', t('phone.intro')));
-      const ts = s.tailscale || {};
-      if (!ts.installed) body.appendChild(el('p', 'adderr', t('phone.noTs')));
-      else if (ts.state !== 'Running') body.appendChild(el('p', 'adderr', t('phone.tsDown', { state: ts.state })));
-      body.appendChild(btn(s.enabled ? t('phone.turnOff') : t('phone.turnOn'), async () => { await api('/api/remote', { enabled: !s.enabled }); shown = null; await reload(); }, s.enabled ? '' : 'primary'));
-      if (s.enabled) {
-        body.appendChild(el('div', 'hgroup', t('phone.step1')));
-        const c1 = el('div', 'pcmd'); c1.append(el('code', '', s.serveCommand), copyBtn(s.serveCommand)); body.appendChild(c1);
-        body.appendChild(el('div', 'hgroup', t('phone.step2')));
-        if (s.url) { const c2 = el('div', 'pcmd'); c2.append(el('code', '', s.url), copyBtn(s.url)); body.appendChild(c2); } else body.appendChild(el('p', 'adderr', t('api.no_host')));
-        body.appendChild(el('div', 'hgroup', t('phone.step3')));
-        if (shown) { body.appendChild(el('div', 'pcode', shown.code)); body.appendChild(el('p', 'cdesc', t('phone.codeNote'))); }
-        body.appendChild(btn(t('phone.newCode'), async () => { shown = await api('/api/pair/new', {}); await reload(); }));
-        body.appendChild(el('div', 'hgroup', t('phone.devices') + ' · ' + s.devices.length));
-        if (!s.devices.length) body.appendChild(el('div', 'cnone', t('phone.none')));
+
+      // Açıklama
+      body.appendChild(el('p', 'cdesc', t('phone.qrHint')));
+
+      // QR Kod
+      const targetUrl = pairData ? pairData.url : (s.url || `http://${s.localIp || '127.0.0.1'}:8788/pair`);
+      const qrWrap = el('div', 'pqr-wrap');
+      if (typeof window.renderQrSvg === 'function' && targetUrl) {
+        const qrEl = el('div', 'pqr-svg');
+        qrEl.innerHTML = window.renderQrSvg(targetUrl, 2);
+        qrWrap.appendChild(qrEl);
+      }
+      body.appendChild(qrWrap);
+
+      // Kopyalanabilir doğrudan link
+      if (targetUrl) {
+        const linkRow = el('div', 'plink-row');
+        const linkCode = el('code', 'plink-text', targetUrl);
+        const copyB = el('button', 'pcopy-btn', t('phone.copy'));
+        copyB.type = 'button';
+        copyB.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(targetUrl);
+            copyB.textContent = t('common.copied');
+            setTimeout(() => { copyB.textContent = t('phone.copy'); }, 1500);
+          } catch (err) {
+            console.warn('Pano kopyalama hatası:', err);
+          }
+        };
+        linkRow.append(linkCode, copyB);
+        body.appendChild(linkRow);
+      }
+
+      // Canlı Durum Rozeti
+      const statusRow = el('div', 'pstatus-row');
+      if (s.devices.length > 0) {
+        statusRow.innerHTML = '<span class="pdot green"></span><span>' + t('phone.connected', { count: s.devices.length }) + '</span>';
+      } else {
+        statusRow.innerHTML = '<span class="pdot pulse"></span><span>' + t('phone.waiting') + '</span>';
+      }
+      body.appendChild(statusRow);
+
+      // Eşleşmiş Cihazlar Listesi
+      if (s.devices.length > 0) {
+        const devHead = el('div', 'hgroup', t('phone.devices') + ' (' + s.devices.length + ')');
+        body.appendChild(devHead);
         s.devices.forEach((d) => {
-          const row = el('div', 'crow drow'); const info = el('div', ''); info.append(el('div', 'cname', d.name), el('div', 'cdesc', t('phone.last', { when: d.lastSeen ? when(d.lastSeen) : '-' })));
-          const wr = btn(t('phone.write') + ': ' + (d.write ? t('phone.on') : t('phone.off')), async () => { await api('/api/devices/write', { id: d.id, write: !d.write }); await reload(); }, d.write ? 'on' : '');
-          const rm = btn(t('phone.remove'), async () => { await api('/api/devices/remove', { id: d.id }); await reload(); });
-          row.append(info, wr, rm); body.appendChild(row);
+          const row = el('div', 'crow drow');
+          const info = el('div', '');
+          info.append(el('div', 'cname', d.name), el('div', 'cdesc', t('phone.last', { when: d.lastSeen ? when(d.lastSeen) : '-' })));
+          const wr = el('button', d.write ? 'on' : '', t('phone.write') + ': ' + (d.write ? t('phone.on') : t('phone.off')));
+          wr.type = 'button';
+          wr.onclick = async () => { await api('/api/devices/write', { id: d.id, write: !d.write }); s = await api('/api/remote'); paint(); };
+          const rm = el('button', 'del', t('phone.remove'));
+          rm.type = 'button';
+          rm.onclick = async () => { await api('/api/devices/remove', { id: d.id }); s = await api('/api/remote'); paint(); };
+          row.append(info, wr, rm);
+          body.appendChild(row);
         });
       }
-      if (msg) body.appendChild(el('p', 'adderr', msg));
     }
+
     const x = el('button', '', t('caps.close')); x.type = 'button'; x.onclick = close;
     ov.onclick = (ev) => { if (ev.target === ov) close(); };
     box.append(el('p', 'ctitle', t('phone.title')), body, x);
-    document.addEventListener('keydown', onKey, true); ov.appendChild(box); document.body.appendChild(ov); paint();
+    document.addEventListener('keydown', onKey, true);
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+    paint();
   }
   /** sohbeti seçilen kullanıcı mesajından önceki haline geri sarar; Yazabilir kipinde değişen dosyalar da geri alınabilir */
   async function rewind(i) {
@@ -375,27 +642,117 @@
     v.curText.part.v += txt;
     if (!v.raf) v.raf = requestAnimationFrame(() => { v.raf = 0; if (v.curText) renderMd(v.curText.box, v.curText.part.v); scrollDown(); });
   }
+  function renderToolOutput(det, part) {
+    const out = part.out || '';
+    if (!out.trim()) return;
+    const kind = part.kind || toolKind(part.name);
+    if (kind === 'diff') {
+      const box = el('div', 'tool-diff');
+      const lines = out.split('\n').slice(0, 60);
+      lines.forEach((line) => {
+        let cls = 'diff-line';
+        if (line.startsWith('+') && !line.startsWith('+++')) cls += ' diff-add';
+        else if (line.startsWith('-') && !line.startsWith('---')) cls += ' diff-del';
+        box.appendChild(el('div', cls, line));
+      });
+      det.appendChild(box);
+      return;
+    }
+    const pre = el('pre');
+    pre.appendChild(el('code', '', out));
+    det.appendChild(pre);
+  }
   function buildTool(v, part, withOut) {
-    const det = el('details', 'tool'); const sum = el('summary');
+    const det = el('details', 'tool' + (part.kind ? ' tool-' + part.kind : ''));
+    const sum = el('summary');
     sum.append(el('span', 'tn', part.name), el('span', 'ts', part.summary || ''));
-    det.appendChild(sum); v.content.appendChild(det);
-    if (withOut && part.out) { const pre = el('pre'); pre.appendChild(el('code', '', part.out)); det.appendChild(pre); }
+    det.appendChild(sum);
+    v.content.appendChild(det);
+    if (withOut && part.out) {
+      renderToolOutput(det, part);
+    }
     return det;
   }
   function addTool(v, d) {
     v.curText = null;
-    const part = { k: 'tool', name: d.name || 'tool', summary: toolSummary(d.name, d.input), out: '' };
+    const kind = toolKind(d.name);
+    const part = { k: 'tool', name: d.name || 'tool', kind, summary: toolSummary(d.name, d.input), out: '', input: d.input };
     v.rec.parts.push(part);
     const rec = { part, det: buildTool(v, part, false), done: false };
-    v.tools.set(d.id || 'n' + v.tools.size, rec); v.lastTool = rec; scrollDown();
+    v.tools.set(d.id || 'n' + v.tools.size, rec);
+    v.lastTool = rec;
+    scrollDown();
   }
   function toolDone(v, d) {
     const rec = (d.toolUseId && v.tools.get(d.toolUseId)) || v.lastTool;
     if (!rec || rec.done) return;
     rec.done = true;
-    const out = String(d.output ?? d.result ?? '').split('\n').slice(0, 40).join('\n').slice(0, 4000);
+    const out = String(d.output ?? d.result ?? '').split('\n').slice(0, 60).join('\n').slice(0, 6000);
     rec.part.out = out;
-    if (out.trim()) { const pre = el('pre'); pre.appendChild(el('code', '', out)); rec.det.appendChild(pre); }
+    renderToolOutput(rec.det, rec.part);
+  }
+  function addApproval(v, d) {
+    if (!v.approvals) v.approvals = new Map();
+    const key = d.id || d.tool || 'perm';
+    if (v.approvals.has(key)) return;
+
+    v.curText = null;
+    const card = el('div', 'perm-card');
+    const head = el('div', 'perm-head');
+    const badge = el('span', 'perm-badge', t('perm.request'));
+    const tool = el('span', 'perm-tool', d.tool || 'Bash');
+    head.append(badge, tool);
+
+    const descText = d.summary || d.command || d.description || toolSummary(d.tool, d.input);
+    const body = el('div', 'perm-body');
+    const code = el('code', 'perm-code', descText);
+    body.appendChild(code);
+
+    const actions = el('div', 'perm-actions');
+    const btnApprove = el('button', 'perm-btn approve', t('perm.approve'));
+    btnApprove.type = 'button';
+    const btnReject = el('button', 'perm-btn reject', t('perm.reject'));
+    btnReject.type = 'button';
+    const status = el('span', 'perm-status');
+
+    let settled = false;
+    async function resolve(approved) {
+      if (settled) return;
+      settled = true;
+      btnApprove.disabled = true;
+      btnReject.disabled = true;
+      try {
+        await api('/api/approve', { taskId: v.rec.taskId, approved });
+        markSettled(approved);
+      } catch (err) {
+        settled = false;
+        btnApprove.disabled = false;
+        btnReject.disabled = false;
+      }
+    }
+
+    function markSettled(approved) {
+      settled = true;
+      btnApprove.remove();
+      btnReject.remove();
+      status.className = 'perm-status ' + (approved ? 'approved' : 'rejected');
+      status.textContent = approved ? t('perm.approved') : t('perm.rejected');
+    }
+
+    btnApprove.onclick = () => resolve(true);
+    btnReject.onclick = () => resolve(false);
+
+    actions.append(btnApprove, btnReject, status);
+    card.append(head, body, actions);
+    v.content.appendChild(card);
+    v.approvals.set(key, { card, markSettled });
+    scrollDown();
+  }
+  function onApprovalResolved(v, d) {
+    if (!v.approvals) return;
+    const key = d.id || d.tool;
+    const entry = (key && v.approvals.get(key)) || Array.from(v.approvals.values()).pop();
+    if (entry) entry.markSettled(!!d.approved);
   }
   function renderMeta(v) {
     v.meta.replaceChildren();
@@ -444,6 +801,8 @@
     if (ev.type === 'message.delta') addText(v, String(d.text || ''));
     else if (ev.type === 'tool.invoked') addTool(v, d);
     else if (ev.type === 'tool.completed') toolDone(v, d);
+    else if (ev.type === 'permission.requested') addApproval(v, d);
+    else if (ev.type === 'permission.resolved') onApprovalResolved(v, d);
     else if (ev.type === 'usage.updated') { const u = d.usage || {}; v.tin += Number(u.input_tokens ?? u.inputTokens ?? u.input ?? 0) || 0; v.tout += Number(u.output_tokens ?? u.outputTokens ?? u.output ?? 0) || 0; }
     else if (ev.type === 'task.completed') finish(v, 'completed', d);
     else if (ev.type === 'task.failed') finish(v, 'failed', d);
@@ -487,6 +846,7 @@
     }
   }
   async function send() {
+    setOfficeView(false);
     if (st.running) { const id = st.running; if (id !== 'pending') { try { await api('/api/cancel', { taskId: id }); } catch { /* bitmiş olabilir */ } } return; }
     const box = $('#prompt'); const text = box.value.trim();
     if (!text) return;
@@ -503,53 +863,115 @@
     b.disabled = running ? st.running === 'pending' : !$('#prompt').value.trim();
     $('#newChat').disabled = running;
   }
-  // telefondan (uzak oturum) yazma izni cihaza bağlıdır; sunucu da ayrıca denetler
-  const canWrite = (e) => e.write && (!st.cfg.remote || st.cfg.writeAllowed);
+  // normal mod: motor destekliyorsa yazabilir; yapay cihaz izin kısıtlaması yok
+  const canWrite = (e) => e.write;
   const shortModel = (m) => m.label.replace(/^Claude /, '');
   const effortLabel = (x) => t('effort.' + x);
-  // düşünme çabası: motora göre 2-6 çubuklu, motor renginde, animasyonlu ölçek (OpenCode'da çaba olmadığı için gizli)
+  // düşünme çabası: modern yatay hassas kaydırıcı (precision slider), glowing knob, adım noktaları ve çaba etiketi
   function renderThink() {
     const e = engineById(st.engine); const box = $('#think');
     box.hidden = !e.efforts.length; if (!e.efforts.length) return;
-    box.style.setProperty('--c', e.color); box.dataset.n = e.efforts.length;
-    if (box.dataset.engine !== e.id) { // motor değişti: çubuk sayısı farklı olabilir, yeniden kur
-      box.replaceChildren(); box.dataset.engine = e.id; box.setAttribute('aria-label', t('effort.title'));
-      const track = el('div', 'tb-track');
+    box.style.setProperty('--c', e.color);
+    box.tabIndex = 0;
+    box.setAttribute('role', 'slider');
+    box.setAttribute('aria-label', t('effort.title'));
+    box.setAttribute('aria-valuemin', '0');
+    box.setAttribute('aria-valuemax', String(e.efforts.length - 1));
+
+    if (box.dataset.engine !== e.id) {
+      box.replaceChildren();
+      box.dataset.engine = e.id;
+
+      const ico = el('span', 'tb-ico');
+      ico.innerHTML = ICON.think;
+      box.appendChild(ico);
+
+      const slider = el('div', 'tb-slider');
+      const rail = el('div', 'tb-rail');
+      const fill = el('div', 'tb-fill');
+      rail.appendChild(fill);
+
+      const pips = el('div', 'tb-pips');
       e.efforts.forEach((x, i) => {
-        const b = el('button', 'tb'); b.type = 'button'; b.setAttribute('role', 'radio'); b.style.setProperty('--i', i); b.style.setProperty('--n', e.efforts.length);
-        b.appendChild(el('i'));
-        b.onclick = (ev) => { ev.stopPropagation(); st.effort = x; saveSettings(); refreshControls(); };
-        track.appendChild(b);
+        const pip = el('span', 'tb-pip');
+        const pct = e.efforts.length > 1 ? (i / (e.efforts.length - 1)) * 100 : 0;
+        pip.style.left = pct + '%';
+        pips.appendChild(pip);
       });
-      box.appendChild(track);
-      box.appendChild(el('span', 'tl'));
+      rail.appendChild(pips);
+
+      const knob = el('div', 'tb-knob');
+      rail.appendChild(knob);
+      slider.appendChild(rail);
+      box.appendChild(slider);
+
+      const badge = el('span', 'tb-badge');
+      box.appendChild(badge);
     }
+
     const idx = Math.max(0, e.efforts.indexOf(st.effort));
-    box.querySelectorAll('.tb').forEach((b, i) => {
-      b.classList.toggle('on', i <= idx); b.classList.toggle('top', i === idx); b.setAttribute('aria-checked', String(i === idx));
-      const l = effortLabel(e.efforts[i]); b.title = t('effort.title') + ': ' + l; b.setAttribute('aria-label', l); b.tabIndex = i === idx ? 0 : -1;
+    const total = e.efforts.length;
+    const pct = total > 1 ? (idx / (total - 1)) * 100 : 0;
+
+    box.setAttribute('aria-valuenow', String(idx));
+    box.setAttribute('aria-valuetext', effortLabel(st.effort));
+    box.title = t('effort.title') + ': ' + effortLabel(st.effort);
+
+    const fill = box.querySelector('.tb-fill');
+    if (fill) fill.style.width = pct + '%';
+
+    const knob = box.querySelector('.tb-knob');
+    if (knob) knob.style.left = pct + '%';
+
+    box.querySelectorAll('.tb-pip').forEach((pip, i) => {
+      pip.classList.toggle('active', i <= idx);
+      pip.classList.toggle('current', i === idx);
     });
-    box.querySelector('.tl').textContent = effortLabel(st.effort);
+
+    const badge = box.querySelector('.tb-badge');
+    if (badge) badge.textContent = effortLabel(st.effort);
+
     box.classList.toggle('run', !!st.running);
   }
   let scrubbingThink = false;
-  function scrubEffort(clientX) {
+  let cachedSliderRect = null;
+
+  function calculateEffortIndex(ratio, currentIdx, total) {
+    if (total <= 1) return 0;
+    const raw = ratio * (total - 1);
+    const candidate = Math.round(raw);
+    if (currentIdx >= 0 && currentIdx < total && candidate !== currentIdx) {
+      const boundary = (currentIdx + candidate) / 2;
+      // histerezis eşiği: kaydırırken adımlar arasında gidip gelmeyi (salınım / jitter) önler
+      if (Math.abs(raw - boundary) < 0.14) {
+        return currentIdx;
+      }
+    }
+    return Math.min(total - 1, Math.max(0, candidate));
+  }
+
+  function scrubEffort(clientX, isInitial = false) {
     const e = engineById(st.engine);
     if (!e || !e.efforts.length) return;
     const box = $('#think');
-    const track = box.querySelector('.tb-track') || box;
-    const rect = track.getBoundingClientRect();
-    if (rect.width <= 0) return;
+    const slider = box.querySelector('.tb-slider') || box;
+    const rect = cachedSliderRect || slider.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
     const clampedX = Math.max(0, Math.min(clientX - rect.left, rect.width));
     const ratio = clampedX / rect.width;
-    const idx = Math.min(e.efforts.length - 1, Math.max(0, Math.floor(ratio * e.efforts.length)));
+    const total = e.efforts.length;
+    const curIdx = Math.max(0, e.efforts.indexOf(st.effort));
+    const idx = isInitial
+      ? Math.min(total - 1, Math.max(0, Math.round(ratio * (total - 1))))
+      : calculateEffortIndex(ratio, curIdx, total);
     const targetEffort = e.efforts[idx];
     if (st.effort !== targetEffort) {
       st.effort = targetEffort;
       saveSettings();
-      refreshControls();
+      renderThink();
     }
   }
+
   function initThinkScrub() {
     const box = $('#think');
     box.addEventListener('pointerdown', (ev) => {
@@ -558,16 +980,19 @@
       if (!e || !e.efforts.length) return;
       scrubbingThink = true;
       box.classList.add('scrubbing');
+      const slider = box.querySelector('.tb-slider') || box;
+      cachedSliderRect = slider.getBoundingClientRect();
       try { box.setPointerCapture(ev.pointerId); } catch {}
-      scrubEffort(ev.clientX);
+      scrubEffort(ev.clientX, true);
     });
     box.addEventListener('pointermove', (ev) => {
       if (!scrubbingThink) return;
-      scrubEffort(ev.clientX);
+      scrubEffort(ev.clientX, false);
     });
     const stopScrub = (ev) => {
       if (!scrubbingThink) return;
       scrubbingThink = false;
+      cachedSliderRect = null;
       box.classList.remove('scrubbing');
       try { box.releasePointerCapture(ev.pointerId); } catch {}
       saveSettings();
@@ -591,8 +1016,9 @@
   function thinkKey(ev) {
     const e = engineById(st.engine); const d = ev.key === 'ArrowRight' || ev.key === 'ArrowUp' ? 1 : ev.key === 'ArrowLeft' || ev.key === 'ArrowDown' ? -1 : 0;
     if (!d) return; ev.preventDefault();
-    const i = Math.min(e.efforts.length - 1, Math.max(0, e.efforts.indexOf(st.effort) + d));
-    st.effort = e.efforts[i]; saveSettings(); refreshControls(); $('#think').querySelector('.tb.top')?.focus();
+    const cur = e.efforts.indexOf(st.effort);
+    const i = Math.min(e.efforts.length - 1, Math.max(0, (cur >= 0 ? cur : 0) + d));
+    st.effort = e.efforts[i]; saveSettings(); refreshControls(); $('#think').focus();
   }
   function refreshControls() {
     const e = engineById(st.engine); const m = e.models.find((x) => x.id === st.model);
@@ -600,9 +1026,9 @@
     $('#modelLabel').textContent = shortModel(m);
     // düşünme çabası kendi düğmesinde; çabası olmayan motorda (OpenCode) düğme gizlenir
     renderThink();
-    $('#projectIco').innerHTML = ICON.folder;
-    $('#projectLabel').textContent = st.cwd.split(/[\\/]/).filter(Boolean).pop() || t('project.label');
-    $('#projectBtn').title = st.cwd;
+    $('#attachIco').innerHTML = ICON.plus;
+    $('#attachFilesIco').innerHTML = ICON.paperclip;
+    $('#attachFolderIco').innerHTML = ICON.folder;
     document.querySelectorAll('.chev').forEach((c) => { c.innerHTML = ICON.chev; });
     const mb = $('#modeBtn'); const cw = canWrite(e); const write = st.mode === 'write' && cw;
     mb.disabled = !cw; mb.classList.toggle('on', write);
@@ -632,7 +1058,14 @@
     menu.classList.toggle('up', up); menu.classList.toggle('down', !up);
     menu.style.maxHeight = Math.max(160, Math.floor((up ? above : below) - 8)) + 'px';
   }
-  function closeMenus() { $('#modelMenu').hidden = true; $('#projectMenu').hidden = true; hideSlash(); }
+  function openAttachMenu() {
+    const m = $('#attachMenu');
+    if (!m.hidden) { m.hidden = true; return; }
+    closeMenus();
+    m.hidden = false;
+    placeMenu(m);
+  }
+  function closeMenus() { $('#modelMenu').hidden = true; $('#projectMenu').hidden = true; $('#attachMenu').hidden = true; hideSlash(); }
   function pick(engineId, modelId) {
     const e = engineById(engineId); st.engine = engineId; st.model = modelId;
     if (!e.efforts.includes(st.effort)) st.effort = e.efforts.includes('medium') ? 'medium' : e.efforts[0] || '';
@@ -771,8 +1204,9 @@
     st.engine = e0.id;
     st.model = e0.models.some((m) => m.id === saved.model) ? saved.model : e0.models[0].id;
     st.effort = e0.efforts.includes(saved.effort) ? saved.effort : e0.efforts.includes('medium') ? 'medium' : e0.efforts[0] || '';
-    st.cwd = st.cfg.projects.some((p) => p.path === saved.cwd) ? saved.cwd : st.cfg.defaultCwd;
     st.project = saved.project && ObsProjects.get(saved.project) ? saved.project : null;
+    const activeProj = st.project ? ObsProjects.get(st.project) : null;
+    st.cwd = activeProj && activeProj.cwd ? activeProj.cwd : (st.cfg.projects.some((p) => p.path === saved.cwd) ? saved.cwd : '');
     if (!narrow() && lsGet('obs-nav') === 'closed') $('#layout').classList.add('nav-closed');
     $('#capsIco').innerHTML = ICON.caps; $('#capsBtn').onclick = openCaps;
     $('#phoneIco').innerHTML = ICON.phone; $('#phoneBtn').onclick = openPhone; $('#phoneBtn').hidden = !!st.cfg.remote;
@@ -780,6 +1214,21 @@
     applyLanguage();
     I18N.on('languageChanged', applyLanguage);
     $('#crumb').onclick = leaveProject; $('#send').onclick = send; $('#newChat').onclick = newChat;
+    const officeBtn = $('#officeBtn');
+    if (officeBtn) {
+      officeBtn.onclick = (ev) => {
+        ev.stopPropagation();
+        closeMenus();
+        toggleOfficeView();
+      };
+    }
+    const officeClose = $('#officeClose');
+    if (officeClose) {
+      officeClose.onclick = (ev) => {
+        ev.stopPropagation();
+        setOfficeView(false);
+      };
+    }
     $('#sideToggle').onclick = toggleNav; $('#scrim').onclick = closeNavOnMobile;
     $('#langBtn').onclick = () => I18N.changeLanguage(I18N.language === 'tr' ? 'en' : 'tr');
     $('#themeBtn').onclick = () => { ObsTheme.set(ObsTheme.get() === 'dark' ? 'light' : 'dark'); refreshTheme(); };
@@ -787,7 +1236,49 @@
     $('#modelBtn').onclick = (ev) => { ev.stopPropagation(); openModelMenu(); };
     $('#think').addEventListener('keydown', thinkKey);
     initThinkScrub();
-    $('#projectBtn').onclick = (ev) => { ev.stopPropagation(); openProjectMenu(); };
+    $('#attachBtn').onclick = (ev) => { ev.stopPropagation(); openAttachMenu(); };
+    $('#attachFolder').onclick = async (ev) => {
+      ev.stopPropagation();
+      closeMenus();
+      try {
+        const r = await api('/api/folders/browse', {});
+        if (r && r.path) {
+          await refreshConfig();
+          const pName = r.name || r.path.split(/[\\/]/).filter(Boolean).pop() || r.path;
+          const saved = ObsProjects.save({ id: ObsProjects.newId(), name: pName, cwd: r.path, instructions: '', created: Date.now(), touched: Date.now() });
+          if (saved) selectProject(saved.id);
+        }
+      } catch (err) {
+        // diyalog kapandÄ±
+      }
+    };
+    $('#attachFiles').onclick = (ev) => {
+      ev.stopPropagation();
+      closeMenus();
+      $('#filePicker').click();
+    };
+    $('#filePicker').onchange = (ev) => {
+      const files = ev.target.files;
+      if (!files || !files.length) return;
+      const prompt = $('#prompt');
+      Array.from(files).forEach((file) => {
+        if (file.size > 2 * 1024 * 1024) {
+          const cur = prompt.value;
+          prompt.value = cur + (cur ? '\n' : '') + `[${file.name}]`;
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const text = e.target.result;
+          const cur = prompt.value;
+          prompt.value = cur + (cur ? '\n\n' : '') + `\`\`\`${file.name}\n${text}\n\`\`\``;
+          autosize();
+          prompt.focus();
+        };
+        reader.readAsText(file);
+      });
+      ev.target.value = '';
+    };
     $('#modeBtn').onclick = toggleMode;
     main().addEventListener('scroll', onScroll, { passive: true });
     $('#prompt').addEventListener('input', autosize);
@@ -800,7 +1291,7 @@
     });
     document.addEventListener('click', (ev) => { if (!ev.target.closest('.menu')) closeMenus(); });
     document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeMenus(); });
-    window.addEventListener('resize', () => { ['#modelMenu', '#projectMenu', '#slashMenu'].forEach((s) => { if (!$(s).hidden) placeMenu($(s)); }); });
+    window.addEventListener('resize', () => { ['#modelMenu', '#projectMenu', '#attachMenu', '#slashMenu'].forEach((s) => { if (!$(s).hidden) placeMenu($(s)); }); });
     setInterval(refreshConfig, 60000);
     setInterval(refreshCup, 250);
     connect(); $('#prompt').focus();

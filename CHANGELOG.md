@@ -7,6 +7,9 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/) standardına day
 
 ## [Unreleased]
 
+- **Nexus AI 2D & 3D Ofis Entegrasyonu ve Stabilizasyonu (2026-10-26):**
+  - **TUI [O] Tuşu Çökme Onarımı (`office_opener.ts`):** Windows `cmd.exe start` argüman ayrıştırmasındaki emoji uyumsuzlukları temiz ASCII başlık (`Nexus AI 2D Office`) ve `/D` çalışma dizini parametresi ile giderildi. ESM modülünde `fileURLToPath(import.meta.url)` üzerinden güvenli yol çözümlemesi ve `child.on('error')` ile tam hata yakalama garantisi sağlandı.
+  - **Web Paneli 3D Ofis Entegrasyonu (`index.html`, `app.js`, `app.css`, `web.ts`):** 3D Ofis ayrı sekme yerine ana SPA içerik alanına `#officeView` iframe konteyneri ile entegre edildi. Üst bardaki `#officeBtn` ve kapatma butonu ile kesintisiz görünüm geçişi sağlandı; CSP `frame-src 'self'` ve `frame-ancestors 'self'` ile güvenli gömme yapılandırıldı.
 - **Dinamik Effort & Model Kontrolü (Claude, Codex, Agy Eşitliği):**
   - Claude adaptörüne `--effort` ve `--model` eklendi (varsayılan `medium`).
   - OpenAI Codex adaptörüne `--model`, `-c model_reasoning_effort="..."` ve `--dangerously-bypass-approvals-and-sandbox` parametreleri eklendi.

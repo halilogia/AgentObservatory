@@ -73,6 +73,7 @@ const MIME: Record<string, string> = {
 export interface RunnerLike {
   startTask(o: any): { taskId: string; promise: Promise<unknown> };
   cancelTask?(taskId: string, reason?: string): unknown;
+  approveTask?(taskId: string, approved: boolean): boolean;
 }
 
 export interface WebOptions { opencodeListing?: () => Promise<string>; port?: number; dbPath?: string; roots?: string[]; runner?: RunnerLike; token?: string; pollMs?: number; webDir?: string; configPath?: string; home?: string; detectTailscale?: () => Promise<import('./web_remote.ts').TsInfo> }
@@ -105,8 +106,7 @@ function defaultRoots(cfg: WebConfig, cwd = process.cwd()): string[] {
   const env = process.env.OBSERVATORY_WEB_ROOTS;
   if (env) return env.split(';').map((s) => s.trim()).filter(Boolean);
   if (cfg.roots && cfg.roots.length) return cfg.roots;
-  const up = path.dirname(path.resolve(cwd));
-  return tooBroad(up) ? [] : [up];
+  return []; // Asla kendiliginden ust klasore cikip disk taramasi yapmaz
 }
 
 export function insideRoots(dir: string, roots: string[]): boolean {
@@ -124,14 +124,12 @@ function listProjects(roots: string[]): Array<{ name: string; path: string }> {
   const out: Array<{ name: string; path: string }> = [];
   const dirs = (d: string) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => path.join(d, e.name)); } catch { return []; } };
   for (const root of roots) {
-    // kökün kendisi listelenmez: çok büyük klasörde ajanlar (özellikle OpenCode) takılır; son değişen proje önce gelir
     for (const c of dirs(root)) {
-      if (/^(public|private)$/i.test(path.basename(c))) for (const g of dirs(c)) out.push({ name: path.basename(g), path: g });
-      else out.push({ name: path.basename(c), path: c });
+      out.push({ name: path.basename(c), path: c });
     }
   }
   const mtime = (p: string) => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } };
-  return out.sort((a, b) => mtime(b.path) - mtime(a.path)).slice(0, 120);
+  return out.sort((a, b) => mtime(b.path) - mtime(a.path)).slice(0, 50);
 }
 
 async function readJson(req: http.IncomingMessage): Promise<any> {
@@ -145,6 +143,49 @@ async function readJson(req: http.IncomingMessage): Promise<any> {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { throw Object.assign(new Error('geçersiz JSON'), { status: 400 }); }
 }
 
+function openNativeFolderPicker(): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') return resolve(null);
+    const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const exePath = path.join(rootDir, 'bin', 'pick_folder.exe');
+    const ps1Path = path.join(rootDir, 'src', 'runtime', 'pick_folder.ps1');
+
+    const finish = (chosen: string | null) => {
+      resolve(chosen && fs.existsSync(chosen) ? chosen : null);
+    };
+
+    if (fs.existsSync(exePath)) {
+      execFile(exePath, ['Select Project Root'], { timeout: 120000, encoding: 'utf8' }, (err, stdout) => {
+        if (!err && stdout && stdout.trim() && fs.existsSync(stdout.trim())) {
+          return finish(stdout.trim());
+        }
+        if (err && typeof err === 'object' && 'code' in err && (err as { code?: number }).code === 1) {
+          return resolve(null);
+        }
+        if (fs.existsSync(ps1Path)) {
+          execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', ps1Path, 'Select Project Root'], { timeout: 120000, encoding: 'utf8' }, (pErr, pStdout) => {
+            if (pErr) return resolve(null);
+            finish(pStdout ? pStdout.trim() : null);
+          });
+          return;
+        }
+        resolve(null);
+      });
+      return;
+    }
+
+    if (fs.existsSync(ps1Path)) {
+      execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', ps1Path, 'Select Project Root'], { timeout: 120000, encoding: 'utf8' }, (err, stdout) => {
+        if (err) return resolve(null);
+        finish(stdout ? stdout.trim() : null);
+      });
+      return;
+    }
+
+    resolve(null);
+  });
+}
+
 export function startWeb(opts: WebOptions = {}): { server: http.Server; token: string; port: number } {
   // Web'den başlatılan görevler konsol penceresi açmasın (arayüz zaten canlı gösterir)
   process.env.OBSERVATORY_NO_AUTO_TUI = '1';
@@ -156,9 +197,14 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
   const roots = (opts.roots || defaultRoots(cfg)).filter((r) => fs.existsSync(r));
   // tek tek eklenmiş proje klasörleri (kökten bağımsız); açılışta olmayanlar atılır
   let folders = (cfg.folders || []).filter((f) => fs.existsSync(f) && !tooBroad(f));
+  const scratchDir = path.join(os.homedir(), '.agent-observatory', 'scratch');
   const allowedDir = (dir: string): boolean => {
     if (insideRoots(dir, roots)) return true;
-    return folders.some((f) => insideRoots(dir, [f]));
+    if (folders.some((f) => insideRoots(dir, [f]))) return true;
+    if (insideRoots(dir, [scratchDir])) return true;
+    const here = path.resolve(process.cwd());
+    if (fs.existsSync(here) && !tooBroad(here) && insideRoots(dir, [here])) return true;
+    return false;
   };
   const saveFolders = () => writeConfig(configPath, { ...readConfig(configPath), folders });
   const webDir = opts.webDir || WEB_DIR;
@@ -226,11 +272,18 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         const isBinary = ['.png', '.ico', '.webp'].includes(ext);
         let body: string | Buffer = isBinary ? fs.readFileSync(path.join(webDir, file)) : fs.readFileSync(path.join(webDir, file), 'utf8');
         if (typeof body === 'string' && file === 'index.html') body = body.replace('__OBS_TOKEN__', token);
+        const isOffice = file === 'office.html';
+        const xFrameOptions = isOffice ? 'SAMEORIGIN' : 'DENY';
+        const csp = isOffice
+          ? "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+          : "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
         res.writeHead(200, {
           'Content-Type': MIME[ext] || 'text/plain',
-          'Cache-Control': file.endsWith('.html') ? 'no-store' : 'public, max-age=3600',
-          'X-Frame-Options': 'DENY',
-          'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+          'X-Frame-Options': xFrameOptions,
+          'Content-Security-Policy': csp
         });
         res.end(body);
         return true;
@@ -250,13 +303,9 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         const same = (a: string, b: string) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
         const added = folders.filter((f) => fs.existsSync(f)).map((f) => ({ name: path.basename(f), path: f, custom: true }));
         const projects: Array<{ name: string; path: string; custom?: boolean }> = [...added, ...listProjects(roots).filter((p) => !added.some((a) => same(a.path, p.path)))];
-        // varsayılan klasör: sunucunun başlatıldığı proje (izinli kökün içindeyse, kökün kendisi değilse); yoksa en son değişen proje
-        const here = path.resolve(process.cwd());
-        const hereOk = fs.existsSync(here) && allowedDir(here) && !tooBroad(here) && !roots.some((r) => same(r, here));
-        if (hereOk && !projects.some((p) => path.resolve(p.path).toLowerCase() === here.toLowerCase())) projects.unshift({ name: path.basename(here), path: here });
         json(200, {
           engines: (await enginesNow()).map((e) => ({ ...e, ...engineStatus(db, e) })),
-          roots, projects, defaultCwd: hereOk ? here : projects[0]?.path || roots[0] || os.homedir(), maxActive: MAX_ACTIVE,
+          roots, projects, defaultCwd: projects[0]?.path || roots[0] || '', maxActive: MAX_ACTIVE,
           // uzak (telefon) oturumu: yerel yönetim düğmeleri gizlenir, yazma izni cihaza bağlıdır
           remote: !!remote.deviceOf(req), writeAllowed: remote.deviceOf(req)?.write ?? true
         });
@@ -264,7 +313,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
       }
 
       // ---- yazan uçlar: jeton + aynı köken ----
-      if (method === 'POST' && ['/api/run', '/api/cancel', '/api/folders', '/api/folders/remove', '/api/snapshot', '/api/restore', '/api/remote', '/api/pair/new', '/api/devices/write', '/api/devices/remove'].includes(url.pathname)) {
+      if (method === 'POST' && ['/api/run', '/api/cancel', '/api/approve', '/api/folders', '/api/folders/browse', '/api/folders/remove', '/api/snapshot', '/api/restore', '/api/remote', '/api/pair/new', '/api/devices/write', '/api/devices/remove'].includes(url.pathname)) {
         // hata yanıtları `code` taşır: arayüz bunu seçili dile çevirir; `error` Türkçe yedek metindir
         const fail = (status: number, code: string, error: string, params: Record<string, unknown> = {}) => { json(status, { code, error, params }); return true; };
         const site = req.headers['sec-fetch-site'];
@@ -276,6 +325,20 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
 
         if (url.pathname === '/api/remote' || url.pathname === '/api/pair/new' || url.pathname.startsWith('/api/devices/')) {
           await remote.manage(url.pathname, method, b, json);
+          return true;
+        }
+
+        if (url.pathname === '/api/folders/browse') {
+          const chosen = await openNativeFolderPicker();
+          if (!chosen) {
+            json(200, { canceled: true });
+            return true;
+          }
+          const dir = path.resolve(chosen);
+          const same = (a: string, c: string) => path.resolve(a).toLowerCase() === path.resolve(c).toLowerCase();
+          if (tooBroad(dir)) return fail(400, 'folder_too_broad', 'çok geniş klasör: sürücü kökü ya da kullanıcı klasörü eklenemez');
+          if (!folders.some((f) => same(f, dir))) { folders.unshift(dir); saveFolders(); }
+          json(200, { ok: true, path: dir, name: path.basename(dir) });
           return true;
         }
 
@@ -318,6 +381,16 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
           return true;
         }
 
+        if (url.pathname === '/api/approve') {
+          if (typeof b.taskId !== 'string' || !active.has(b.taskId)) return fail(404, 'no_active_task', 'etkin görev yok');
+          if (typeof b.approved !== 'boolean') return fail(400, 'bad_approval', 'onay durumu (true/false) gerekli');
+          const runner = await getRunner();
+          const ok = runner.approveTask?.(b.taskId, b.approved);
+          if (!ok) return fail(400, 'approval_failed', 'onay iletilemedi');
+          json(200, { ok: true, taskId: b.taskId, approved: b.approved });
+          return true;
+        }
+
         const engine = (await enginesNow()).find((e) => e.id === b.engine);
         if (!engine) return fail(400, 'unknown_engine', 'bilinmeyen motor');
         const model = engine.models.find((m) => m.id === b.model);
@@ -329,7 +402,11 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         const dev = remote.deviceOf(req);
         if (dev && write && !dev.write) return fail(403, 'remote_write_forbidden', 'bu cihazdan yazma izni kapalı');
         if (write && !engine.write) return fail(400, 'no_write', `${engine.label} yazma kipini desteklemiyor`, { engine: engine.label });
-        const cwd = typeof b.cwd === 'string' && b.cwd ? b.cwd : roots[0] || folders[0];
+        const cwd = typeof b.cwd === 'string' && b.cwd ? b.cwd : (folders[0] || roots[0] || scratchDir);
+        if (!fs.existsSync(cwd)) {
+          try { fs.mkdirSync(cwd, { recursive: true }); }
+          catch (e: any) { return fail(400, 'folder_missing', `klasör oluşturulamadı: ${e.message}`); }
+        }
         if (!cwd || !fs.existsSync(cwd) || !allowedDir(cwd)) return fail(400, 'cwd_forbidden', 'çalışma klasörü izinli köklerin dışında');
         if (active.size >= MAX_ACTIVE) return fail(429, 'too_many', `en çok ${MAX_ACTIVE} eşzamanlı görev`, { max: MAX_ACTIVE });
         const st = engineStatus(db, engine);

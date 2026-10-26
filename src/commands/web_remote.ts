@@ -8,8 +8,49 @@ import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import type { ExtraCtx } from './serve.ts';
+
+export function getAllLocalIps(): string[] {
+  const nets = os.networkInterfaces();
+  const list: string[] = [];
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family === 'IPv4' && !net.internal && !net.address.startsWith('169.254.')) {
+        if (!list.includes(net.address)) list.push(net.address);
+      }
+    }
+  }
+  return list;
+}
+
+export function getLocalIp(): string {
+  const nets = os.networkInterfaces();
+  const candidates: Array<{ ip: string; name: string; score: number }> = [];
+
+  for (const name of Object.keys(nets)) {
+    const isVirtual = /radmin|vethernet|virtual|vmware|vbox|wsl|hyper-v|tailscale|tap|tun|docker|loopback/i.test(name);
+    for (const net of nets[name] || []) {
+      if (net.family !== 'IPv4' || net.internal || net.address.startsWith('169.254.')) continue;
+      const ip = net.address;
+      let score = 0;
+      // Fiziksel yerel ag onceligi (192.168.x veya 10.x telefon/ev agi icin birincildir)
+      if (/^192\.168\./.test(ip)) score += 100;
+      else if (/^10\./.test(ip)) score += 90;
+      else if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) score += 50;
+      else score += 10;
+
+      // Sanal bagdastiricilar (Radmin, WSL Switch, VM) telefon tarafindan erisilemez
+      if (isVirtual) score -= 80;
+
+      candidates.push({ ip, name, score });
+    }
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0]?.ip || '127.0.0.1';
+}
 
 export interface Device { id: string; name: string; hash: string; created: number; write: boolean; lastSeen?: number }
 interface RemoteCfg { enabled: boolean; host?: string; login?: string; devices: Device[] }
@@ -74,13 +115,28 @@ export class Remote {
     if (force || Date.now() - this.tsAt > 10000) { this.ts = await this.detect(); this.tsAt = Date.now(); }
     return this.ts;
   }
-  /** kabul edilen uzak Host adları (kapalıysa boş). Tailscale adı bilinmiyorsa elle verilen `host`. */
+  /** kabul edilen uzak Host adları (kapalıysa boş). Tailscale adı bilinmiyorsa yerel IP veya elle verilen `host`. */
   hosts = (): string[] => {
     if (!this.cfg.enabled) return [];
+    const list: string[] = [];
     const h = this.cfg.host || this.ts.dnsName;
-    return h ? [h.toLowerCase()] : [];
+    if (h) list.push(h.toLowerCase());
+    for (const ip of getAllLocalIps()) {
+      list.push(ip);
+      list.push(`${ip}:${this.port}`);
+    }
+    return list;
   };
-  origins = (): string[] => this.hosts().map((h) => `https://${h}`);
+  origins = (): string[] => {
+    const list: string[] = [];
+    const h = this.cfg.host || this.ts.dnsName;
+    if (h) list.push(`https://${h}`);
+    for (const ip of getAllLocalIps()) {
+      list.push(`http://${ip}:${this.port}`);
+      list.push(`http://${ip}`);
+    }
+    return list;
+  };
   get enabled(): boolean { return this.cfg.enabled; }
   deviceOf(req: http.IncomingMessage): Device | undefined { return this.seen.get(req); }
 
@@ -133,10 +189,14 @@ export class Remote {
   async status(): Promise<Record<string, unknown>> {
     const ts = await this.refreshTs();
     const host = this.cfg.host || ts.dnsName;
+    const localIp = getLocalIp();
+    const localUrl = `http://${localIp}:${this.port}/pair`;
+    const tsUrl = host ? `https://${host}/pair` : null;
     return {
       enabled: this.cfg.enabled, host: host || null, login: this.cfg.login || null,
       tailscale: ts, serveCommand: `tailscale serve --bg ${this.port}`,
-      url: host ? `https://${host}/pair` : null,
+      url: tsUrl || localUrl,
+      localUrl, localIp,
       pairExpires: this.code && Date.now() < this.code.exp ? this.code.exp : null,
       devices: this.cfg.devices.map((d) => ({ id: d.id, name: d.name, created: d.created, lastSeen: d.lastSeen || null, write: d.write }))
     };
@@ -167,7 +227,9 @@ export class Remote {
       try { const chunks: Buffer[] = []; let n = 0; for await (const c of req) { n += (c as Buffer).length; if (n > 4096) throw new Error('big'); chunks.push(c as Buffer); } body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { json(400, { code: 'bad_json' }); return true; }
       const r = this.pair(body.code, body.name, login || undefined);
       if (!r.ok) { json(r.reason === 'locked' ? 429 : 403, { code: 'pair_' + r.reason }); return true; }
-      res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(r.cookie)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${COOKIE_MAX_AGE}`);
+      const isHttps = (req.headers['x-forwarded-proto'] === 'https') || Boolean(this.cfg.host || this.ts.dnsName || login);
+      const secureAttr = isHttps ? '; Secure' : '';
+      res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(r.cookie)}; Path=/; HttpOnly${secureAttr}; SameSite=Strict; Max-Age=${COOKIE_MAX_AGE}`);
       json(200, { ok: true });
       return true;
     }
@@ -189,8 +251,12 @@ export class Remote {
     if (pathname === '/api/pair/new') {
       await this.refreshTs();
       if (!this.cfg.enabled) { json(409, { code: 'remote_off' }); return true; }
-      if (!this.cfg.host && !this.ts.dnsName) { json(409, { code: 'no_host' }); return true; }
-      json(200, { ...this.newCode(), url: `https://${this.cfg.host || this.ts.dnsName}/pair` });
+      const host = this.cfg.host || this.ts.dnsName;
+      const codeInfo = this.newCode();
+      const localIp = getLocalIp();
+      const localUrl = `http://${localIp}:${this.port}/pair#${codeInfo.code}`;
+      const url = host ? `https://${host}/pair#${codeInfo.code}` : localUrl;
+      json(200, { ...codeInfo, url, localUrl, localIp });
       return true;
     }
     if (pathname === '/api/devices/write') { json(this.setWrite(String(body.id), body.write === true) ? 200 : 404, { ok: true }); return true; }

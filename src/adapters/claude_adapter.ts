@@ -25,6 +25,9 @@ export class ClaudeAdapter extends BaseAdapter {
     // Only grant dangerous skip permissions if explicitly set to true
     if (dangerouslySkipPermissions === true) {
       args.push('--dangerously-skip-permissions');
+    } else {
+      // By default accept edits within project, but Bash/system calls require interactive approval
+      args.push('--permission-mode', 'acceptEdits');
     }
 
     const effectiveSessionId = resolveClaudeSessionId(validatedCwd, sessionId);
@@ -66,7 +69,21 @@ export class ClaudeAdapter extends BaseAdapter {
 
     const etype = event.type;
 
-    if (etype === 'system' && event.subtype === 'init') {
+    if (etype === 'system' && event.subtype === 'permission_denied') {
+      store.recordEvent(createEvent({
+        taskId,
+        sessionId: event.session_id,
+        agent: 'claude',
+        tier: 1,
+        type: 'permission.resolved',
+        data: {
+          id: event.tool_use_id,
+          tool: event.tool_name,
+          approved: false,
+          reason: event.decision_reason || event.message || 'Reddedildi'
+        }
+      }));
+    } else if (etype === 'system' && event.subtype === 'init') {
       const sessionId = event.session_id;
       const model = event.model || 'claude-sonnet-5-5';
       const taskCwd = this.taskCwdMap.get(taskId) || process.cwd();
@@ -99,6 +116,24 @@ export class ClaudeAdapter extends BaseAdapter {
                 input: item.input
               }
             }));
+
+            // Sensitive actions triggering interactive user approval in acceptEdits mode
+            const sensitiveTools = ['Bash', 'PowerShell', 'exec', 'kill'];
+            if (sensitiveTools.includes(item.name)) {
+              store.recordEvent(createEvent({
+                taskId,
+                sessionId: event.session_id,
+                agent: 'claude',
+                tier: 1,
+                type: 'permission.requested',
+                data: {
+                  id: item.id,
+                  tool: item.name,
+                  input: item.input,
+                  summary: (item.input && (item.input.command || item.input.description)) || item.name
+                }
+              }));
+            }
           } else if (item.type === 'text') {
             store.recordEvent(createEvent({
               taskId,

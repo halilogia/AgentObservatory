@@ -24,12 +24,30 @@ function resolveCliPath(): string {
 /** Unconditionally spawns the visible TUI watcher window (non-blocking). */
 export function launchTuiWindow(): void {
   const tuiPath = resolveCliPath();
+  const dir = path.resolve(path.dirname(tuiPath), '..');
+
+  // Modern Windows Terminal: Tam TTY, interaktif klavye (Esc/Enter) ve 24-bit TrueColor desteği sağlar
+  try {
+    const wtProc = spawn('wt.exe', [
+      '-w', 'new',
+      '--size', '125,38',
+      '-d', dir,
+      'node', '--experimental-strip-types', tuiPath, ...VIEW_ARGS.split(' ')
+    ], { stdio: 'ignore', windowsHide: false, detached: true });
+    wtProc.unref();
+    return;
+  } catch (err: unknown) {
+    if (process.env.DEBUG) {
+      console.warn('[tui_launcher] Windows Terminal başlatılamadı, fallback deneniyor:', err);
+    }
+  }
+
   if (fs.existsSync(LAUNCH_GUI_PS1)) {
     spawn('pwsh', [
       '-ExecutionPolicy', 'Bypass',
       '-File', LAUNCH_GUI_PS1,
       '-ExePath', 'C:\\Windows\\System32\\cmd.exe',
-      '-Arguments', `/c node --experimental-strip-types "${tuiPath}" ${VIEW_ARGS}`
+      '-Arguments', `/k node --experimental-strip-types "${tuiPath}" ${VIEW_ARGS}`
     ], { stdio: 'ignore', windowsHide: false });
   } else {
     spawn('cmd.exe', ['/c', 'start', 'node', '--experimental-strip-types', tuiPath, ...VIEW_ARGS.split(' ')], { stdio: 'ignore', windowsHide: false });
@@ -67,7 +85,7 @@ export function autoLaunchTui(): void {
     try { fs.writeFileSync(LOCK_FILE, String(process.pid)); } catch {}
 
     // Detect an already running watcher process (async, so the task path is never blocked)
-    const query = "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match 'cli\\.ts\"?\\s+(watch|chat)' } | Measure-Object | Select-Object -ExpandProperty Count";
+    const query = "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match 'cli\\.ts\"?\\s+(watch|chat|tree)' } | Measure-Object | Select-Object -ExpandProperty Count";
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', query], { windowsHide: true, timeout: 8000 }, (err, stdout) => {
       try {
         if (!err && parseInt(String(stdout).trim(), 10) > 0) return;
