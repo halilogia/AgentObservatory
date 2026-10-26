@@ -579,7 +579,7 @@ export class TerminalUI {
       } else if (key === 's' || key === 'S') {
         showSessionPicker();
       } else if (key === 'o' || key === 'O') {
-        openOfficeTui((msg) => console.log(paint('green', `🏢 ${msg}`)));
+        openOfficeTui((msg) => console.log(paint('green', `🏢 ${msg}`))); // harici pencere yok; yalnızca yönlendirme mesajı
       } else if (key === 'w' || key === 'W') {
         openWebPanel(8788, (msg) => console.log(paint('cyan', `🌐 ${msg}`)));
       } else if (key === 'c' || key === 'C' || key === '\u001b') {
