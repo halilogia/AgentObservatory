@@ -30,7 +30,7 @@
       <button class="crumb" id="crumb" type="button" hidden></button>
       <div class="spacer"></div>
       <canvas class="cup" id="cup" width="14" height="10" hidden></canvas>
-      <button class="iconbtn" id="officeBtn" type="button" title="Nexus 3D Ofis" style="display:inline-flex;align-items:center;justify-content:center;font-size:16px;" data-i18n-attr="title:nav.office">🏢</button>
+      <button class="iconbtn" id="officeBtn" type="button" title="Ajan Operasyon Panosu" style="display:inline-flex;align-items:center;justify-content:center;font-size:16px;" data-i18n-attr="title:nav.office">🏢</button>
       <button class="iconbtn" id="phoneBtn" type="button"><span class="ico" id="phoneIco"></span></button>
       <button class="iconbtn" id="capsBtn" type="button"><span class="ico" id="capsIco"></span></button>
       <button class="ghost" id="langBtn" type="button"></button>
@@ -42,13 +42,14 @@
       </section>
       <section class="thread" id="thread" aria-live="polite"></section>
     </main>
-    <section id="officeView" class="office-view" hidden>
-      <div class="office-bar">
-        <span class="office-title">🏛️ Nexus AI 3D Ofis</span>
+    <div id="drawerScrim" class="drawer-scrim" hidden></div>
+    <aside id="officeView" class="agent-drawer" aria-hidden="true" aria-label="Ajan Operasyon Panosu">
+      <div class="drawer-bar">
+        <span class="drawer-title">Ajan Operasyon Panosu</span>
         <button class="iconbtn office-close" id="officeClose" type="button" title="Kapat" data-i18n-attr="title:caps.close;aria-label:caps.close">✕</button>
       </div>
-      <iframe id="officeFrame" src="/office.html" style="width:100%;height:100%;border:none;"></iframe>
-    </section>
+      <div class="drawer-body" id="agentCards"></div>
+    </aside>
     <button class="jump" id="jump" type="button" hidden data-i18n="jump">En alta in</button>
     <footer class="dock">
       <div class="composer" id="composer">

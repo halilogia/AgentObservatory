@@ -377,36 +377,62 @@
     showThread(true);
     chat.messages.forEach((m, i) => { if (m.r === 'u') addUserDom(m.text, i); else createBot(m, false); });
   }
+  // ---------- Ajan Operasyon Çekmecesi (hafif; 3D yok) ----------
+  const DRAWER_AGENTS = [
+    { id: 'agy', dot: '🔵', name: 'Antigravity', role: 'Sistem Mimarisi & Koordinasyon' },
+    { id: 'claude', dot: '🟠', name: 'Claude Code', role: 'Ağır Kodlama, Test & Refactor' },
+    { id: 'codex', dot: '🔴', name: 'Codex CLI', role: 'Statik Güvenlik & Red-Team Denetimi' },
+    { id: 'opencode', dot: '⚫', name: 'OpenCode', role: 'Toplu Veri Motoru & ETL' }
+  ];
   let officeActive = false;
+  let drawerTimer = 0;
+  function agentInfo(id, chats) {
+    let last = null; let tin = 0; let tout = 0; let active = false;
+    chats.forEach((c) => c.messages.forEach((m) => {
+      if (m.r !== 'b' || m.engine !== id) return;
+      if (m.meta) { tin += m.meta.tin || 0; tout += m.meta.tout || 0; }
+      if (!last || c.updated >= last.at) last = { at: c.updated, m };
+    }));
+    views.forEach((v) => { if (!v.done && v.rec.engine === id) { active = true; tin += v.tin || 0; tout += v.tout || 0; } });
+    let task = '—'; let cwd = '—'; let status = 'idle';
+    if (last) {
+      const m = last.m;
+      const tools = (m.parts || []).filter((p) => p.k === 'tool');
+      const tl = tools[tools.length - 1];
+      task = tl ? (tl.name + ' ' + (tl.summary || '')).trim() : (m.prompt || '—');
+      cwd = m.cwd || '—';
+      if (m.notice && !m.notice.warn && m.notice.key !== 'notice.cancelled') status = 'failed';
+    }
+    if (active) status = 'active';
+    return { task: String(task).slice(0, 120), cwd, status, tin, tout };
+  }
+  function renderDrawer() {
+    const box = $('#agentCards'); if (!box) return;
+    const chats = ObsStore.list();
+    box.textContent = '';
+    DRAWER_AGENTS.forEach((a) => {
+      const i = agentInfo(a.id, chats);
+      const label = i.status === 'active' ? '🟢 Aktif' : i.status === 'failed' ? '🔴 Hatalı' : '⚪ Beklemede';
+      const card = el('div', 'agent-card ' + i.status);
+      card.appendChild(el('div', 'agent-head', a.dot + ' ' + a.name));
+      card.appendChild(el('div', 'agent-role', a.role));
+      [['Durum', label], ['Son Görev / Eylem', i.task], ['Hedef Proje / Repo', i.cwd], ['Token', fmtTok(i.tin) + ' giriş · ' + fmtTok(i.tout) + ' çıkış']].forEach(([k, v]) => {
+        const row = el('div', 'agent-row'); row.appendChild(el('span', 'agent-k', k)); row.appendChild(el('span', 'agent-v', v)); card.appendChild(row);
+      });
+      box.appendChild(card);
+    });
+  }
+  function scheduleDrawer() { // SSE olaylarında en çok ~4 yenileme/sn
+    if (!officeActive || drawerTimer) return;
+    drawerTimer = setTimeout(() => { drawerTimer = 0; if (officeActive) renderDrawer(); }, 250);
+  }
   function setOfficeView(show) {
     officeActive = !!show;
-    const officeView = $('#officeView');
-    const mainEl = $('#main');
-    const dockEl = $('.dock');
-    const jumpEl = $('#jump');
-    const officeBtn = $('#officeBtn');
-
-    if (officeActive) {
-      if (mainEl) mainEl.hidden = true;
-      if (dockEl) dockEl.hidden = true;
-      if (jumpEl) jumpEl.hidden = true;
-      if (officeView) officeView.hidden = false;
-      if (officeBtn) officeBtn.classList.add('on');
-      const frame = $('#officeFrame');
-      if (frame && frame.contentWindow) {
-        try {
-          frame.contentWindow.dispatchEvent(new Event('resize'));
-        } catch (err) {
-          console.warn('[Observatory] office frame resize error:', err);
-        }
-      }
-    } else {
-      if (officeView) officeView.hidden = true;
-      if (mainEl) mainEl.hidden = false;
-      if (dockEl) dockEl.hidden = false;
-      if (officeBtn) officeBtn.classList.remove('on');
-      onScroll();
-    }
+    const drawer = $('#officeView'); const scrim = $('#drawerScrim'); const btn = $('#officeBtn');
+    if (officeActive) renderDrawer();
+    if (drawer) { drawer.classList.toggle('open', officeActive); drawer.setAttribute('aria-hidden', officeActive ? 'false' : 'true'); }
+    if (scrim) scrim.hidden = !officeActive;
+    if (btn) btn.classList.toggle('on', officeActive);
   }
   function toggleOfficeView() {
     setOfficeView(!officeActive);
@@ -794,6 +820,7 @@
 
   // ---------- olay akışı ----------
   function onEvent(ev) {
+    scheduleDrawer();
     const v = views.get(ev.taskId);
     if (!v) { early.push(ev); if (early.length > 600) early = early.slice(-300); return; }
     if (ev.sessionId && !v.done && chat) chat.session = { id: ev.sessionId, engine: v.rec.engine, cwd: v.rec.cwd };
@@ -1222,6 +1249,8 @@
         toggleOfficeView();
       };
     }
+    const dScrim = $('#drawerScrim'); if (dScrim) dScrim.onclick = () => setOfficeView(false);
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && officeActive) setOfficeView(false); });
     const officeClose = $('#officeClose');
     if (officeClose) {
       officeClose.onclick = (ev) => {

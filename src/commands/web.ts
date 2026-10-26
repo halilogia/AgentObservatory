@@ -276,7 +276,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         const xFrameOptions = isOffice ? 'SAMEORIGIN' : 'DENY';
         const csp = isOffice
           ? "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
-          : "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+          : "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
         res.writeHead(200, {
           'Content-Type': MIME[ext] || 'text/plain',
           'Cache-Control': 'no-cache, no-store, must-revalidate',

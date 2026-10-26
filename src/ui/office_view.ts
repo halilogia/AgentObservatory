@@ -1,8 +1,8 @@
 import type { TaskSummary } from '../core/types.ts';
 import { paint, cleanText, truncate, describeTool, hms } from './tui.ts';
 
-// Yerleşik Ofis / İstasyon Yönetimi: ağaç görünümünün içinde açılır, harici pencere yoktur.
-// Her ajan ailesi için bir istasyon kartı; veriler yalnızca verilen görev listesinden hesaplanır.
+// Canlı Görev & Ajan Operasyon Panosu (Mission Board): ağaç görünümünün içinde açılır, harici pencere yoktur.
+// Her ajan ailesi için bir kart; veriler yalnızca verilen görev listesinden hesaplanır.
 
 type Color = Parameters<typeof paint>[0];
 
@@ -54,86 +54,61 @@ function fit(s: string, width: number): string {
 interface Station {
   emoji: string;
   title: string;
-  model: string;
-  color: Color;
   role: string;
+  color: Color;
   agents: string[];
-  idle: string;
-  busy: string;
 }
 
 const STATIONS: Station[] = [
-  { emoji: '🔵', title: 'MİMAR İSTASYONU', model: 'Antigravity', color: 'blue', role: 'Orkestrasyon & Sistem Mimarisi', agents: ['agy', 'antigravity'], idle: 'Boşta', busy: 'Aktif' },
-  { emoji: '🟠', title: 'GELİŞTİRİCİ MASASI', model: 'Claude Code Sonnet 5.5', color: 'yellow', role: 'Ağır Kodlama, Test & Refactoring', agents: ['claude'], idle: 'Boşta', busy: 'Kodluyor' },
-  { emoji: '🔴', title: 'DENETİM & GÜVENLİK', model: 'Codex CLI', color: 'magenta', role: 'Red-Team Denetimi & Kod Güvenliği', agents: ['codex'], idle: 'Boşta', busy: 'Denetliyor' },
-  { emoji: '⚫', title: 'TOPLU VERİ MOTORU', model: 'OpenCode', color: 'gray', role: 'Büyük Veri Matrisleri & ETL Hattı', agents: ['opencode'], idle: 'Boşta', busy: 'İşliyor' }
+  { emoji: '🔵', title: 'Antigravity', role: 'Sistem Mimarisi & Koordinasyon', color: 'blue', agents: ['agy', 'antigravity'] },
+  { emoji: '🟠', title: 'Claude Code', role: 'Ağır Kodlama, Test & Refactor', color: 'yellow', agents: ['claude'] },
+  { emoji: '🔴', title: 'Codex CLI', role: 'Statik Güvenlik & Red-Team Denetimi', color: 'magenta', agents: ['codex'] },
+  { emoji: '⚫', title: 'OpenCode', role: 'Toplu Veri Motoru & ETL', color: 'gray', agents: ['opencode'] }
 ];
 
 function lastToolText(t: TaskSummary): string {
   const tool = t.toolsUsed[t.toolsUsed.length - 1];
-  if (!tool) return '—';
+  if (!tool) return '';
   const info = describeTool(tool.name, tool.input);
   return `${info.name} ${info.target}`.trim();
-}
-
-function lastSummary(t: TaskSummary | undefined, width: number): string {
-  if (!t) return paint('gray', '—');
-  if (t.error) return paint('red', truncate(cleanText(t.error), width));
-  const text = cleanText(t.assistantText) || cleanText(t.prompt);
-  return paint('gray', truncate(text, width) || '—');
 }
 
 function tokenSum(ts: TaskSummary[], key: 'inputTokens' | 'outputTokens' | 'totalTokens'): number {
   return ts.reduce((a, t) => a + (t.usage?.[key] || 0), 0);
 }
 
-/** Bir istasyonun kart içeriği (kutu çerçevesiz, renkli satırlar). */
+/** Hedef klasör: görev alanlarından varsa cwd, yoksa istemdeki yol / repo adı. */
+function targetOf(t: TaskSummary | undefined): string {
+  if (!t) return '—';
+  const cwd = (t as { cwd?: string }).cwd;
+  if (cwd) return cwd;
+  const m = /([A-Za-z]:[\/][^\s"']+|(?:\.{0,2}[\/])?[\w.-]+(?:[\/][\w.-]+)+)/.exec(cleanText(t.prompt));
+  return m ? m[1] : '—';
+}
+
+/** Bir ajan kartının içeriği (kutu çerçevesiz, renkli satırlar). */
 function stationRows(st: Station, tasks: TaskSummary[], now: number, inner: number): string[] {
   const mine = tasks.filter((t) => st.agents.includes(t.agent));
   const live = mine.filter((t) => isLive(t, now));
-  const done = mine.filter((t) => t.status === 'completed');
-  const failed = mine.filter((t) => t.status === 'failed');
   const last = [...mine].sort((a, b) => b.startTime - a.startTime)[0];
-  const badge = live.length > 0 ? paint('yellow', '● ' + st.busy) : paint('gray', '○ ' + st.idle);
-  const label = (s: string) => paint('gray', s.padEnd(11));
-  const room = Math.max(10, inner - 12);
-  const rows = [
-    `${label('Rol')}${st.role}`,
-    `${label('Durum')}${badge}`
+  const label = (s: string) => paint('gray', s.padEnd(13));
+  const room = Math.max(10, inner - 14);
+  const status = live.length > 0 ? paint('green', '🟢 Aktif') : last && last.status === 'failed' ? paint('red', '🔴 Hatalı') : paint('gray', '⚪ Beklemede');
+  const action = last ? (lastToolText(last) || cleanText(last.prompt)) : '';
+  return [
+    paint('gray', st.role),
+    `${label('Durum')}${status}`,
+    `${label('Son Görev')}${truncate(action, room) || '—'}`,
+    `${label('Hedef Proje')}${truncate(targetOf(last), room)}`,
+    `${label('Token')}${fmtTokens(tokenSum(mine, 'inputTokens'))} giriş · ${fmtTokens(tokenSum(mine, 'outputTokens'))} çıkış · ${fmtTokens(tokenSum(mine, 'totalTokens'))} toplam`
   ];
-  const counts = `${paint('yellow', live.length + ' çalışan')} · ${paint('green', done.length + ' biten')}` + (failed.length ? ` · ${paint('red', failed.length + ' hatalı')}` : '');
-  const total = tokenSum(mine, 'totalTokens');
-
-  switch (st.agents[0]) {
-    case 'agy': {
-      const ids = new Set(mine.map((t) => t.taskId));
-      const subs = tasks.filter((t) => t.parentTaskId && ids.has(t.parentTaskId)).length;
-      rows.push(`${label('Görev')}${counts}`, `${label('Alt görev')}${subs} dağıtıldı`, `${label('Token')}${fmtTokens(total)} toplam`);
-      break;
-    }
-    case 'claude':
-      rows.push(
-        `${label('Son görev')}${last ? truncate(cleanText(last.prompt), room) : '—'}`,
-        `${label('Son araç')}${truncate(last ? lastToolText(last) : '—', room)}`,
-        `${label('Token')}${fmtTokens(tokenSum(mine, 'inputTokens'))} giriş · ${fmtTokens(tokenSum(mine, 'outputTokens'))} çıkış · ${fmtTokens(total)} toplam`
-      );
-      break;
-    case 'codex': {
-      const security = failed.length ? paint('red', `✖ ${failed.length} hatalı denetim`) : live.length ? paint('yellow', 'İnceleniyor') : paint('green', '✔ Temiz');
-      rows.push(`${label('Güvenlik')}${security}`, `${label('Son özet')}${lastSummary(last, room)}`, `${label('Token')}${fmtTokens(total)} toplam`);
-      break;
-    }
-    default:
-      rows.push(`${label('Biten')}${done.length} toplu görev`, `${label('Son iş')}${lastSummary(last, room)}`, `${label('Token')}${fmtTokens(total)} toplam`);
-  }
-  return rows;
 }
 
 /** Başlıklı kart: ┌─┐ / │ başlık │ / ├─┤ / │ satırlar │ / └─┘. `height` içerik satırı sayısıdır. */
 function card(st: Station, rows: string[], width: number, height: number): string[] {
   const inner = width - 4; // "│ " + içerik + " │"
   const b = (s: string) => paint(st.color, s);
-  const head = `${st.emoji} ${paint('bold', paint(st.color, st.title))} ${paint('gray', '· ' + st.model)}`;
+  const head = `${st.emoji} ${paint('bold', paint(st.color, st.title))}`;
   const body = [...rows];
   while (body.length < height) body.push('');
   return [
@@ -157,7 +132,8 @@ export function renderOfficeView(opts: { cols: number; rows: number; now: number
   const tokens = tokenSum(tasks, 'totalTokens');
 
   const out: string[] = [
-    `🏢 ${paint('bold', paint('cyan', 'NEXUS AGENT OBSERVATORY'))} ${paint('gray', '· OFİS & İSTASYON YÖNETİMİ')}  ${paint('gray', hms(now))}`,
+    `🏢 ${paint('bold', paint('cyan', 'NEXUS AGENT OBSERVATORY'))} ${paint('gray', '· Mission Board')}  ${paint('gray', hms(now))}`,
+    paint('gray', 'Canlı Görev & Ajan Operasyon Panosu'),
     `${paint('yellow', '● ' + live + ' çalışıyor')}  ${paint('green', '✔ ' + ok + ' biten')}  ${paint('red', '✖ ' + bad + ' hatalı')}  ${paint('gray', fmtTokens(tokens) + ' tok · ' + tasks.length + ' görev')}`,
     rule
   ];

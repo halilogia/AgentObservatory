@@ -75,35 +75,30 @@ button:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px sol
 .iconbtn .ico { width: 18px; height: 18px; }
 
 main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; padding: 0 20px; }
-main[hidden], .dock[hidden], .office-view[hidden] { display: none !important; }
-.office-view {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  overflow: hidden;
-  background: var(--bg);
+main[hidden], .dock[hidden] { display: none !important; }
+.agent-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(380px, 100vw);
+  background: var(--bg); border-left: 1px solid var(--border);
+  transform: translateX(100%); transition: transform .18s ease; z-index: 60;
+  display: flex; flex-direction: column; visibility: hidden;
 }
-.office-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 14px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  flex: none;
+.agent-drawer.open { transform: translateX(0); visibility: visible; }
+.drawer-scrim { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 55; }
+.drawer-scrim[hidden] { display: none; }
+.drawer-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; background: var(--surface); border-bottom: 1px solid var(--border);
+  font-size: 13px; font-weight: 600; color: var(--text); flex: none;
 }
-.office-bar .office-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text);
-}
+.drawer-body { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.agent-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface); }
+.agent-card.active { border-color: #3fb950; }
+.agent-card.failed { border-color: #f85149; }
+.agent-head { font-weight: 600; color: var(--text); }
+.agent-role { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.agent-row { display: flex; gap: 8px; font-size: 12px; padding: 2px 0; }
+.agent-k { flex: none; width: 112px; color: var(--muted); }
+.agent-v { flex: 1; min-width: 0; color: var(--text); overflow-wrap: anywhere; }
 .office-close {
   width: 28px;
   height: 28px;
@@ -120,13 +115,6 @@ main[hidden], .dock[hidden], .office-view[hidden] { display: none !important; }
 .office-close:hover {
   background: var(--sunken);
   color: var(--text);
-}
-.office-view iframe {
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  border: none;
-  display: block;
 }
 #officeBtn.on {
   background: var(--sunken);
