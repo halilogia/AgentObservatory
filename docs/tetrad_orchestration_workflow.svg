@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1609.3289999999997 681.45" width="1609.3289999999997" height="681.45" style="--bg:#18181B;--fg:#F4F4F5;--line:#71717A;--muted:#A1A1AA;--surface:#27272A;--border:#3F3F46;background:var(--bg)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" />
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1" />
+  </marker>
+</defs>
+<line class="lifeline" data-actor="HE" x1="84.766" y1="92.45" x2="84.766" y2="651.45" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="Blue" x1="501.66599999999977" y1="70" x2="501.66599999999977" y2="651.45" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="Black" x1="851.4439999999997" y1="70" x2="851.4439999999997" y2="651.45" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="Orange" x1="1104.7159999999997" y1="70" x2="1104.7159999999997" y2="651.45" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="Red" x1="1332.4234999999996" y1="70" x2="1332.4234999999996" y2="651.45" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="Repo" x1="1522.3399999999997" y1="70" x2="1522.3399999999997" y2="651.45" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<g class="block" data-type="par" data-label="Paralel Amelelik (Kaba Kuvvet Veri İşleme)">
+  <rect x="394.6629999999998" y="155.45" width="814.8329999999999" height="179" rx="0" ry="0" fill="none" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="394.6629999999998" y="155.45" width="304" height="20" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="402.6629999999998" y="165.45" font-size="11" font-weight="600" fill="var(--_text-sec)" dy="3.8499999999999996">par [Parallel Bulk Data Processing (Black Team)]</text>
+  <line x1="394.6629999999998" y1="286.45" x2="1209.4959999999996" y2="286.45" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+  <rect x="399.6629999999998" y="292.3" width="186" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="402.6629999999998" y="300.45" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">[Parallel Architecture &amp; Engine Design]</text>
+</g>
+<g class="message" data-from="HE" data-to="Blue" data-label="Add 300 historical provinces with 1919 garrison & income data, connect to engine" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="1">
+  <line x1="84.766" y1="112.45" x2="501.66599999999977" y2="112.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="84.7159999999999" y="94.3" width="417" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="293.2159999999999" y="102.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Add 300 historical provinces with 1919 garrison & income data, connect to engine</text>
+  <circle class="sequence-number" cx="84.766" cy="112.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="84.766" y="112.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">1</text>
+</g>
+<g class="message" data-from="Blue" data-to="Black" data-label="agent-bridge -&gt; opencode (Generate raw JSON table for 300 provinces)" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="2">
+  <line x1="501.66599999999977" y1="195.45" x2="851.4439999999997" y2="195.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="505.0549999999997" y="177.29999999999998" width="343" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="676.5549999999997" y="185.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">agent-bridge -&gt; opencode (Generate raw JSON table for 300 provinces)</text>
+  <circle class="sequence-number" cx="501.66599999999977" cy="195.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="501.66599999999977" y="195.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">2</text>
+</g>
+<g class="message" data-from="Black" data-to="Blue" data-label="data/provinces_1919_data.json completed" data-line-style="dashed" data-arrow-head="filled" data-self="false" data-step="3">
+  <line x1="851.4439999999997" y1="250.45" x2="501.66599999999977" y2="250.45" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <rect x="562.5549999999997" y="232.29999999999998" width="228" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="676.5549999999997" y="240.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">data/provinces_1919_data.json completed</text>
+  <circle class="sequence-number" cx="851.4439999999997" cy="250.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="851.4439999999997" y="250.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">3</text>
+</g>
+<g class="message" data-from="Blue" data-to="Orange" data-label="agent-bridge -&gt; run_claude (Implement data ingestion algorithm &amp; LOD engine)" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="4">
+  <line x1="501.66599999999977" y1="314.45" x2="1104.7159999999997" y2="314.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="597.6909999999997" y="296.3" width="411" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="803.1909999999997" y="304.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">agent-bridge -&gt; run_claude (Implement data ingestion algorithm &amp; LOD engine)</text>
+  <circle class="sequence-number" cx="501.66599999999977" cy="314.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="501.66599999999977" y="314.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">4</text>
+</g>
+<g class="message" data-from="Blue" data-to="Orange" data-label="Bind raw JSON data into engine and run headless tests" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="5">
+  <line x1="501.66599999999977" y1="396.45" x2="1104.7159999999997" y2="396.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="648.1909999999997" y="378.3" width="310" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="803.1909999999997" y="386.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Bind raw JSON data into engine and run headless tests</text>
+  <circle class="sequence-number" cx="501.66599999999977" cy="396.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="501.66599999999977" y="396.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">5</text>
+</g>
+<g class="message" data-from="Orange" data-to="Repo" data-label="Commit: feat(sim): 300 provinces dataset &amp; army architecture" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="6">
+  <line x1="1104.7159999999997" y1="436.45" x2="1522.3399999999997" y2="436.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="1175.5279999999998" y="418.3" width="276" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="1313.5279999999998" y="426.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Commit: feat(sim): 300 provinces dataset &amp; army architecture</text>
+  <circle class="sequence-number" cx="1104.7159999999997" cy="436.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="1104.7159999999997" y="436.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">6</text>
+</g>
+<g class="message" data-from="Blue" data-to="Red" data-label="agent-bridge -&gt; run_codex (Audit data integrity &amp; memory leaks)" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="7">
+  <line x1="501.66599999999977" y1="491.45" x2="1332.4234999999996" y2="491.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="726.0447499999997" y="473.3" width="382" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="917.0447499999997" y="481.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">agent-bridge -&gt; run_codex (Audit data integrity &amp; memory leaks)</text>
+  <circle class="sequence-number" cx="501.66599999999977" cy="491.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="501.66599999999977" y="491.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">7</text>
+</g>
+<g class="message" data-from="Red" data-to="Blue" data-label="Red-Team Verdict (PASS / 0 Leaks)" data-line-style="dashed" data-arrow-head="filled" data-self="false" data-step="8">
+  <line x1="1332.4234999999996" y1="531.45" x2="501.66599999999977" y2="531.45" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <rect x="844.5447499999997" y="513.3000000000001" width="145" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="917.0447499999997" y="521.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Red-Team Verdict (PASS / 0 Leaks)</text>
+  <circle class="sequence-number" cx="1332.4234999999996" cy="531.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="1332.4234999999996" y="531.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">8</text>
+</g>
+<g class="message" data-from="Blue" data-to="Repo" data-label="git push origin master" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="9">
+  <line x1="501.66599999999977" y1="571.45" x2="1522.3399999999997" y2="571.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="953.5029999999997" y="553.3000000000001" width="117" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="1012.0029999999997" y="561.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">git push origin master</text>
+  <circle class="sequence-number" cx="501.66599999999977" cy="571.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="501.66599999999977" y="571.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">9</text>
+</g>
+<g class="message" data-from="Blue" data-to="HE" data-label="Verified Live Delivery Report" data-line-style="dashed" data-arrow-head="filled" data-self="false" data-step="10">
+  <line x1="501.66599999999977" y1="611.45" x2="84.766" y2="611.45" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <rect x="220.2159999999999" y="593.3000000000001" width="146" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="293.2159999999999" y="601.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Verified Live Delivery Report</text>
+  <circle class="sequence-number" cx="501.66599999999977" cy="611.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="501.66599999999977" y="611.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">10</text>
+</g>
+<g class="note" data-position="over" data-actors="Blue">
+  <polygon points="395.5829999999998,120.45 601.7489999999998,120.45 607.7489999999998,126.45 607.7489999999998,143.45 395.5829999999998,143.45" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <polygon points="601.7489999999998,120.45 607.7489999999998,126.45 601.7489999999998,126.45" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="501.66599999999977" y="131.95" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Task Decomposition (Architecture vs. Bulk Data)</text>
+</g>
+<g class="note" data-position="over" data-actors="Black">
+  <polygon points="677.0509999999998,203.45 1019.8369999999998,203.45 1025.8369999999998,209.45 1025.8369999999998,226.45 677.0509999999998,226.45" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <polygon points="1019.8369999999998,203.45 1025.8369999999998,209.45 1019.8369999999998,209.45" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="851.4439999999997" y="214.95" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Generates 300 provinces via fast/cheap swarm models (strict: unmutated prompt)</text>
+</g>
+<g class="note" data-position="over" data-actors="Orange">
+  <polygon points="992.3959999999996,322.45 1211.0359999999996,322.45 1217.0359999999996,328.45 1217.0359999999996,345.45 992.3959999999996,345.45" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <polygon points="1211.0359999999996,322.45 1217.0359999999996,328.45 1211.0359999999996,328.45" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="1104.7159999999997" y="333.95" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Writes GameState &amp; Miniatures classes</text>
+</g>
+<g class="note" data-position="over" data-actors="Blue">
+  <polygon points="429.1439999999998,349.45 568.1879999999999,349.45 574.1879999999999,355.45 574.1879999999999,372.45 429.1439999999998,372.45" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <polygon points="568.1879999999999,349.45 574.1879999999999,355.45 568.1879999999999,355.45" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="501.6659999999998" y="360.95" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Data Integration with Engine</text>
+</g>
+<g class="note" data-position="over" data-actors="Blue">
+  <polygon points="404.1959999999998,444.45 593.1359999999997,444.45 599.1359999999997,450.45 599.1359999999997,467.45 404.1959999999998,467.45" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <polygon points="593.1359999999997,444.45 599.1359999999997,450.45 593.1359999999997,450.45" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="501.6659999999998" y="455.95" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Independent Red-Team Audit</text>
+</g>
+<g class="actor" data-id="HE" data-label="👑 User" data-type="actor">
+  <g transform="translate(66.766,32) scale(1.5)">
+    <path d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+    <path d="M15 10C15 11.6569 13.6569 13 12 13C10.3431 13 9 11.6569 9 10C9 8.34315 10.3431 7 12 7C13.6569 7 15 8.34315 15 10Z" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+    <path d="M5.62842 18.3563C7.08963 17.0398 9.39997 16 12 16C14.6 16 16.9104 17.0398 18.3716 18.3563" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+  </g>
+  <text x="84.766" y="84" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">👑 User</text>
+</g>
+<g class="actor" data-id="Blue" data-label="🔵 Antigravity (Orchestrator)" data-type="participant">
+  <rect x="404.6629999999998" y="30" width="194.00599999999997" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="501.66599999999977" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">🔵 Antigravity (Orchestrator)</text>
+</g>
+<g class="actor" data-id="Black" data-label="⚫ Black Team (OpenCode / Swarm)" data-type="participant">
+  <rect x="732.9519999999998" y="30" width="236.984" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="851.4439999999997" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">⚫ Black Team (OpenCode / Swarm)</text>
+</g>
+<g class="actor" data-id="Orange" data-label="🟠 Claude Code (Sonnet 5.5)" data-type="participant">
+  <rect x="1009.9359999999997" y="30" width="189.55999999999995" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="1104.7159999999997" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">🟠 Claude Code (Sonnet 5.5)</text>
+</g>
+<g class="actor" data-id="Red" data-label="🔴 Codex CLI (gpt-6-astra)" data-type="participant">
+  <rect x="1239.4959999999996" y="30" width="185.855" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="1332.4234999999996" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">🔴 Codex CLI (gpt-6-astra)</text>
+</g>
+<g class="actor" data-id="Repo" data-label="📁 Git Repository" data-type="participant">
+  <rect x="1465.3509999999997" y="30" width="113.978" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="1522.3399999999997" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">📁 Git Repository</text>
+</g>
+</svg>

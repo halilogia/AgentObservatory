@@ -41,6 +41,13 @@ node bin/observatory.js run codex "Unit testleri çalıştır"
 
 ---
 
+### 🌐 Tetrad Autonomous Orchestration Workflow
+Agent Observatory coordinates the multi-agent hierarchy across four specialized teams:
+
+![Tetrad Multi-Agent Orchestration Workflow](docs/tetrad_orchestration_workflow.svg)
+
+---
+
 ## 📚 Dokümantasyon İndeksi
 
 | Doküman | Sorumluluk |
