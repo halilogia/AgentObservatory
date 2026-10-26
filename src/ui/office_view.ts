@@ -82,7 +82,7 @@ function targetOf(t: TaskSummary | undefined): string {
   if (!t) return '—';
   const cwd = (t as { cwd?: string }).cwd;
   if (cwd) return cwd;
-  const m = /([A-Za-z]:[\/][^\s"']+|(?:\.{0,2}[\/])?[\w.-]+(?:[\/][\w.-]+)+)/.exec(cleanText(t.prompt));
+  const m = /([A-Za-z]:[\\/][^\s"']+|(?:\.{0,2}[\\/])?[\w.-]+(?:[\\/][\w.-]+)+)/.exec(cleanText(t.prompt));
   return m ? m[1] : '—';
 }
 
