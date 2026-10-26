@@ -66,7 +66,7 @@ const STATIONS: Station[] = [
   { emoji: '🔵', title: 'MİMAR İSTASYONU', model: 'Antigravity', color: 'blue', role: 'Orkestrasyon & Sistem Mimarisi', agents: ['agy', 'antigravity'], idle: 'Boşta', busy: 'Aktif' },
   { emoji: '🟠', title: 'GELİŞTİRİCİ MASASI', model: 'Claude Code Sonnet 5.5', color: 'yellow', role: 'Ağır Kodlama, Test & Refactoring', agents: ['claude'], idle: 'Boşta', busy: 'Kodluyor' },
   { emoji: '🔴', title: 'DENETİM & GÜVENLİK', model: 'Codex CLI', color: 'magenta', role: 'Red-Team Denetimi & Kod Güvenliği', agents: ['codex'], idle: 'Boşta', busy: 'Denetliyor' },
-  { emoji: '⚫', title: 'VERİ & AMELE TEZGAHI', model: 'OpenCode', color: 'gray', role: 'Toplu Veri Dönüşümü & Amele İşleri', agents: ['opencode'], idle: 'Boşta', busy: 'İşliyor' }
+  { emoji: '⚫', title: 'TOPLU VERİ MOTORU', model: 'OpenCode', color: 'gray', role: 'Büyük Veri Matrisleri & ETL Hattı', agents: ['opencode'], idle: 'Boşta', busy: 'İşliyor' }
 ];
 
 function lastToolText(t: TaskSummary): string {

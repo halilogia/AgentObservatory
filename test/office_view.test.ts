@@ -19,12 +19,12 @@ const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
 const width = (l: string) => [...strip(l)].reduce((a, ch) => a + (ch.codePointAt(0)! >= 0x1f300 || ch === '⚫' ? 2 : 1), 0);
 
 const wide = strip(renderOfficeView({ cols: 140, rows: 40, now, tasks }));
-for (const s of ['NEXUS AGENT OBSERVATORY', 'OFİS & İSTASYON YÖNETİMİ', 'MİMAR İSTASYONU', 'GELİŞTİRİCİ MASASI', 'DENETİM & GÜVENLİK', 'VERİ & AMELE TEZGAHI', 'Aktif', 'Kodluyor', '1 dağıtıldı', 'hatalı', '[O / Esc] Ağaca Dön  ·  [W] Web Paneli  ·  [Q] Çıkış']) {
+for (const s of ['NEXUS AGENT OBSERVATORY', 'OFİS & İSTASYON YÖNETİMİ', 'MİMAR İSTASYONU', 'GELİŞTİRİCİ MASASI', 'DENETİM & GÜVENLİK', 'TOPLU VERİ MOTORU', 'Aktif', 'Kodluyor', '1 dağıtıldı', 'hatalı', '[O / Esc] Ağaca Dön  ·  [W] Web Paneli  ·  [Q] Çıkış']) {
   assert.ok(wide.includes(s), 'eksik: ' + s);
 }
 // 2x2 grid: iki kart başlığı aynı satırda
 assert.ok(wide.split('\n').some((l) => l.includes('MİMAR İSTASYONU') && l.includes('GELİŞTİRİCİ MASASI')));
-assert.ok(wide.split('\n').some((l) => l.includes('DENETİM & GÜVENLİK') && l.includes('VERİ & AMELE TEZGAHI')));
+assert.ok(wide.split('\n').some((l) => l.includes('DENETİM & GÜVENLİK') && l.includes('TOPLU VERİ MOTORU')));
 
 const narrow = strip(renderOfficeView({ cols: 80, rows: 60, now, tasks, statusBanner: 'DURUM' }));
 assert.ok(!narrow.split('\n').some((l) => l.includes('MİMAR İSTASYONU') && l.includes('GELİŞTİRİCİ MASASI')));
