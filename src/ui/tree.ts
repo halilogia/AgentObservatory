@@ -2,6 +2,7 @@ import { globalSqlite } from '../core/sqlite_store.ts';
 import type { TaskEvent, TaskSummary } from '../core/types.ts';
 import { TranscriptRenderer } from './transcript.ts';
 import { paint, cleanText, truncate, describeTool, hms } from './tui.ts';
+import { openWebPanel } from '../commands/web_opener.ts';
 
 // Ağaç görünümü: aynı anda çalışan birçok ajanı tek akışa karıştırmadan, ajan başına 2 satırla gösterir.
 // Mevcut `watch` / `chat` görünümlerine dokunmaz; yalnızca SQLite'taki görev kayıtlarını okur.
@@ -106,7 +107,7 @@ function sessionLine(turns: TaskSummary[], cols: number, now: number, selected: 
 export interface TreeFrame { text: string; order: string[] }
 
 /** Ağaç: metin + ekrandaki görev sırası (seçim için). */
-export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; cols: number; rows: number; now: number; selectedId?: string | null; expanded?: Set<string> }): TreeFrame {
+export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; cols: number; rows: number; now: number; selectedId?: string | null; expanded?: Set<string>; statusBanner?: string | null }): TreeFrame {
   const { cols, now } = opts;
   const running = (t: TaskSummary) => isLive(t, now);
   const recent = tasks.filter((t) => running(t) || now - (t.endTime ?? t.startTime) < RECENT_WINDOW_MS);
@@ -136,8 +137,12 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
   }
   const out: string[] = [];
   const ids: string[] = [];
-  out.push(`${paint('bold', 'Observatory · Ağaç')}  ${paint('gray', hms(now))}   ${paint('yellow', '● ' + counts.run + ' çalışıyor')}  ${paint('green', '✔ ' + counts.ok)}  ${paint('red', '✖ ' + counts.fail)}   ${paint('gray', '[↑↓] seç  [Space/→/←] aç/kapat  [Enter] ayrıntı  [A] ' + (opts.onlyRunning ? 'hepsini göster' : 'sadece çalışanları göster') + '  [Q] çıkış')}`);
+  out.push(`${paint('bold', 'Observatory · Ağaç')}  ${paint('gray', hms(now))}   ${paint('yellow', '● ' + counts.run + ' çalışıyor')}  ${paint('green', '✔ ' + counts.ok)}  ${paint('red', '✖ ' + counts.fail)}   ${paint('gray', '[↑↓] seç  [Space/→/←] aç/kapat  [Enter] ayrıntı  [A] ' + (opts.onlyRunning ? 'hepsini göster' : 'sadece çalışanları göster') + '  [W] Web paneli  [Q] çıkış')}`);
   out.push(paint('gray', '─'.repeat(Math.max(20, Math.min(cols, 120)))));
+  if (opts.statusBanner) {
+    out.push(opts.statusBanner);
+    out.push(paint('gray', '─'.repeat(Math.max(20, Math.min(cols, 120)))));
+  }
   if (roots.length === 0) out.push(paint('gray', '(gösterilecek görev yok)'));
 
   const walk = (t: TaskSummary, prefix: string, childPrefix: string, label?: string, inSession = false) => {
@@ -217,7 +222,7 @@ export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: 
   const live = isLive(t, now);
   const out: string[] = [];
   const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
-  out.push(`${paint('bold', 'Sohbet')}  ${paint('gray', hms(now))}   ${paint('gray', '[Esc] geri  [↑↓] kaydır  [Q] çıkış')}`);
+  out.push(`${paint('bold', 'Sohbet')}  ${paint('gray', hms(now))}   ${paint('gray', '[Esc] geri  [↑↓] kaydır  [W] Web paneli  [Q] çıkış')}`);
   out.push(`${statusGlyph(t, now)} ${tag}   ${paint('gray', t.taskId + ' · ' + fmtDuration(live ? now - t.startTime : t.durationMs))}`);
   out.push(paint('gray', '─'.repeat(Math.min(width, 120))));
 
@@ -261,12 +266,29 @@ export function sessionTranscript(sessionId: string): { task: TaskSummary; event
 
 export function runTree(args: string[]): void {
   const once = args.includes('--once');
+  const autoWeb = args.includes('--web');
   let onlyRunning = false;
   let selectedId: string | null = null;
   let detailId: string | null = null;
   let detailScroll = 0;
   let lastOrder: string[] = [];
   const expanded = new Set<string>();
+  let statusBanner: string | null = null;
+  let statusTimer: NodeJS.Timeout | null = null;
+
+  const setStatus = (msg: string) => {
+    statusBanner = paint('cyan', '🌐 ' + msg);
+    if (statusTimer) clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => {
+      statusBanner = null;
+      redraw();
+    }, 5000);
+    redraw();
+  };
+
+  if (autoWeb) {
+    openWebPanel(8788, setStatus);
+  }
   const sessionOf = (id: string | null): string | null =>
     !id ? null : id.startsWith('session:') ? id.slice(8) : globalSqlite.getTask(id)?.sessionId ?? null;
 
@@ -287,11 +309,11 @@ export function runTree(args: string[]): void {
       }
     }
     const tasks = globalSqlite.getRecentTasks(TASK_LIMIT);
-    const f = renderTree(tasks, { onlyRunning, cols, rows, now, selectedId, expanded });
+    const f = renderTree(tasks, { onlyRunning, cols, rows, now, selectedId, expanded, statusBanner });
     lastOrder = f.order;
     if (!selectedId || !f.order.includes(selectedId)) {
       selectedId = f.order[0] ?? null;
-      if (selectedId && !once) return renderTree(tasks, { onlyRunning, cols, rows, now, selectedId, expanded }).text;
+      if (selectedId && !once) return renderTree(tasks, { onlyRunning, cols, rows, now, selectedId, expanded, statusBanner }).text;
     }
     return f.text;
   };
@@ -325,6 +347,11 @@ export function runTree(args: string[]): void {
       process.exit(0);
     }
     if (detailId) {
+      if (k === 'w' || k === 'W') {
+        setStatus('Web paneli açılıyor (http://127.0.0.1:8788)...');
+        openWebPanel(8788, setStatus);
+        return;
+      }
       if (k === '\x1b' || k === '\x7f' || k === '\b') { detailId = null; redraw(); }
       else if (k === '\x1b[A' || k === 'k' || k === 'K') { detailScroll += 1; draw(); }
       else if (k === '\x1b[B' || k === 'j' || k === 'J') { detailScroll = Math.max(0, detailScroll - 1); draw(); }
@@ -349,5 +376,9 @@ export function runTree(args: string[]): void {
       }
     }
     else if (k === 'a' || k === 'A') { onlyRunning = !onlyRunning; redraw(); }
+    else if (k === 'w' || k === 'W') {
+      setStatus('Web paneli açılıyor (http://127.0.0.1:8788)...');
+      openWebPanel(8788, setStatus);
+    }
   });
 }

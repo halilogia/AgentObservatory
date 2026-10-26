@@ -2,6 +2,7 @@ import { EventStore, globalStore } from '../core/event_store.ts';
 import { globalSqlite } from '../core/sqlite_store.ts';
 import type { TaskEvent, TaskStatus, TaskSummary } from '../core/types.ts';
 import { TranscriptRenderer } from './transcript.ts';
+import { openWebPanel } from '../commands/web_opener.ts';
 
 export const COLORS = {
   reset: '\x1b[0m',
@@ -576,6 +577,8 @@ export class TerminalUI {
         // seçici/inceleme tuşu işlendi
       } else if (key === 's' || key === 'S') {
         showSessionPicker();
+      } else if (key === 'w' || key === 'W') {
+        openWebPanel(8788, (msg) => console.log(paint('cyan', `🌐 ${msg}`)));
       } else if (key === 'c' || key === 'C' || key === '\u001b') {
         // Canlı akışa dön: seçici/inceleme modundan çık, ekranı temizle.
         viewMode = 'live';
@@ -627,7 +630,7 @@ export class TerminalUI {
   renderHeader(): void {
     console.log(paint('cyan', '═'.repeat(80)));
     console.log(` ${paint('bold', '🔭 AGENT OBSERVATORY')} · ${paint('green', 'Canlı Olay Akışı')} · ${paint('gray', hms())}`);
-    console.log(` ${paint('gray', 'Kısayollar: [S] Oturum Seç · [H] Tüm Geçmiş · [C] Canlı Akış / Temizle · [Q] Çıkış')}`);
+    console.log(` ${paint('gray', 'Kısayollar: [S] Oturum Seç · [H] Tüm Geçmiş · [C] Canlı Akış / Temizle · [W] Web Paneli · [Q] Çıkış')}`);
     console.log(paint('cyan', '═'.repeat(80)));
   }
 
