@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "test_obligations": {
+    "pending": {}
+  },
+  "doc_obligations": {
+    "pending": {}
+  },
+  "review_obligations": {
+    "pending": {}
+  },
+  "resolution_intents": [],
+  "sessions": {
+    "6ce04cdf-f628-4e24-8a0c-f9bce42d51b3": {
+      "docs_touched": {
+        "architecture.md": 1792993413.0889957,
+        "changelog.md": 1792993434.6917493,
+        "knowledge.md": 1792993440.728219
+      }
+    }
+  },
+  "review_invocations": []
+}

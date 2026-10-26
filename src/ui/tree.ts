@@ -286,9 +286,7 @@ export function runTree(args: string[]): void {
     redraw();
   };
 
-  if (autoWeb) {
-    openWebPanel(8788, setStatus);
-  }
+  // Otomatik web acilisi kaldirildi; kullanici [W] ile acar.
   const sessionOf = (id: string | null): string | null =>
     !id ? null : id.startsWith('session:') ? id.slice(8) : globalSqlite.getTask(id)?.sessionId ?? null;
 

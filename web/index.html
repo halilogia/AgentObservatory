@@ -10,8 +10,8 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
 <link rel="shortcut icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/icon-192.png">
-<link rel="stylesheet" href="/app.css">
-<script src="/theme.js"></script>
+<link rel="stylesheet" href="/app.css?v=1.0.3">
+<script src="/theme.js?v=1.0.3"></script>
 </head>
 <body>
 <div class="layout" id="layout">
@@ -30,6 +30,7 @@
       <button class="crumb" id="crumb" type="button" hidden></button>
       <div class="spacer"></div>
       <canvas class="cup" id="cup" width="14" height="10" hidden></canvas>
+      <a class="iconbtn" id="officeBtn" href="/office.html" target="_blank" title="Nexus 3D Ofis" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;font-size:16px;" data-i18n-attr="title:nav.office">🏢</a>
       <button class="iconbtn" id="phoneBtn" type="button"><span class="ico" id="phoneIco"></span></button>
       <button class="iconbtn" id="capsBtn" type="button"><span class="ico" id="capsIco"></span></button>
       <button class="ghost" id="langBtn" type="button"></button>
@@ -47,7 +48,7 @@
         <textarea id="prompt" rows="1" data-i18n-attr="placeholder:composer.placeholder;aria-label:composer.label"></textarea>
         <div class="bar">
           <div class="left">
-            <button class="pill" id="projectBtn" type="button" aria-haspopup="listbox"><span class="ico" id="projectIco"></span><span id="projectLabel"></span><span class="ico chev"></span></button>
+            <button class="attach-btn" id="attachBtn" type="button" aria-haspopup="menu" data-i18n-attr="aria-label:attach.btn;title:attach.btn"><span class="ico" id="attachIco"></span></button>
             <button class="pill" id="modeBtn" type="button"><span class="ico" id="modeIco"></span><span id="modeLabel"></span></button>
           </div>
           <div class="right">
@@ -57,21 +58,32 @@
           </div>
         </div>
         <div class="menu" id="modelMenu" hidden></div>
-        <div class="menu small" id="projectMenu" hidden></div>
+        <div class="menu small attach-menu" id="attachMenu" hidden>
+          <button class="item" id="attachFiles" type="button">
+            <span class="ico" id="attachFilesIco"></span>
+            <span class="t" data-i18n="attach.files">Dosyalar</span>
+          </button>
+          <button class="item" id="attachFolder" type="button">
+            <span class="ico" id="attachFolderIco"></span>
+            <span class="t" data-i18n="attach.folder">Klasör</span>
+          </button>
+        </div>
         <div class="menu small slash" id="slashMenu" hidden></div>
       </div>
+      <input type="file" id="filePicker" multiple hidden>
       <div class="foot" id="foot"></div>
     </footer>
   </div>
 </div>
-<script src="/i18n.js"></script>
-<script src="/lang-tr.js"></script>
-<script src="/lang-en.js"></script>
-<script src="/md.js"></script>
-<script src="/cup.js"></script>
-<script src="/context.js"></script>
-<script src="/projects.js"></script>
-<script src="/store.js"></script>
-<script src="/app.js"></script>
+<script src="/i18n.js?v=1.0.3"></script>
+<script src="/lang-tr.js?v=1.0.3"></script>
+<script src="/lang-en.js?v=1.0.3"></script>
+<script src="/md.js?v=1.0.3"></script>
+<script src="/cup.js?v=1.0.3"></script>
+<script src="/context.js?v=1.0.3"></script>
+<script src="/projects.js?v=1.0.3"></script>
+<script src="/store.js?v=1.0.3"></script>
+<script src="/qr.js?v=1.0.3"></script>
+<script src="/app.js?v=1.0.3"></script>
 </body>
 </html>

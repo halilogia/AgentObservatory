@@ -1,0 +1,193 @@
+{
+  "version": 1,
+  "lastUpdated": 1792937428.1841054,
+  "entries": {
+    "C:/Users/Halil Emre/Desktop/GitHub/Public/OfficeManagerTui/colors.py": {
+      "tool": "ruff",
+      "timestamp": 1792937151.7077498,
+      "errors": [
+        {
+          "line": 8,
+          "rule": "UP035",
+          "message": "`typing.Tuple` is deprecated, use `tuple` instead"
+        },
+        {
+          "line": 10,
+          "rule": "UP006",
+          "message": "Use `tuple` instead of `Tuple` for type annotation"
+        },
+        {
+          "line": 61,
+          "rule": "UP006",
+          "message": "Use `tuple` instead of `Tuple` for type annotation"
+        },
+        {
+          "line": 64,
+          "rule": "RUF007",
+          "message": "Prefer `itertools.pairwise()` over `zip()` when iterating over successive pairs"
+        },
+        {
+          "line": 158,
+          "rule": "BLE001",
+          "message": "Do not catch blind exception: `Exception`"
+        }
+      ]
+    },
+    "C:/Users/Halil Emre/Desktop/GitHub/Public/OfficeManagerTui/office_map.py": {
+      "tool": "ruff",
+      "timestamp": 1792937184.1434603,
+      "errors": [
+        {
+          "line": 11,
+          "rule": "UP035",
+          "message": "`typing.Dict` is deprecated, use `dict` instead"
+        },
+        {
+          "line": 11,
+          "rule": "UP035",
+          "message": "`typing.List` is deprecated, use `list` instead"
+        },
+        {
+          "line": 11,
+          "rule": "UP035",
+          "message": "`typing.Set` is deprecated, use `set` instead"
+        },
+        {
+          "line": 11,
+          "rule": "UP035",
+          "message": "`typing.Tuple` is deprecated, use `tuple` instead"
+        },
+        {
+          "line": 18,
+          "rule": "UP006",
+          "message": "Use `tuple` instead of `Tuple` for type annotation"
+        }
+      ]
+    },
+    "C:/Users/Halil Emre/Desktop/GitHub/Public/OfficeManagerTui/worker.py": {
+      "tool": "ruff",
+      "timestamp": 1792937222.3984108,
+      "errors": [
+        {
+          "line": 12,
+          "rule": "UP035",
+          "message": "`typing.List` is deprecated, use `list` instead"
+        },
+        {
+          "line": 12,
+          "rule": "UP035",
+          "message": "`typing.Tuple` is deprecated, use `tuple` instead"
+        },
+        {
+          "line": 16,
+          "rule": "UP006",
+          "message": "Use `tuple` instead of `Tuple` for type annotation"
+        },
+        {
+          "line": 110,
+          "rule": "UP006",
+          "message": "Use `list` instead of `List` for type annotation"
+        },
+        {
+          "line": 111,
+          "rule": "UP045",
+          "message": "Use `X | None` for type annotations"
+        }
+      ]
+    },
+    "C:/Users/Halil Emre/Desktop/GitHub/Public/OfficeManagerTui/simulation.py": {
+      "tool": "ruff",
+      "timestamp": 1792937288.5796301,
+      "errors": [
+        {
+          "line": 2,
+          "rule": "I001",
+          "message": "Import block is un-sorted or un-formatted"
+        },
+        {
+          "line": 7,
+          "rule": "F401",
+          "message": "`dataclasses.field` imported but unused"
+        },
+        {
+          "line": 8,
+          "rule": "UP035",
+          "message": "`typing.Deque` is deprecated, use `collections.deque` instead"
+        },
+        {
+          "line": 8,
+          "rule": "UP035",
+          "message": "`typing.Dict` is deprecated, use `dict` instead"
+        },
+        {
+          "line": 8,
+          "rule": "UP035",
+          "message": "`typing.List` is deprecated, use `list` instead"
+        }
+      ]
+    },
+    "C:/Users/Halil Emre/Desktop/GitHub/Public/OfficeManagerTui/renderer.py": {
+      "tool": "ruff",
+      "timestamp": 1792937370.9640896,
+      "errors": [
+        {
+          "line": 2,
+          "rule": "I001",
+          "message": "Import block is un-sorted or un-formatted"
+        },
+        {
+          "line": 8,
+          "rule": "UP035",
+          "message": "`typing.List` is deprecated, use `list` instead"
+        },
+        {
+          "line": 8,
+          "rule": "UP035",
+          "message": "`typing.Tuple` is deprecated, use `tuple` instead"
+        },
+        {
+          "line": 13,
+          "rule": "F401",
+          "message": "`simulation.DAY_LEN` imported but unused"
+        },
+        {
+          "line": 28,
+          "rule": "UP006",
+          "message": "Use `list` instead of `List` for type annotation"
+        }
+      ]
+    },
+    "C:/Users/Halil Emre/Desktop/GitHub/Public/OfficeManagerTui/main.py": {
+      "tool": "ruff",
+      "timestamp": 1792937394.1398861,
+      "errors": [
+        {
+          "line": 29,
+          "rule": "UP045",
+          "message": "Use `X | None` for type annotations"
+        },
+        {
+          "line": 142,
+          "rule": "RUF100",
+          "message": "Unused `noqa` directive (non-enabled: `E402`)"
+        },
+        {
+          "line": 162,
+          "rule": "UP045",
+          "message": "Use `X | None` for type annotations"
+        }
+      ]
+    },
+    "C:/Users/Halil Emre/Desktop/GitHub/Public/OfficeManagerTui/test_office.py": {
+      "tool": "ruff",
+      "timestamp": 1792937428.1841023,
+      "errors": [
+        {
+          "line": 8,
+          "rule": "F401",
+          "message": "`renderer.UIState` imported but unused"
+        }
+      ]
+    }
+  }
+}
