@@ -3,6 +3,7 @@ import type { TaskEvent, TaskSummary } from '../core/types.ts';
 import { TranscriptRenderer } from './transcript.ts';
 import { paint, cleanText, truncate, describeTool, hms } from './tui.ts';
 import { openWebPanel } from '../commands/web_opener.ts';
+import { openOfficeTui } from '../commands/office_opener.ts';
 
 // Ağaç görünümü: aynı anda çalışan birçok ajanı tek akışa karıştırmadan, ajan başına 2 satırla gösterir.
 // Mevcut `watch` / `chat` görünümlerine dokunmaz; yalnızca SQLite'taki görev kayıtlarını okur.
@@ -137,7 +138,7 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
   }
   const out: string[] = [];
   const ids: string[] = [];
-  out.push(`${paint('bold', 'Observatory · Ağaç')}  ${paint('gray', hms(now))}   ${paint('yellow', '● ' + counts.run + ' çalışıyor')}  ${paint('green', '✔ ' + counts.ok)}  ${paint('red', '✖ ' + counts.fail)}   ${paint('gray', '[↑↓] seç  [Space/→/←] aç/kapat  [Enter] ayrıntı  [A] ' + (opts.onlyRunning ? 'hepsini göster' : 'sadece çalışanları göster') + '  [W] Web paneli  [Q] çıkış')}`);
+  out.push(`${paint('bold', 'Observatory · Ağaç')}  ${paint('gray', hms(now))}   ${paint('yellow', '● ' + counts.run + ' çalışıyor')}  ${paint('green', '✔ ' + counts.ok)}  ${paint('red', '✖ ' + counts.fail)}   ${paint('gray', '[↑↓] seç  [Space/→/←] aç/kapat  [Enter] ayrıntı  [A] ' + (opts.onlyRunning ? 'hepsini göster' : 'sadece çalışanları göster') + '  [O] 2D Ofis  [W] Web paneli  [Q] çıkış')}`);
   out.push(paint('gray', '─'.repeat(Math.max(20, Math.min(cols, 120)))));
   if (opts.statusBanner) {
     out.push(opts.statusBanner);
@@ -222,7 +223,7 @@ export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: 
   const live = isLive(t, now);
   const out: string[] = [];
   const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
-  out.push(`${paint('bold', 'Sohbet')}  ${paint('gray', hms(now))}   ${paint('gray', '[Esc] geri  [↑↓] kaydır  [W] Web paneli  [Q] çıkış')}`);
+  out.push(`${paint('bold', 'Sohbet')}  ${paint('gray', hms(now))}   ${paint('gray', '[Esc] geri  [↑↓] kaydır  [O] 2D Ofis  [W] Web paneli  [Q] çıkış')}`);
   out.push(`${statusGlyph(t, now)} ${tag}   ${paint('gray', t.taskId + ' · ' + fmtDuration(live ? now - t.startTime : t.durationMs))}`);
   out.push(paint('gray', '─'.repeat(Math.min(width, 120))));
 
@@ -345,6 +346,10 @@ export function runTree(args: string[]): void {
       process.exit(0);
     }
     if (detailId) {
+      if (k === 'o' || k === 'O') {
+        openOfficeTui(setStatus);
+        return;
+      }
       if (k === 'w' || k === 'W') {
         setStatus('Web paneli açılıyor (http://127.0.0.1:8788)...');
         openWebPanel(8788, setStatus);
@@ -374,6 +379,9 @@ export function runTree(args: string[]): void {
       }
     }
     else if (k === 'a' || k === 'A') { onlyRunning = !onlyRunning; redraw(); }
+    else if (k === 'o' || k === 'O') {
+      openOfficeTui(setStatus);
+    }
     else if (k === 'w' || k === 'W') {
       setStatus('Web paneli açılıyor (http://127.0.0.1:8788)...');
       openWebPanel(8788, setStatus);

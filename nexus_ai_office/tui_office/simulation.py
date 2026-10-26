@@ -203,6 +203,21 @@ class Simulation:
             self._new_worker(make_name(self.rng), role, skill, salary_for(role, skill),
                              self.rng.choice(SKIN), self.rng.choice(HAIR))
 
+    def seed_ai_tetrad(self) -> None:
+        """Nexus AI Tetrad Ekibi: Antigravity, Claude Code, Codex, OpenCode, Barista, QA Pod."""
+        self.workers.clear()
+        agents = [
+            ("Antigravity", Role.BACKEND, 9, 350),
+            ("Claude Code", Role.FRONTEND, 9, 320),
+            ("Codex Review", Role.DEVOPS, 8, 300),
+            ("OpenCode Amele", Role.INTERN, 7, 150),
+            ("Barista Bot", Role.MARKETING, 6, 120),
+            ("Godot QA Pod", Role.UIUX, 6, 140),
+        ]
+        for name, role, skill, sal in agents:
+            self._new_worker(name, role, skill, sal,
+                             self.rng.choice(SKIN), self.rng.choice(HAIR))
+
     # ------------------------------------------------------------ projeler
     def _make_project(self, name: str, size: Optional[float] = None, days: Optional[int] = None) -> Project:
         size = size or self.rng.choice([800, 1000, 1200, 1500, 1800, 2200])

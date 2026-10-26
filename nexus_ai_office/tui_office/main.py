@@ -177,6 +177,7 @@ def run() -> int:
     C.enable_vt()
     out = sys.stdout
     game = Game()
+    game.sim.seed_ai_tetrad()
     renderer = Renderer()
     writer = DiffWriter(out)
     out.write(C.ALT_ON + C.HIDE_CURSOR + C.CLEAR)

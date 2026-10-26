@@ -3,6 +3,7 @@ import { globalSqlite } from '../core/sqlite_store.ts';
 import type { TaskEvent, TaskStatus, TaskSummary } from '../core/types.ts';
 import { TranscriptRenderer } from './transcript.ts';
 import { openWebPanel } from '../commands/web_opener.ts';
+import { openOfficeTui } from '../commands/office_opener.ts';
 
 export const COLORS = {
   reset: '\x1b[0m',
@@ -577,6 +578,8 @@ export class TerminalUI {
         // seçici/inceleme tuşu işlendi
       } else if (key === 's' || key === 'S') {
         showSessionPicker();
+      } else if (key === 'o' || key === 'O') {
+        openOfficeTui((msg) => console.log(paint('green', `🏢 ${msg}`)));
       } else if (key === 'w' || key === 'W') {
         openWebPanel(8788, (msg) => console.log(paint('cyan', `🌐 ${msg}`)));
       } else if (key === 'c' || key === 'C' || key === '\u001b') {
