@@ -376,15 +376,39 @@
       item.appendChild(b); box.appendChild(item);
     });
   }
+  const termMessages = (data) => ObsSessions.toChat(data, { toolKind, toolSummary, color: (a) => { const e = engineById(a); return e ? e.color : '#888'; } });
   async function loadTermSession(s) {
     if (st.running) { $('#foot').textContent = t('foot.busy'); return; }
     setOfficeView(false);
     let data;
     try { data = await api('/api/session?id=' + encodeURIComponent(s.id)); } catch (err) { $('#foot').textContent = err.info ? apiMsg(err) : err.message; return; }
-    const colorOf = (a) => { const e = engineById(a); return e ? e.color : '#888'; };
-    const messages = ObsSessions.toChat(data, { toolKind, toolSummary, color: colorOf });
-    chat = { id: ObsStore.newId(), termId: s.id, title: smartTitle(s.title), created: s.start, updated: Date.now(), session: { id: s.id, engine: s.agent, cwd: '' }, project: null, messages };
+    const messages = termMessages(data);
+    // devam edebilmek için oturumun motoru, modeli ve klasörü seçili ayarlara taşınır (klasör web köklerinde yoksa özetle yeni oturum açılır)
+    const lastBot = [...messages].reverse().find((m) => m.r === 'b');
+    const cwd = (lastBot && lastBot.cwd) || '';
+    chat = { id: ObsStore.newId(), termId: s.id, title: smartTitle(s.title), created: s.start, updated: Date.now(), session: { id: s.id, engine: s.agent, cwd }, project: null, messages };
+    const le = engineById(s.agent);
+    if (le && le.installed) {
+      st.engine = le.id; st.model = le.models.some((x) => x.id === s.model) ? s.model : le.models[0].id;
+      if (!le.write) st.mode = 'read';
+      const proj = cwd && st.cfg.projects.find((p) => p.path.toLowerCase() === cwd.toLowerCase());
+      if (proj) st.cwd = proj.path;
+      refreshControls();
+    }
     renderThread(); renderHistory(); closeNavOnMobile(); scrollDown(true); onScroll();
+  }
+  // açık terminal oturumu çalışırken yeni olaylar geldikçe sohbet kendini yeniler (1 sn'de en çok bir kez)
+  let termLive = 0;
+  function followTermSession(ev) {
+    if (!chat || !chat.termId || st.running || ev.sessionId !== chat.termId || termLive) return;
+    termLive = setTimeout(async () => {
+      termLive = 0;
+      if (!chat || !chat.termId || st.running) return;
+      try {
+        const data = await api('/api/session?id=' + encodeURIComponent(chat.termId));
+        const follow = stick; chat.messages = termMessages(data); renderThread(); if (follow) scrollDown(true); onScroll();
+      } catch { /* sunucu yok */ }
+    }, 1000);
   }
   function clearThread() { $('#thread').replaceChildren(); views.clear(); }
   function showThread(has) {
@@ -921,7 +945,7 @@
     const sim = officeSim(); if (sim) sim.feed(ev);
     scheduleDrawer();
     const v = views.get(ev.taskId);
-    if (!v) { early.push(ev); if (early.length > 600) early = early.slice(-300); if (ev.type === 'task.started' || ev.type === 'task.completed') scheduleTermRefresh(); return; }
+    if (!v) { followTermSession(ev); early.push(ev); if (early.length > 600) early = early.slice(-300); if (ev.type === 'task.started' || ev.type === 'task.completed') scheduleTermRefresh(); return; }
     if (ev.sessionId && !v.done && chat) chat.session = { id: ev.sessionId, engine: v.rec.engine, cwd: v.rec.cwd };
     const d = ev.data || {};
     if (ev.type === 'message.delta') addText(v, String(d.text || ''));
