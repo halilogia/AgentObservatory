@@ -220,6 +220,19 @@ function wrapAnsi(line: string, width: number): string[] {
   return out;
 }
 
+/** Son çizilen ayrıntı sayfasının kaydırma çubuğu geometrisi (fare sürükleme için): üst satır (0 tabanlı), görünür satır, toplam satır. */
+let detailGeom = { top: 3, room: 0, total: 0 };
+
+/** Çubuk üzerindeki fare satırından (1 tabanlı terminal satırı) kaydırma değerini hesaplar; sığan içerikte null. */
+export function scrollFromBarRow(y: number, g: { top: number; room: number; total: number } = detailGeom): number | null {
+  if (g.total <= g.room) return null;
+  const thumb = Math.max(1, Math.round((g.room * g.room) / g.total));
+  const y0 = Math.min(g.room - 1, Math.max(0, y - 1 - g.top));
+  const ratio = g.room === thumb ? 0 : Math.min(1, Math.max(0, (y0 - thumb / 2) / (g.room - thumb)));
+  const start = Math.round(ratio * (g.total - g.room));
+  return g.total - g.room - start;
+}
+
 /** Tek ajanın ayrıntı sayfası: görevi başlatan CLI'ın kendi sohbet görünümü (skin), en altı canlı izlenir; ↑/↓ ile kaydırılır. */
 export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: number; rows: number; now: number; scroll?: number; fullPrompt?: boolean }): string {
   const { cols, rows, now } = opts;
@@ -240,6 +253,7 @@ export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: 
   r.end();
   const lines = buf.replace(/\s+$/, '').split('\n').flatMap((l) => wrapAnsi(l, width));
   const room = Math.max(4, rows - out.length - 1);
+  detailGeom = { top: out.length, room, total: lines.length };
   const maxScroll = Math.max(0, lines.length - room);
   const scroll = Math.min(Math.max(0, opts.scroll ?? 0), maxScroll);
   const end = lines.length - scroll;
@@ -344,7 +358,9 @@ export function runTree(args: string[]): void {
     process.stdout.write('\x1b[H' + lines.map((l) => l + '\x1b[K').join('\n') + '\x1b[J');
   };
   process.stdout.write('\x1b[?1049h');
-  process.on('exit', () => process.stdout.write('\x1b[?1049l'));
+  // fare: tekerlek + çubuğu sürükleme (SGR kipi). Bu kipte metin seçmek için Shift+sürükle gerekir.
+  process.stdout.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h');
+  process.on('exit', () => process.stdout.write('\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l'));
   const redraw = () => { process.stdout.write('\x1b[2J'); draw(); };
   redraw();
   const timer = setInterval(draw, 800);
@@ -358,7 +374,22 @@ export function runTree(args: string[]): void {
   };
   process.stdin.on('data', (buf) => {
     const k = buf.toString();
-    if (k === 'q' || k === 'Q' || k === '\x03') {
+    if (k.includes('\x1b[<')) {
+      for (const m of k.matchAll(/\x1b\[<(\d+);(\d+);(\d+)([Mm])/g)) {
+        const b = Number(m[1]), x = Number(m[2]), y = Number(m[3]);
+        const wheel = b === 64 ? -1 : b === 65 ? 1 : 0; // -1 yukarı, 1 aşağı
+        if (wheel) {
+          if (detailId) detailScroll = Math.max(0, detailScroll - wheel * 3);
+          else if (!officeActive) move(wheel * 3);
+        } else if (detailId && !officeActive && m[4] === 'M' && (b === 0 || b === 32) && x >= (process.stdout.columns || 120) - 2) {
+          const s = scrollFromBarRow(y);
+          if (s !== null) detailScroll = s;
+        }
+      }
+      if (detailId) draw();
+      return;
+    }
+    if (k === 'q'|| k === 'Q' || k === '\x03') {
       clearInterval(timer);
       process.stdout.write('\x1b[2J\x1b[H');
       process.exit(0);

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { renderTree } from '../src/ui/tree.ts';
+import { renderTree, scrollFromBarRow } from '../src/ui/tree.ts';
 import type { TaskSummary } from '../src/core/types.ts';
 
 const now = 1_000_000_000;
@@ -26,3 +26,11 @@ const txt = strip(e.text);
 assert.match(txt, /Turn 1/); assert.match(txt, /Turn 3/); assert.match(txt, /\[ALT AJAN\]/);
 assert.equal(e.order.length, 6);
 console.log('tree_session OK');
+
+// kaydırma çubuğu sürükleme: üst uç = en eski satırlar (en büyük kaydırma), alt uç = en son (0), sığan içerikte null
+{
+  const g = { top: 3, room: 20, total: 120 };
+  assert.strictEqual(scrollFromBarRow(4, g), 100, 'çubuğun en üstü en eski kısmı göstermeli');
+  assert.strictEqual(scrollFromBarRow(23, g), 0, 'çubuğun en altı en son kısmı göstermeli');
+  assert.strictEqual(scrollFromBarRow(10, { top: 3, room: 20, total: 20 }), null);
+}
