@@ -46,8 +46,11 @@ export class TranscriptRenderer {
   private tokensIn = 0;
   private tokensOut = 0;
 
-  constructor(out: (s: string) => void, opts: { color: boolean; skin?: SkinId }) {
+  private readonly fullPrompt: boolean;
+
+  constructor(out: (s: string) => void, opts: { color: boolean; skin?: SkinId; fullPrompt?: boolean }) {
     this.out = out;
+    this.fullPrompt = !!opts.fullPrompt;
     this.useColor = opts.color;
     this.forcedSkin = opts.skin;
   }
@@ -84,7 +87,7 @@ export class TranscriptRenderer {
         if (this.headerShown) break;
         this.headerShown = true;
         this.out(skin.header({ agent: ev.agent, taskId: ev.taskId, cwd: d.cwd, model: d.model }) + '\n\n');
-        if (d.prompt) this.out(skin.user(clipPrompt(String(d.prompt))) + '\n\n');
+        if (d.prompt) this.out(skin.user(this.fullPrompt ? String(d.prompt).replace(/\s+$/, '') : clipPrompt(String(d.prompt))) + '\n\n');
         break;
       }
       case 'message.delta': {

@@ -203,12 +203,16 @@ function wrapAnsi(line: string, width: number): string[] {
   const out: string[] = [];
   let cur = '';
   let vis = 0;
+  let active = ''; // açık renk/stil kodları: bölünen satırın devamı aynı renkte kalsın
   for (let i = 0; i < line.length; i++) {
     if (line[i] === '\x1b') {
       const m = /^\x1b\[[0-9;?]*[A-Za-z]/.exec(line.slice(i));
-      if (m) { cur += m[0]; i += m[0].length - 1; continue; }
+      if (m) {
+        if (m[0].endsWith('m')) active = m[0] === '\x1b[0m' || m[0] === '\x1b[m' ? '' : active + m[0];
+        cur += m[0]; i += m[0].length - 1; continue;
+      }
     }
-    if (vis >= width) { out.push(cur + '\x1b[0m'); cur = ''; vis = 0; }
+    if (vis >= width) { out.push(cur + '\x1b[0m'); cur = active; vis = 0; }
     cur += line[i];
     vis++;
   }
@@ -217,18 +221,18 @@ function wrapAnsi(line: string, width: number): string[] {
 }
 
 /** Tek ajanın ayrıntı sayfası: görevi başlatan CLI'ın kendi sohbet görünümü (skin), en altı canlı izlenir; ↑/↓ ile kaydırılır. */
-export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: number; rows: number; now: number; scroll?: number }): string {
+export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: number; rows: number; now: number; scroll?: number; fullPrompt?: boolean }): string {
   const { cols, rows, now } = opts;
   const width = Math.max(40, cols - 1);
   const live = isLive(t, now);
   const out: string[] = [];
   const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
-  out.push(`${paint('bold', 'Sohbet')}  ${paint('gray', hms(now))}   ${paint('gray', '[Esc] geri  [↑↓] kaydır  [O] Ofis Yönetimi  [W] Web paneli  [Q] çıkış')}`);
+  out.push(`${paint('bold', 'Sohbet')}  ${paint('gray', hms(now))}   ${paint('gray', '[Esc] geri  [↑↓] kaydır  [P] istem: ' + (opts.fullPrompt ?? true ? 'tam' : 'kısa') + '  [O] Ofis Yönetimi  [W] Web paneli  [Q] çıkış')}`);
   out.push(`${statusGlyph(t, now)} ${tag}   ${paint('gray', t.taskId + ' · ' + fmtDuration(live ? now - t.startTime : t.durationMs))}`);
   out.push(paint('gray', '─'.repeat(Math.min(width, 120))));
 
   let buf = '';
-  const r = new TranscriptRenderer((x) => { buf += x; }, { color: true });
+  const r = new TranscriptRenderer((x) => { buf += x; }, { color: true, fullPrompt: opts.fullPrompt ?? true });
   for (const e of events) {
     if (e.type === 'task.started' && !e.data?.model && t.model) e.data = { ...e.data, model: t.model };
     r.push(e);
@@ -272,6 +276,7 @@ export function runTree(args: string[]): void {
   let selectedId: string | null = null;
   let detailId: string | null = null;
   let detailScroll = 0;
+  let fullPrompt = true;
   let lastOrder: string[] = [];
   const expanded = new Set<string>();
   let statusBanner: string | null = null;
@@ -300,12 +305,12 @@ export function runTree(args: string[]): void {
     if (detailId) {
       if (detailId.startsWith('session:')) {
         const st = sessionTranscript(detailId.slice(8));
-        if (st) return renderDetail(st.task, st.events, { cols, rows, now, scroll: detailScroll });
+        if (st) return renderDetail(st.task, st.events, { cols, rows, now, scroll: detailScroll, fullPrompt });
         detailId = null;
       }
       if (detailId) {
         const t = globalSqlite.getTask(detailId);
-        if (t) return renderDetail(t, globalSqlite.getEvents(detailId), { cols, rows, now, scroll: detailScroll });
+        if (t) return renderDetail(t, globalSqlite.getEvents(detailId), { cols, rows, now, scroll: detailScroll, fullPrompt });
         detailId = null;
       }
     }
@@ -362,6 +367,7 @@ export function runTree(args: string[]): void {
         openWebPanel(8788, setStatus);
         return;
       }
+      if (k === 'p' || k === 'P') { fullPrompt = !fullPrompt; draw(); return; }
       if (k === '\x1b' || k === '\x7f' || k === '\b') { detailId = null; redraw(); }
       else if (k === '\x1b[A' || k === 'k' || k === 'K') { detailScroll += 1; draw(); }
       else if (k === '\x1b[B' || k === 'j' || k === 'J') { detailScroll = Math.max(0, detailScroll - 1); draw(); }
