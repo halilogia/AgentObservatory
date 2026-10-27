@@ -2,7 +2,7 @@
 // Saf mantık (DOM yok). helpers: { toolKind(name), toolSummary(name, input), color(agent) }
 (function (root) {
   'use strict';
-  var MAX_OUT_LINES = 60, MAX_OUT_CHARS = 6000;
+  var MAX_OUT_LINES = 60, MAX_OUT_CHARS = 6000, LIVE_WINDOW_MS = 3600000;
 
   function toChat(session, h) {
     var messages = [], bots = {}, seenPrompt = {}, taskInfo = {};
@@ -11,7 +11,7 @@
     function bot(taskId) {
       if (bots[taskId]) return bots[taskId];
       var t = taskInfo[taskId] || {};
-      var rec = { r: 'b', engine: t.agent, model: t.model || '', label: t.model || t.agent, color: h.color(t.agent), parts: [], notice: null, meta: null, prompt: t.prompt || '', cwd: '', taskId: taskId, effort: '', _cur: null, _tools: {}, _last: null, _t0: t.start_time };
+      var rec = { r: 'b', engine: t.agent, model: t.model || '', label: t.model || t.agent, color: h.color(t.agent), parts: [], notice: null, meta: null, prompt: t.prompt || '', cwd: '', taskId: taskId, effort: '', _cur: null, _tools: {}, _last: null, _t0: t.start_time, t0: t.start_time, live: false, _end: null, _lastTs: t.start_time };
       bots[taskId] = rec; messages.push(rec);
       return rec;
     }
@@ -28,20 +28,23 @@
         return;
       }
       var rec = bot(ev.taskId);
+      if (ev.timestamp > rec._lastTs) rec._lastTs = ev.timestamp;
       if (ev.type === 'message.delta') {
         var text = String(d.text || ''); if (!text) return;
         if (!rec._cur) { rec._cur = { k: 'text', v: '' }; rec.parts.push(rec._cur); }
         rec._cur.v += text;
       } else if (ev.type === 'tool.invoked') {
         rec._cur = null;
-        var part = { k: 'tool', name: d.name || 'tool', kind: h.toolKind(d.name), summary: h.toolSummary(d.name, d.input), out: '', input: d.input };
+        var part = { k: 'tool', name: d.name || 'tool', kind: h.toolKind(d.name), summary: h.toolSummary(d.name, d.input), out: '', input: d.input, t0: ev.timestamp, t1: 0 };
         rec.parts.push(part); rec._last = part; if (d.id) rec._tools[d.id] = part;
       } else if (ev.type === 'tool.completed') {
         var tp = (d.toolUseId && rec._tools[d.toolUseId]) || rec._last;
+        if (tp && !tp.t1) tp.t1 = ev.timestamp;
         if (tp && !tp.out) tp.out = String(d.output != null ? d.output : (d.result != null ? d.result : '')).split('\n').slice(0, MAX_OUT_LINES).join('\n').slice(0, MAX_OUT_CHARS);
       } else if (ev.type === 'task.completed' || ev.type === 'task.failed' || ev.type === 'task.cancelled') {
         rec._cur = null;
         var t0 = rec._t0 != null ? rec._t0 : ev.timestamp;
+        rec._end = ev.timestamp;
         rec.meta = { sec: Math.max(0, Math.round((ev.timestamp - t0) / 1000)), tin: rec.meta ? rec.meta.tin : 0, tout: rec.meta ? rec.meta.tout : 0 };
         if (ev.type === 'task.failed') rec.notice = { text: typeof d.error === 'string' ? d.error : 'hata' };
         else if (ev.type === 'task.cancelled') rec.notice = { key: 'notice.cancelled', warn: true };
@@ -53,9 +56,20 @@
       }
     });
 
+    // bitiş olayı olmayan tur: süre son olaya kadar sayılır (0 sn kalmaz); oturum çalışıyorsa tur "canlı"dır
+    var now = h.now != null ? h.now : Date.now();
+    messages.forEach(function (m) {
+      if (m.r !== 'b' || m._end != null) return;
+      var info = taskInfo[m.taskId] || {};
+      m.live = (info.status === 'running' || info.status === 'pending') && now - Number(info.start_time) < LIVE_WINDOW_MS;
+      var last = m.live ? Math.max(m._lastTs, now) : m._lastTs;
+      m.meta = m.meta || { sec: 0, tin: 0, tout: 0 };
+      m.meta.sec = Math.max(0, Math.round((last - m.t0) / 1000));
+      if (m.live) m.meta = null; // sürerken durum kartı gösterilir; süre ve belirteç tur bitince yazılır
+    });
     // boş balonları at, iç alanları temizle
-    return messages.filter(function (m) { return m.r === 'u' || m.parts.length || m.notice; }).map(function (m) {
-      if (m.r === 'b') { delete m._cur; delete m._tools; delete m._last; delete m._t0; }
+    return messages.filter(function (m) { return m.r === 'u' || m.parts.length || m.notice || m.live; }).map(function (m) {
+      if (m.r === 'b') { delete m._cur; delete m._tools; delete m._last; delete m._t0; delete m._end; delete m._lastTs; if (!m.live) delete m.live; }
       return m;
     });
   }

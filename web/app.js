@@ -7,6 +7,7 @@
   const svg = (d, extra = '') => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
   const ICON = {
     chev: svg('<path d="M4 6l4 4 4-4"/>'),
+    cup: svg('<path d="M3 7h8v3.5A2.5 2.5 0 0 1 8.5 13h-3A2.5 2.5 0 0 1 3 10.5z"/><path d="M11 8h1.2a1.3 1.3 0 0 1 0 2.6H11"/><path d="M5.5 2.5c-.6.7.6 1.3 0 2M8 2.5c-.6.7.6 1.3 0 2"/>'),
     caps: svg('<path d="M8 2.5l1.3 3.2 3.2 1.3-3.2 1.3L8 11.5 6.7 8.3 3.5 7l3.2-1.3z"/><path d="M12.5 11v3M11 12.5h3"/>'),
     think: svg('<path d="M8 2.5a4 4 0 00-2 7.4V11h4V9.9A4 4 0 008 2.5z"/><path d="M6.5 13.5h3"/>'),
     phone: svg('<rect x="5" y="1.8" width="6" height="12.4" rx="1.6"/><path d="M7.2 12.2h1.6"/>'),
@@ -435,9 +436,19 @@
   }
   function renderThread() {
     clearThread();
+    syncTermCard();
     if (!chat || !chat.messages.length) { showThread(false); return; }
     showThread(true);
     chat.messages.forEach((m, i) => { if (m.r === 'u') addUserDom(m.text, i); else createBot(m, false); });
+  }
+  // canlı terminal oturumu: son (bitmemiş) turun araç adımlarından durum kartı kurulur; tur bitince kart kaybolur
+  function syncTermCard() {
+    if (runView && !runView.term) return; // web'den başlatılmış gerçek görev kendi kartını yönetir
+    const rec = chat && chat.termId && !st.running ? [...chat.messages].reverse().find((m) => m.r === 'b') : null;
+    if (!rec || !rec.live) { if (runView) { runView = null; renderRunCard(); } return; }
+    const steps = rec.parts.filter((p) => p.k === 'tool').map((p) => ({ kind: p.kind, name: p.name, summary: p.summary, t0: p.t0 || rec.t0, t1: p.t1 || 0, out: p.out || '' }));
+    runView = { rec, steps, t0: rec.t0 || Date.now(), done: false, term: true };
+    renderRunCard();
   }
   // ---------- Ajan Operasyon Çekmecesi (hafif; 3D yok) ----------
   const DRAWER_AGENTS = [
@@ -724,7 +735,7 @@
     const col = el('div', 'body');
     const who = el('div', 'who'); who.appendChild(el('span', '', `${engineLabel(rec)} · ${rec.label}`));
     const dots = el('span', 'state'); dots.append(el('b'), el('b'), el('b'));
-    if (live) who.appendChild(dots);
+    if (live || rec.live) who.appendChild(dots);
     const content = el('div'); const meta = el('div', 'meta');
     col.append(who, content, meta); row.appendChild(col);
     $('#thread').appendChild(row);
@@ -939,8 +950,7 @@
         }
       });
       body.appendChild(list);
-      const stop = el('button', 'rc-stop', t('rc.stop')); stop.type = 'button'; stop.disabled = st.running === 'pending'; stop.onclick = send;
-      body.appendChild(stop);
+      if (!v.term) { const stop = el('button', 'rc-stop', t('rc.stop')); stop.type = 'button'; stop.disabled = st.running === 'pending'; stop.onclick = send; body.appendChild(stop); }
       kids.push(body);
     }
     box.replaceChildren(...kids);
@@ -977,19 +987,22 @@
     ensureChat(text);
     const e = engineById(st.engine); const m = e.models.find((x) => x.id === st.model);
     // oturum sürdürülemiyorsa (motor ya da klasör değişti) önceki konuşma özet olarak yeni isteme eklenir
-    const resume = chat.session && chat.session.engine === e.id && chat.session.cwd === st.cwd ? chat.session.id : undefined;
+    // terminal oturumu açıksa motor eşleştiğinde AYNI CLI oturumu oturumun kendi klasörüyle sürdürülür (klasör izni sunucuda denetlenir)
+    const termResume = !!(chat.termId && chat.session && chat.session.engine === e.id);
+    const resume = termResume || (chat.session && chat.session.engine === e.id && chat.session.cwd === st.cwd) ? chat.session.id : undefined;
+    const runCwd = termResume && chat.session.cwd ? chat.session.cwd : st.cwd;
     const proj = chat.project ? ObsProjects.get(chat.project) : null; // proje talimatları her YENİ CLI oturumunun başında verilir
     const sendText = resume ? text : ObsCtx.build(chat.messages, text, { instructions: proj && proj.instructions }) || text;
     if (o.bubble !== false) { chat.messages.push({ r: 'u', text }); addUserDom(text); }
-    const rec = { r: 'b', engine: e.id, model: m.id, label: m.label, color: e.color, parts: [], notice: null, meta: null, prompt: text, cwd: st.cwd, taskId: null, effort: e.efforts.length ? st.effort : '' };
+    const rec = { r: 'b', engine: e.id, model: m.id, label: m.label, color: e.color, parts: [], notice: null, meta: null, prompt: text, cwd: runCwd, taskId: null, effort: e.efforts.length ? st.effort : '' };
     chat.messages.push(rec);
     const view = createBot(rec, true);
     st.running = 'pending'; stick = true; refreshSend(); persist();
     try {
       if (canWrite(e) && st.mode === 'write' && !st.cfg.remote) { // dosya geri alma için: görev başlamadan önce klasörün anlık görüntüsü (git deposu değilse yok)
-        try { rec.snap = (await api('/api/snapshot', { cwd: st.cwd })).snap || null; rec.snapCwd = st.cwd; } catch { rec.snap = null; }
+        try { rec.snap = (await api('/api/snapshot', { cwd: runCwd })).snap || null; rec.snapCwd = runCwd; } catch { rec.snap = null; }
       }
-      const r = await api('/api/run', { engine: e.id, model: m.id, effort: e.efforts.length ? st.effort : undefined, prompt: sendText, mode: canWrite(e) ? st.mode : 'read', cwd: st.cwd, sessionId: resume });
+      const r = await api('/api/run', { engine: e.id, model: m.id, effort: e.efforts.length ? st.effort : undefined, prompt: sendText, mode: canWrite(e) ? st.mode : 'read', cwd: runCwd, sessionId: resume });
       rec.taskId = r.taskId; views.set(r.taskId, view); st.running = r.taskId;
       const buffered = early.filter((x) => x.taskId === r.taskId); early = early.filter((x) => x.taskId !== r.taskId);
       buffered.forEach(onEvent); refreshSend();
@@ -997,6 +1010,7 @@
       view.dots.remove(); view.done = true; st.running = null;
       const i = err.info || {};
       rec.notice = i.code ? { key: 'api.' + i.code, params: i.params || {} } : { text: err.message };
+      if (termResume && i.code === 'cwd_forbidden') $('#foot').textContent = t('foot.cwdLocked', { cwd: runCwd }); // oturum sessizce yeni bir oturuma çevrilmez
       view.content.appendChild(el('div', 'notice', noticeText(rec.notice)));
       retryRow(view); persist(); refreshSend(); refreshConfig();
     }
@@ -1332,15 +1346,21 @@
     I18N.applyDom(); document.title = t('app.title');
     $('#phoneBtn').title = t('phone.btn'); $('#phoneBtn').setAttribute('aria-label', t('phone.btn'));
     $('#capsBtn').title = t('caps.btn'); $('#capsBtn').setAttribute('aria-label', t('caps.btn')); $('#langBtn').textContent = t('lang.switchTo'); $('#langBtn').title = t('lang.switchTitle');
-    refreshControls(); refreshSend(); refreshTheme(); renderEngineStatus(); renderCrumb(); renderHistory(); closeMenus();
+    refreshCupBtn(); refreshControls(); refreshSend(); refreshTheme(); renderEngineStatus(); renderCrumb(); renderHistory(); closeMenus();
     if (!st.running) renderThread();
   }
 
   // kahve fincanı: yalnızca Claude sohbetinde görünür; duman = istem önbelleği (prompt cache) hâlâ sıcak
   const CUP_TTL = 60 * 60000;
   let cupFrame = 0;
+  const cupOn = () => lsGet('obs-cup') !== '0'; // varsayılan: görünür
+  function refreshCupBtn() {
+    const b = $('#cupBtn'), label = t(cupOn() ? 'cup.hide' : 'cup.show');
+    b.title = label; b.setAttribute('aria-label', label); b.setAttribute('aria-pressed', String(cupOn())); b.classList.toggle('off', !cupOn());
+  }
   function refreshCup() {
     const cv = $('#cup');
+    if (!cupOn()) { cv.hidden = true; return; }
     const lastBot = chat && [...chat.messages].reverse().find((m) => m.r === 'b');
     if (!lastBot || lastBot.engine !== 'claude') { cv.hidden = true; return; }
     const now = Date.now(), busy = !!st.running;
@@ -1365,6 +1385,8 @@
     st.cwd = activeProj && activeProj.cwd ? activeProj.cwd : (st.cfg.projects.some((p) => p.path === saved.cwd) ? saved.cwd : '');
     if (!narrow() && lsGet('obs-nav') === 'closed') $('#layout').classList.add('nav-closed');
     $('#capsIco').innerHTML = ICON.caps; $('#capsBtn').onclick = openCaps;
+    $('#cupIco').innerHTML = ICON.cup; $('#cupBtn').onclick = () => { lsSet('obs-cup', cupOn() ? '0' : '1'); refreshCupBtn(); refreshCup(); };
+    refreshCupBtn();
     $('#officeIco').innerHTML = ICON.office;
     $('#phoneIco').innerHTML = ICON.phone; $('#phoneBtn').onclick = openPhone; $('#phoneBtn').hidden = !!st.cfg.remote;
     $('#newIco').innerHTML = ICON.plus; $('#sideIco').innerHTML = ICON.panel;

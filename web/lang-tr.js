@@ -74,7 +74,8 @@ ObsI18n.addResources('tr', {
     bad_approval: 'Onay durumu (true/false) gerekli.',
     approval_failed: 'Onay iletilemedi.'
   },
-  foot: { busy: 'Görev çalışırken sohbet değiştirilemez.', disconnected: 'Bağlantı koptu, yeniden deneniyor...', startFailed: 'Başlatılamadı: {{msg}}', writeOn: 'Yazma açık.' },
+  cup: { show: 'Kahve fincanını göster', hide: 'Kahve fincanını gizle' },
+  foot: { cwdLocked: 'Bu oturumun klasörü izinli klasörler arasında değil, mesaj gönderilmedi ({{cwd}}). Klasörü ekleyip yeniden dene.', busy: 'Görev çalışırken sohbet değiştirilemez.', disconnected: 'Bağlantı koptu, yeniden deneniyor...', startFailed: 'Başlatılamadı: {{msg}}', writeOn: 'Yazma açık.' },
   engines: {
     claude: { note: 'Headless modda izin sorulamaz: yalnızca okuma ve yanıt.' },
     codex: { note: '' },

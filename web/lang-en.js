@@ -74,7 +74,8 @@ ObsI18n.addResources('en', {
     bad_approval: 'Approval status (true/false) required.',
     approval_failed: 'Failed to send approval.'
   },
-  foot: { busy: 'You cannot switch chats while a task is running.', disconnected: 'Connection lost, retrying...', startFailed: 'Could not start: {{msg}}', writeOn: 'Write is on.' },
+  cup: { show: 'Show coffee cup', hide: 'Hide coffee cup' },
+  foot: { cwdLocked: 'The folder of this session is not among the allowed folders, message not sent ({{cwd}}). Add the folder and retry.', busy: 'You cannot switch chats while a task is running.', disconnected: 'Connection lost, retrying...', startFailed: 'Could not start: {{msg}}', writeOn: 'Write is on.' },
   engines: {
     claude: { note: 'Permissions cannot be asked in headless mode: read and answer only.' },
     codex: { note: '' },

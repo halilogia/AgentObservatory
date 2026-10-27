@@ -58,6 +58,36 @@ assert.deepStrictEqual(bot.meta, { sec: 3, tin: 5, tout: 7 });
 assert.strictEqual(bot.cwd, 'C:/x');
 assert.ok(!('_cur' in bot) && !('_tools' in bot), 'iç alanlar temizlenmeli');
 
+// 3b) regresyon: bitiş olayı olmayan tur "0 sn" göstermez; her tur kendi süresini/belirtecini taşır; araçlara t0/t1 eklenir
+const mk = (status: string) => ({
+  tasks: [
+    { task_id: 'a', agent: 'claude', model: 'm', prompt: 'bir', start_time: 1_000, status: 'completed' },
+    { task_id: 'b', agent: 'claude', model: 'm', prompt: 'iki', start_time: 100_000, status }
+  ],
+  events: [
+    { taskId: 'a', type: 'task.started', data: { prompt: 'bir' }, timestamp: 1_000 },
+    { taskId: 'a', type: 'usage.updated', data: { usage: { input_tokens: 2, output_tokens: 100 } }, timestamp: 2_000 },
+    { taskId: 'a', type: 'message.delta', data: { text: 'x' }, timestamp: 3_000 },
+    { taskId: 'a', type: 'task.completed', data: {}, timestamp: 41_000 },
+    { taskId: 'b', type: 'task.started', data: { prompt: 'iki' }, timestamp: 100_000 },
+    { taskId: 'b', type: 'tool.invoked', data: { id: 'k', name: 'Bash', input: { command: 'ls' } }, timestamp: 110_000 },
+    { taskId: 'b', type: 'tool.completed', data: { toolUseId: 'k', output: 'ok' }, timestamp: 112_500 },
+    { taskId: 'b', type: 'tool.invoked', data: { id: 'k2', name: 'Bash', input: { command: 'pwd' } }, timestamp: 113_000 },
+    { taskId: 'b', type: 'usage.updated', data: { usage: { input_tokens: 4, output_tokens: 900 } }, timestamp: 130_000 }
+  ]
+});
+const bots = (x: any, now: number) => S.toChat(x, { ...h, now }).filter((m: any) => m.r === 'b');
+let [b1, b2] = bots(mk('running'), 200_000);
+assert.deepStrictEqual(b1.meta, { sec: 40, tin: 2, tout: 100 }, 'biten tur: kendi süresi ve belirteci');
+assert.strictEqual(b2.live, true, 'çalışan oturumun bitmemiş turu canlı');
+assert.strictEqual(b2.meta, null, 'canlı turda sabit "0 sn" meta yazılmaz');
+assert.strictEqual(b2.t0, 100_000);
+assert.deepStrictEqual([b2.parts[0].t0, b2.parts[0].t1, b2.parts[1].t0, b2.parts[1].t1], [110_000, 112_500, 113_000, 0], 'araç parçalarında t0/t1');
+[, b2] = bots(mk('failed'), 200_000);
+assert.ok(!b2.live && b2.meta.sec === 30 && b2.meta.tout === 900, 'bitmemiş ama canlı olmayan tur: süre son olaya kadar (0 değil)');
+[, b2] = bots(mk('running'), 100_000 + 2 * 3600_000);
+assert.ok(!b2.live && b2.meta.sec === 30, 'bir saatten eski çalışıyor kaydı canlı sayılmaz');
+
 // 4) sayfa bağlantıları
 const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 for (const id of ['projectMenu', 'modelMenu', 'attachMenu', 'slashMenu', 'runCard', 'history']) assert.ok(html.includes(`id="${id}"`), `index.html #${id} içermeli`);
