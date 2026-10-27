@@ -835,3 +835,5 @@ select.addin { appearance: auto; }
 .rc-stop:disabled { opacity: .5; cursor: default; }
 @keyframes rcspin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .rc-spin, .rc-seg i.run { animation: none; } }
+
+#officeBtn { display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }

@@ -254,20 +254,20 @@ export function scrollFromBarRow(y: number, g: { top: number; room: number; tota
 }
 
 /** Tek ajanın ayrıntı sayfası: görevi başlatan CLI'ın kendi sohbet görünümü (skin), en altı canlı izlenir; ↑/↓ ile kaydırılır. */
-export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: number; rows: number; now: number; scroll?: number; fullPrompt?: boolean }): string {
+export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: number; rows: number; now: number; scroll?: number }): string {
   const { cols, rows, now } = opts;
   const width = Math.max(40, cols - 2); // son iki sütun: boşluk + kaydırma çubuğu
   const live = isLive(t, now);
   const out: string[] = [];
   const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
-  out.push(`${paint('bold', 'Sohbet')}  ${paint('gray', hms(now))}   ${paint('gray', '[Esc] geri  [↑↓] kaydır  [P] istem: ' + (opts.fullPrompt ?? true ? 'tam' : 'kısa') + '  [O] Ofis Yönetimi  [W] Web paneli  [Q] çıkış')}`);
+  out.push(`${paint('bold', 'Sohbet')}  ${paint('gray', hms(now))}   ${paint('gray', '[Esc] geri  [↑↓] kaydır  [O] Ofis Yönetimi  [W] Web paneli  [Q] çıkış')}`);
   out.push(`${statusGlyph(t, now)} ${tag}   ${paint('gray', t.taskId + ' · ' + fmtDuration(live ? now - t.startTime : t.durationMs))}`);
   hasLive = live;
   if (live) out.push(liveBar(t, now, width));
   out.push(paint('gray', '─'.repeat(Math.min(width, 120))));
 
   let buf = '';
-  const r = new TranscriptRenderer((x) => { buf += x; }, { color: true, fullPrompt: opts.fullPrompt ?? true });
+  const r = new TranscriptRenderer((x) => { buf += x; }, { color: true, fullPrompt: true });
   for (const e of events) {
     if (e.type === 'task.started' && !e.data?.model && t.model) e.data = { ...e.data, model: t.model };
     r.push(e);
@@ -323,7 +323,6 @@ export function runTree(args: string[]): void {
   let selectedId: string | null = null;
   let detailId: string | null = null;
   let detailScroll = 0;
-  let fullPrompt = true;
   let lastOrder: string[] = [];
   const expanded = new Set<string>();
   let statusBanner: string | null = null;
@@ -352,12 +351,12 @@ export function runTree(args: string[]): void {
     if (detailId) {
       if (detailId.startsWith('session:')) {
         const st = sessionTranscript(detailId.slice(8));
-        if (st) return renderDetail(st.task, st.events, { cols, rows, now, scroll: detailScroll, fullPrompt });
+        if (st) return renderDetail(st.task, st.events, { cols, rows, now, scroll: detailScroll });
         detailId = null;
       }
       if (detailId) {
         const t = globalSqlite.getTask(detailId);
-        if (t) return renderDetail(t, globalSqlite.getEvents(detailId), { cols, rows, now, scroll: detailScroll, fullPrompt });
+        if (t) return renderDetail(t, globalSqlite.getEvents(detailId), { cols, rows, now, scroll: detailScroll });
         detailId = null;
       }
     }
@@ -434,7 +433,6 @@ export function runTree(args: string[]): void {
         openWebPanel(8788, setStatus);
         return;
       }
-      if (k === 'p' || k === 'P') { fullPrompt = !fullPrompt; draw(); return; }
       if (k === '\x1b' || k === '\x7f' || k === '\b') { detailId = null; redraw(); }
       else if (k === '\x1b[A' || k === 'k' || k === 'K') { detailScroll += 1; draw(); }
       else if (k === '\x1b[B' || k === 'j' || k === 'J') { detailScroll = Math.max(0, detailScroll - 1); draw(); }

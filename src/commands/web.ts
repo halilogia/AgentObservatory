@@ -15,6 +15,7 @@ import { resolveBinary } from '../core/paths.ts';
 import { restoreTree, snapshotTree } from './web_snapshot.ts';
 import { readCapabilities } from './web_capabilities.ts';
 import { Remote } from './web_remote.ts';
+import { groupSessions, sessionEvents } from './web_sessions.ts';
 
 export interface ModelDef { id: string; label: string; sub: string }
 export interface EngineDef { id: 'claude' | 'codex' | 'agy' | 'opencode'; label: string; color: string; models: ModelDef[]; efforts: string[]; write: boolean; note?: string }
@@ -290,6 +291,21 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
       if (method === 'GET' && url.pathname === '/api/capabilities') {
         const q = url.searchParams.get('cwd') || '';
         json(200, readCapabilities(opts.home || os.homedir(), q && fs.existsSync(q) && allowedDir(q) ? path.resolve(q) : undefined));
+        return true;
+      }
+
+      // TUI / terminal oturumları: veritabanındaki tüm oturumlar (web'den başlatılanlar da dahil; arayüz kendi sohbetlerini ayıklar)
+      if (method === 'GET' && url.pathname === '/api/sessions') {
+        const rows = db.prepare('SELECT task_id, session_id, agent, model, status, prompt, start_time, end_time FROM tasks WHERE session_id IS NOT NULL AND parent_task_id IS NULL ORDER BY start_time DESC LIMIT 800').all() as any[];
+        json(200, groupSessions(rows, Date.now()).slice(0, 60));
+        return true;
+      }
+      if (method === 'GET' && url.pathname === '/api/session') {
+        const id = url.searchParams.get('id') || '';
+        const tasks = db.prepare('SELECT task_id, agent, model, status, prompt, start_time, end_time, error FROM tasks WHERE session_id = ? AND parent_task_id IS NULL ORDER BY start_time ASC, rowid ASC').all(id) as any[];
+        if (!tasks.length) { json(404, { code: 'no_session', error: 'oturum yok' }); return true; }
+        const rawEvents = db.prepare('SELECT task_id, type, data, timestamp FROM events WHERE session_id = ? AND parent_task_id IS NULL ORDER BY rowid ASC').all(id) as any[];
+        json(200, { id, tasks, events: sessionEvents(tasks, rawEvents) });
         return true;
       }
 

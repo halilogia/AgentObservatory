@@ -346,6 +346,7 @@
       if (open) mine.forEach((c) => box.appendChild(chatRow(c, true)));
     });
     const free = list.filter((c) => !c.project || !projects.some((p) => p.id === c.project));
+    renderTermSessions(box, list);
     if (!free.length) return;
     const day = (ts) => { const d = new Date(ts), n = new Date(); const diff = Math.floor((new Date(n.getFullYear(), n.getMonth(), n.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5); return diff <= 0 ? t('history.today') : diff === 1 ? t('history.yesterday') : t('history.older'); };
     let last = '';
@@ -353,6 +354,37 @@
       const g = day(c.updated); if (g !== last) { box.appendChild(el('div', 'hgroup', g)); last = g; }
       box.appendChild(chatRow(c, false));
     });
+  }
+  // ---------- terminal (TUI) oturumları: veritabanından okunur; web'in kendi sohbetleri (localStorage) ayıklanır ----------
+  let termSessions = [];
+  async function refreshTermSessions() {
+    try { termSessions = await api('/api/sessions'); renderHistory(); } catch { /* sunucu yok */ }
+  }
+  let termTimer = 0;
+  function scheduleTermRefresh() { if (!termTimer) termTimer = setTimeout(() => { termTimer = 0; refreshTermSessions(); }, 3000); }
+  function renderTermSessions(box, localChats) {
+    const known = new Set(localChats.map((c) => c.session && c.session.id).filter(Boolean));
+    const list = termSessions.filter((s) => !known.has(s.id));
+    if (!list.length) return;
+    box.appendChild(el('div', 'hgroup', t('term.title')));
+    list.slice(0, 30).forEach((s) => {
+      const item = el('div', 'hitem' + (chat && chat.termId === s.id ? ' on' : ''));
+      const b = el('button', 'hmain'); b.type = 'button'; b.title = s.title;
+      const dot = el('span', 'dot'); const e = engineById(s.agent); dot.style.setProperty('--c', e ? e.color : 'var(--faint)');
+      b.append(dot, el('span', 't', smartTitle(s.title) || t('history.untitled')), el('span', 'when', s.running ? t('term.live') : when(s.end)));
+      b.onclick = () => loadTermSession(s);
+      item.appendChild(b); box.appendChild(item);
+    });
+  }
+  async function loadTermSession(s) {
+    if (st.running) { $('#foot').textContent = t('foot.busy'); return; }
+    setOfficeView(false);
+    let data;
+    try { data = await api('/api/session?id=' + encodeURIComponent(s.id)); } catch (err) { $('#foot').textContent = err.info ? apiMsg(err) : err.message; return; }
+    const colorOf = (a) => { const e = engineById(a); return e ? e.color : '#888'; };
+    const messages = ObsSessions.toChat(data, { toolKind, toolSummary, color: colorOf });
+    chat = { id: ObsStore.newId(), termId: s.id, title: smartTitle(s.title), created: s.start, updated: Date.now(), session: { id: s.id, engine: s.agent, cwd: '' }, project: null, messages };
+    renderThread(); renderHistory(); closeNavOnMobile(); scrollDown(true); onScroll();
   }
   function clearThread() { $('#thread').replaceChildren(); views.clear(); }
   function showThread(has) {
@@ -889,7 +921,7 @@
     const sim = officeSim(); if (sim) sim.feed(ev);
     scheduleDrawer();
     const v = views.get(ev.taskId);
-    if (!v) { early.push(ev); if (early.length > 600) early = early.slice(-300); return; }
+    if (!v) { early.push(ev); if (early.length > 600) early = early.slice(-300); if (ev.type === 'task.started' || ev.type === 'task.completed') scheduleTermRefresh(); return; }
     if (ev.sessionId && !v.done && chat) chat.session = { id: ev.sessionId, engine: v.rec.engine, cwd: v.rec.cwd };
     const d = ev.data || {};
     if (ev.type === 'message.delta') addText(v, String(d.text || ''));
@@ -1389,6 +1421,7 @@
     document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeMenus(); });
     window.addEventListener('resize', () => { ['#modelMenu', '#projectMenu', '#attachMenu', '#slashMenu'].forEach((s) => { if (!$(s).hidden) placeMenu($(s)); }); });
     setInterval(refreshConfig, 60000);
+    refreshTermSessions(); setInterval(refreshTermSessions, 30000);
     setInterval(refreshCup, 250);
     connect(); $('#prompt').focus();
   }
