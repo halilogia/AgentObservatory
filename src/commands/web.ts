@@ -272,11 +272,8 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         const isBinary = ['.png', '.ico', '.webp'].includes(ext);
         let body: string | Buffer = isBinary ? fs.readFileSync(path.join(webDir, file)) : fs.readFileSync(path.join(webDir, file), 'utf8');
         if (typeof body === 'string' && file === 'index.html') body = body.replace('__OBS_TOKEN__', token);
-        const isOffice = file === 'office.html';
-        const xFrameOptions = isOffice ? 'SAMEORIGIN' : 'DENY';
-        const csp = isOffice
-          ? "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
-          : "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+        const xFrameOptions = 'DENY';
+        const csp = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
         res.writeHead(200, {
           'Content-Type': MIME[ext] || 'text/plain',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
