@@ -92,6 +92,12 @@ try {
   const nwj = await nw.json() as any;
   assert.strictEqual(nwj.code, 'no_write', 'hata kodu çeviri için dönmeli'); assert.strictEqual(nwj.params.engine, 'Antigravity (agy)');
   assert.strictEqual(((await (await post('/api/run', { ...ok, cwd: os.homedir() })).json()) as any).code, 'cwd_forbidden');
+  { // izinsiz bir yol istenirse klasör OLUŞTURULMAMALI (izin kontrolü mkdir'den önce gelir)
+    const stray = path.join(os.tmpdir(), 'obs-stray-' + Date.now(), 'deep', 'dir');
+    const res = await post('/api/run', { ...ok, cwd: stray });
+    assert.strictEqual(((await res.json()) as any).code, 'cwd_forbidden');
+    assert.ok(!fs.existsSync(stray) && !fs.existsSync(path.dirname(path.dirname(stray))), 'izinsiz yolda klasör oluşturulmamalı');
+  }
   assert.strictEqual(((await (await post('/api/run', { ...ok }, { 'x-observatory-token': 'yanlis' })).json()) as any).code, 'bad_token');
   assert.strictEqual((await post('/api/run', { ...ok, engine: 'claude', model: 'sonnet', mode: 'write' })).status, 400, 'claude yazma kipi yok');
   assert.strictEqual((await post('/api/run', { ...ok, model: 'yok' })).status, 400, 'bilinmeyen model');

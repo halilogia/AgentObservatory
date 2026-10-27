@@ -416,6 +416,8 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         if (dev && write && !dev.write) return fail(403, 'remote_write_forbidden', 'bu cihazdan yazma izni kapalı');
         if (write && !engine.write) return fail(400, 'no_write', `${engine.label} yazma kipini desteklemiyor`, { engine: engine.label });
         const cwd = typeof b.cwd === 'string' && b.cwd ? b.cwd : (folders[0] || roots[0] || scratchDir);
+        // izin ÖNCE: izinli köklerin dışında klasör oluşturulmaz (eskiden mkdir izin kontrolünden önce çalışıyordu)
+        if (!allowedDir(cwd)) return fail(400, 'cwd_forbidden', 'çalışma klasörü izinli köklerin dışında');
         if (!fs.existsSync(cwd)) {
           try { fs.mkdirSync(cwd, { recursive: true }); }
           catch (e: any) { return fail(400, 'folder_missing', `klasör oluşturulamadı: ${e.message}`); }
