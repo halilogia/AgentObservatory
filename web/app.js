@@ -385,6 +385,18 @@
     { id: 'opencode', dot: '⚫', name: 'OpenCode', role: 'Toplu Veri Motoru & ETL' }
   ];
   let officeActive = false;
+  let office = null;
+  function officeSim() { // tuval yalnızca bir kez bağlanır; olaylar panel kapalıyken de durumu günceller
+    if (office || !window.ObsOffice) return office;
+    const cv = $('#officeCanvas'); if (!cv) return null;
+    office = ObsOffice.mount(cv, (id) => {
+      const idx = DRAWER_AGENTS.findIndex((a) => a.id === id);
+      const cards = $('#agentCards') ? $('#agentCards').children : [];
+      Array.prototype.forEach.call(cards, (c, i) => c.classList.toggle('pick', i === idx));
+      if (cards[idx]) cards[idx].scrollIntoView({ block: 'nearest' });
+    });
+    return office;
+  }
   let drawerTimer = 0;
   function agentInfo(id, chats) {
     let last = null; let tin = 0; let tout = 0; let active = false;
@@ -430,6 +442,7 @@
     officeActive = !!show;
     const drawer = $('#officeView'); const scrim = $('#drawerScrim'); const btn = $('#officeBtn');
     if (officeActive) renderDrawer();
+    const sim = officeSim(); if (sim) { if (officeActive) sim.start(); else sim.stop(); }
     if (drawer) { drawer.classList.toggle('open', officeActive); drawer.setAttribute('aria-hidden', officeActive ? 'false' : 'true'); }
     if (scrim) scrim.hidden = !officeActive;
     if (btn) btn.classList.toggle('on', officeActive);
@@ -820,6 +833,7 @@
 
   // ---------- olay akışı ----------
   function onEvent(ev) {
+    const sim = officeSim(); if (sim) sim.feed(ev);
     scheduleDrawer();
     const v = views.get(ev.taskId);
     if (!v) { early.push(ev); if (early.length > 600) early = early.slice(-300); return; }
