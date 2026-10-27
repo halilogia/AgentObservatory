@@ -26,7 +26,7 @@ export const TEAMS: Array<{ id: TeamId; color: string; labelKey: string }> = [
   { id: 'kirmizi', color: '#E5484D', labelKey: 'team.kirmizi' },
   { id: 'siyah', color: '#3A3A3C', labelKey: 'team.siyah' }
 ];
-export interface EngineDef { id: 'claude' | 'codex' | 'agy' | 'opencode'; team: TeamId; label: string; color: string; models: ModelDef[]; efforts: string[]; write: boolean; note?: string }
+export interface EngineDef { id: 'claude' | 'codex' | 'agy' | 'opencode' | 'commandcode'; team: TeamId; label: string; color: string; models: ModelDef[]; efforts: string[]; write: boolean; note?: string }
 
 export const ENGINES: EngineDef[] = [
   { id: 'claude', team: 'turuncu', label: 'Claude Code', color: '#D97757', write: false, efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
@@ -41,6 +41,8 @@ export const ENGINES: EngineDef[] = [
   { id: 'opencode', team: 'siyah', label: 'OpenCode', color: '#AA82FF', write: true, efforts: [],
     note: 'engines.opencode.note',
     models: [{ id: 'opencode/big-pickle', label: 'Big Pickle', sub: 'models.free' }] },
+  { id: 'commandcode', team: 'siyah', label: 'Command Code', color: '#3A3A3C', write: false, efforts: [],
+    note: 'engines.commandcode.note', models: [{ id: '', label: 'Command Code', sub: 'models.cliDefault' }] },
   { id: 'agy', team: 'mavi', label: 'Antigravity (agy)', color: '#4285F4', write: false, efforts: ['low', 'high'],
     note: 'engines.agy.note',
     models: [{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', sub: 'models.gemini38flash' }] }

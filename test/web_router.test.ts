@@ -10,7 +10,7 @@ const cur = { engine: 'agy', model: 'gemini-3.8-flash' };
 const NOW = 1e12;
 
 // takım meta bilgisi: her motorun takımı tanımlı, renk + dil anahtarı tek sabitte
-assert.deepStrictEqual(ENGINES.map((e) => [e.id, e.team]), [['claude', 'turuncu'], ['codex', 'kirmizi'], ['opencode', 'siyah'], ['agy', 'mavi']]);
+assert.deepStrictEqual(ENGINES.map((e) => [e.id, e.team]), [['claude', 'turuncu'], ['codex', 'kirmizi'], ['opencode', 'siyah'], ['commandcode', 'siyah'], ['agy', 'mavi']]);
 for (const e of ENGINES) assert.ok(TEAMS.some((t) => t.id === e.team), 'bilinmeyen takım: ' + e.team);
 assert.ok(TEAMS.every((t) => /^#[0-9A-F]{6}$/i.test(t.color) && t.labelKey === 'team.' + t.id));
 
@@ -33,6 +33,9 @@ assert.strictEqual(pick('refactor et', {}, eng({ claude: { installed: false } })
 assert.strictEqual(pick('refactor et', {}, eng({ claude: { limitedUntil: NOW + 1000 } })).engine, 'agy', 'limitli: mevcut seçime düşer');
 assert.strictEqual(pick('refactor et', {}, eng({ claude: { limitedUntil: NOW - 1000 } })).engine, 'claude', 'süresi geçen limit sayılmaz');
 assert.strictEqual(pick('incele ve düzelt', {}, eng({ codex: { installed: false } })).engine, 'claude', 'sıradaki uyan kurala geçer');
+const blackFallback = pick('toplu çeviri', { write: true }, eng({ opencode: { installed: false } }));
+assert.strictEqual(blackFallback.engine, 'commandcode');
+assert.strictEqual(blackFallback.mode, 'read', 'Command Code fallback preserves read-only mode');
 
 // geri düşme
 const none = pick('merhaba, nasılsın?');

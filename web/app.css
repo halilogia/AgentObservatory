@@ -854,6 +854,9 @@ select.addin { appearance: auto; }
 .msg[data-skin="agy"] { --sk: #2f6fdc; --sk-tool: #1f9ab8; }
 :root[data-theme="dark"] .msg[data-skin="agy"] { --sk: #4285f4; --sk-tool: #50c8e6; }
 .msg[data-skin="opencode"] { --sk: #7d55e0; --sk-tool: #7d55e0; }
+.msg[data-skin="commandcode"] { --sk: #3a3a3c; --sk-tool: #3a3a3c; }
+:root[data-theme="dark"] .msg[data-skin="commandcode"] { --sk: #c9c9ce; --sk-tool: #c9c9ce; }
+.msg[data-skin="commandcode"] .tool summary { border-left: 2px solid var(--sk); padding-left: .9em; }
 :root[data-theme="dark"] .msg[data-skin="opencode"] { --sk: #aa82ff; --sk-tool: #aa82ff; }
 .msg[data-skin="generic"] { --sk: var(--muted); --sk-tool: var(--muted); }
 .iconbtn.off#skinBtn { opacity: .55; }

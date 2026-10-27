@@ -6,7 +6,8 @@ const S = (globalThis as any).ObsSkins;
 assert.ok(S, 'ObsSkins yüklenmeli');
 
 // motor -> skin
-for (const id of ['claude', 'codex', 'agy', 'opencode']) assert.strictEqual(S.skinFor(id), id);
+for (const id of ['claude', 'codex', 'agy', 'opencode', 'commandcode']) assert.strictEqual(S.skinFor(id), id);
+assert.deepStrictEqual(S.BADGES.commandcode, { name: 'Command Code', team: 'siyah', symbol: '⚫' });
 assert.strictEqual(S.skinFor('Claude'), 'claude');
 assert.strictEqual(S.skinFor('gemini'), 'generic');
 assert.strictEqual(S.skinFor(undefined), 'generic');
@@ -29,6 +30,7 @@ assert.strictEqual(full('agy', bash), 'Bash npm test --silent');
 assert.strictEqual(full('opencode', bash), '\u2190 Bash npm test --silent');
 assert.strictEqual(full('opencode', S.describe('read', { path: 'a.ts' })), '\u2190 Read a.ts');
 assert.strictEqual(full('generic', bash), '[Bash] npm test --silent');
+assert.strictEqual(full('commandcode', bash), '› Bash npm test --silent');
 assert.strictEqual(full('codex', S.describe('Mystery', { a: 1 })), 'Used Mystery {"a":1}');
 
 // sonuç kısaltma

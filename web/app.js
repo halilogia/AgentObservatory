@@ -463,7 +463,8 @@
     { id: 'agy', dot: '🔵', name: 'Antigravity', role: 'Sistem Mimarisi & Koordinasyon' },
     { id: 'claude', dot: '🟠', name: 'Claude Code', role: 'Ağır Kodlama, Test & Refactor' },
     { id: 'codex', dot: '🔴', name: 'Codex CLI', role: 'Statik Güvenlik & Red-Team Denetimi' },
-    { id: 'opencode', dot: '⚫', name: 'OpenCode', role: 'Toplu Veri Motoru & ETL' }
+    { id: 'opencode', dot: '⚫', name: 'OpenCode', role: 'Toplu Veri Motoru & ETL' },
+    { id: 'commandcode', dot: ObsSkins.BADGES.commandcode.symbol, name: ObsSkins.BADGES.commandcode.name, role: t('team.siyah') }
   ];
   let officeActive = false;
   let office = null;

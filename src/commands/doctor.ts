@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { resolveBinary } from '../core/paths.ts';
 import { classifyFailure } from '../core/failure.ts';
 
-const ENGINES = ['claude', 'codex', 'agy', 'opencode', 'freebuff'] as const;
+const ENGINES = ['claude', 'codex', 'agy', 'opencode', 'freebuff', 'commandcode'] as const;
 
 function versionOf(exe: string): string {
   // .cmd dosyaları Node'da kabuk olmadan çalışmaz
@@ -36,7 +36,7 @@ export async function runDoctor(args: string[]): Promise<void> {
 
   if (live) {
     const { globalRunner } = await import('../runtime/agent_runner.ts');
-    for (const name of found.filter((n) => ['claude', 'codex', 'agy', 'opencode'].includes(n))) {
+    for (const name of found.filter((n) => ['claude', 'codex', 'agy', 'opencode', 'commandcode'].includes(n))) {
       const row = rows.find((r) => r[0] === name)!;
       try {
         const res = await globalRunner.runTask({

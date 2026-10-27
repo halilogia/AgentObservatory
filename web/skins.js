@@ -2,7 +2,8 @@
 // Saf mantık: DOM yok. Mantık src/ui/skins.ts ile uyumludur (birebir kopya değil, web'e uyarlanmıştır).
 (function (root) {
   'use strict';
-  var IDS = ['claude', 'codex', 'agy', 'opencode', 'generic'];
+  var IDS = ['claude', 'codex', 'agy', 'opencode', 'commandcode', 'generic'];
+  var BADGES = { commandcode: { name: 'Command Code', team: 'siyah', symbol: '⚫' } };
   var RESULT_LINES = 3, RESULT_WIDTH = 140;
 
   /** motor kimliği -> skin kimliği */
@@ -53,6 +54,7 @@
       case 'claude': return { name: v.name, rest: '(' + v.summary + ')' };
       case 'codex': return { name: VERB[v.kind] || 'Used', rest: ' ' + (v.kind === 'other' ? v.name + ' ' : '') + v.summary };
       case 'agy': return { name: v.name, rest: ' ' + v.summary };
+      case 'commandcode': return { name: '› ' + v.name, rest: ' ' + v.summary };
       case 'opencode': return { name: '← ' + (v.kind === 'exec' ? 'Bash' : cap(v.name)), rest: ' ' + v.summary };
       default: return { name: '[' + v.name + ']', rest: ' ' + v.summary };
     }
@@ -72,5 +74,5 @@
 
   var ICON = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M4.5 6.5 6.5 8l-2 1.5M8 10h3"/></svg>';
 
-  root.ObsSkins = { IDS: IDS, skinFor: skinFor, describe: describe, label: label, result: result, moreText: moreText, ICON: ICON };
+  root.ObsSkins = { IDS: IDS, BADGES: BADGES, skinFor: skinFor, describe: describe, label: label, result: result, moreText: moreText, ICON: ICON };
 })(typeof window !== 'undefined' ? window : globalThis);

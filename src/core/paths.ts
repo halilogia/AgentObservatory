@@ -9,6 +9,23 @@ export function resolveBinary(name: string): string {
   }
 
   const home = os.homedir();
+  if (name === 'commandcode') {
+    // Prefer the requested name; also accept the official command-code package binary.
+    const names = process.platform === 'win32'
+      ? ['commandcode.exe', 'commandcode.cmd', 'commandcode', 'command-code.exe', 'command-code.cmd', 'command-code']
+      : ['commandcode', 'command-code'];
+    const dirs = [
+      ...(process.env.PATH || '').split(path.delimiter).filter(Boolean).map((p) => p.replace(/^"|"$/g, '')),
+      ...(process.platform === 'win32' ? [path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'npm')] : [])
+    ];
+    for (const binary of names) {
+      for (const dir of dirs) {
+        const candidate = path.resolve(dir, binary);
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+      }
+    }
+    return 'commandcode';
+  }
   const candidates: Record<string, string[]> = {
     claude: [
       path.join(home, '.local', 'bin', 'claude.exe'),

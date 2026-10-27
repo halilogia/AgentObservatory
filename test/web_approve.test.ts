@@ -1,8 +1,16 @@
 import assert from 'node:assert';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { startWeb } from '../src/commands/web.ts';
 import type { RunnerLike } from '../src/commands/web.ts';
+import { SqliteStore } from '../src/core/sqlite_store.ts';
 
 console.log('🧪 Testing /api/approve endpoint and interactive approval...');
+
+const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'obs-appr-'));
+const testDbPath = path.join(testDir, 'test.sqlite');
+const store = new SqliteStore(testDbPath);
 
 let lastApproved: { taskId: string; approved: boolean } | null = null;
 const mockRunner: RunnerLike = {
@@ -19,6 +27,7 @@ const mockRunner: RunnerLike = {
 
 const { server, token, port } = startWeb({
   port: 0,
+  dbPath: testDbPath,
   runner: mockRunner,
   roots: [process.cwd()]
 });

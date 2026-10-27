@@ -11,6 +11,7 @@ import { CodexAdapter } from '../adapters/codex_adapter.ts';
 import { AgyAdapter } from '../adapters/agy_adapter.ts';
 import { OpenCodeAdapter } from '../adapters/opencode_adapter.ts';
 import { FreebuffAdapter } from '../adapters/freebuff_adapter.ts';
+import { CommandCodeAdapter } from '../adapters/commandcode_adapter.ts';
 import { validateCwd } from '../core/paths.ts';
 import { autoLaunchTui } from './tui_launcher.ts';
 
@@ -48,6 +49,7 @@ export class AgentRunner {
     this.registerAdapter(new AgyAdapter());
     this.registerAdapter(new OpenCodeAdapter());
     this.registerAdapter(new FreebuffAdapter());
+    this.registerAdapter(new CommandCodeAdapter());
   }
 
   registerAdapter(adapter: BaseAdapter): void {
@@ -108,7 +110,7 @@ export class AgentRunner {
       }
 
       // OpenCode may keep waiting for stdin EOF after completing a prompt passed in argv.
-      if (adapter.name === 'opencode') child.stdin?.end();
+      if (adapter.name === 'opencode' || adapter.name === 'commandcode') child.stdin?.end();
 
       // Record task.started WITH child.pid for process tree tracking
       this.store.recordEvent(createEvent({

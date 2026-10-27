@@ -7,6 +7,8 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/) standardına day
 
 ## [Unreleased]
 
+- Add Command Code (`commandcode`) to the Black Team, runner, doctor, MCP tools, and web engine picker. Parse native NDJSON events, preserve exit failures and sessions, and launch Windows npm shims without shell interpolation. The web picker uses read-only plan mode and the CLI-configured model; CLI/MCP callers can explicitly opt into `--yolo` via `dangerouslySkipPermissions` outside read-only mode.
+
 - **Canlı AI Ofis Simülasyonu (2026-10-27):** `web/office_sim.js` (saf Canvas 2D, CSP uyumlu) Ajan Operasyon Panosu çekmecesine eklendi. SSE olayları animasyona eşlenir: yazma/komut araçları → masada klavye, okuma/arama → kitaplık, `permission.requested` → ünlem rozeti, `task.completed` → yeşil onay + beyaz tahta sayacı, boşta → kahve/su alanı. Ajana tıklayınca kartı vurgulanır. Test: `test/web_office_sim.test.ts`.
 - **Nexus AI 2D & 3D Ofis Entegrasyonu ve Stabilizasyonu (2026-10-26):**
   - **TUI [O] Tuşu Çökme Onarımı (`office_opener.ts`):** Windows `cmd.exe start` argüman ayrıştırmasındaki emoji uyumsuzlukları temiz ASCII başlık (`Nexus AI 2D Office`) ve `/D` çalışma dizini parametresi ile giderildi. ESM modülünde `fileURLToPath(import.meta.url)` üzerinden güvenli yol çözümlemesi ve `child.on('error')` ile tam hata yakalama garantisi sağlandı.

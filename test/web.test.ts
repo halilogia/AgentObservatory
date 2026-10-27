@@ -65,8 +65,8 @@ try {
 
   // yapılandırma
   const cfg = await (await fetch(base + '/api/config')).json() as any;
-  assert.deepStrictEqual(cfg.engines.map((e: any) => e.id), ['claude', 'codex', 'opencode', 'agy'], 'dört motor');
-  assert.deepStrictEqual(cfg.engines.map((e: any) => e.team), ['turuncu', 'kirmizi', 'siyah', 'mavi'], 'motor takımları');
+  assert.deepStrictEqual(cfg.engines.map((e: any) => e.id), ['claude', 'codex', 'opencode', 'commandcode', 'agy'], 'five engines');
+  assert.deepStrictEqual(cfg.engines.map((e: any) => e.team), ['turuncu', 'kirmizi', 'siyah', 'siyah', 'mavi'], 'motor takımları');
   assert.deepStrictEqual(cfg.teams.map((t: any) => t.id), ['turuncu', 'mavi', 'kirmizi', 'siyah'], 'takım meta bilgisi /api/config içinde');
   assert.ok(cfg.teams.every((t: any) => /^#[0-9A-Fa-f]{6}$/.test(t.color) && t.labelKey === 'team.' + t.id));
   assert.ok(cfg.projects.some((p: any) => p.name === 'proj'), 'proje listesi');
@@ -162,6 +162,22 @@ try {
     assert.strictEqual((await c('/api/snapshot', { cwd: path.join(root, 'proj') })).snap, null, 'git deposu değil: anlık görüntü yok');
     assert.strictEqual((await c('/api/restore', { cwd: path.join(root, 'proj'), snap: 'zzz' })).code, 'bad_snap');
     assert.strictEqual((await post('/api/snapshot', { cwd: root }, { 'x-observatory-token': 'yanlis' })).status, 403);
+  }
+  // Command Code is accepted by the actual HTTP validation and retains read-only/session options.
+  {
+    const previous = process.env.COMMANDCODE_BIN;
+    process.env.COMMANDCODE_BIN = process.execPath;
+    try {
+      const before = calls.length;
+      const response = await post('/api/run', { engine: 'commandcode', model: '', prompt: 'review', mode: 'read', cwd: path.join(root, 'proj'), sessionId: 'commandcode-session' });
+      assert.strictEqual(response.status, 200, JSON.stringify(await response.json()));
+      assert.strictEqual(calls.length, before + 1);
+      assert.strictEqual(calls.at(-1).agent, 'commandcode');
+      assert.strictEqual(calls.at(-1).sandbox, 'read-only');
+      assert.strictEqual(calls.at(-1).dangerouslySkipPermissions, false);
+      assert.strictEqual(calls.at(-1).sessionId, 'commandcode-session');
+      assert.strictEqual((await post('/api/run', { engine: 'commandcode', model: '', prompt: 'x', mode: 'write' })).status, 400);
+    } finally { if (previous === undefined) delete process.env.COMMANDCODE_BIN; else process.env.COMMANDCODE_BIN = previous; }
   }
   console.log('✔ web: arayüz + CSP, yapılandırma, jeton/Origin/Sec-Fetch-Site korumaları, doğrulamalar, gönder -> SSE');
 } finally {

@@ -17,7 +17,7 @@ const TASK_LIMIT = 80;
 
 type Color = Parameters<typeof paint>[0];
 const AGENT_COLOR: Record<string, Color> = {
-  claude: 'magenta', codex: 'cyan', agy: 'blue', opencode: 'yellow', hermes: 'green', ollama: 'white', freebuff: 'white'
+  claude: 'magenta', codex: 'cyan', agy: 'blue', opencode: 'yellow', commandcode: 'gray', hermes: 'green', ollama: 'white', freebuff: 'white'
 };
 
 function fmtDuration(ms: number): string {
@@ -98,7 +98,7 @@ function nodeLines(t: TaskSummary, prefix: string, childPrefix: string, cols: nu
 
 /** Takım rozeti: renkli nokta + takım adı (emoji değil). Takımlar: turuncu=claude, mavi=agy, kırmızı=codex, siyah=opencode. */
 const AGENT_TEAM: Record<string, { name: string; color: Color }> = {
-  claude: { name: 'turuncu', color: 'yellow' }, agy: { name: 'mavi', color: 'blue' }, codex: { name: 'kırmızı', color: 'red' }, opencode: { name: 'siyah', color: 'gray' }
+  claude: { name: 'turuncu', color: 'yellow' }, agy: { name: 'mavi', color: 'blue' }, codex: { name: 'kırmızı', color: 'red' }, opencode: { name: 'siyah', color: 'gray' }, commandcode: { name: 'siyah', color: 'gray' }
 };
 export function teamBadge(agent: string): string {
   const tm = AGENT_TEAM[agent];

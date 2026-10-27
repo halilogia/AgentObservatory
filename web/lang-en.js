@@ -81,12 +81,14 @@ ObsI18n.addResources('en', {
   ctx: { btn: 'Context', title: 'Context info', engine: 'Engine and team', model: 'Model', effort: 'Effort', cwd: 'Working folder', session: 'Session id', messages: 'Messages', tokens: 'Tokens (estimate)', tokensVal: 'in {{tin}} · out {{tout}}', cache: 'Cache (estimate)', cacheEmpty: 'none yet', cacheOff: 'Claude Code only', cacheHot: 'warm, {{time}} left', cacheCold: 'gone cold', none: '-', auto: 'Automatic routing is on', close: 'Close' },
   foot: { cwdLocked: 'The folder of this session is not among the allowed folders, message not sent ({{cwd}}). Add the folder and retry.', busy: 'You cannot switch chats while a task is running.', disconnected: 'Connection lost, retrying...', startFailed: 'Could not start: {{msg}}', writeOn: 'Write is on.' },
   engines: {
+    commandcode: { note: 'Reads files and answers in plan mode.' },
     claude: { note: 'Permissions cannot be asked in headless mode: read and answer only.' },
     codex: { note: '' },
     opencode: { note: 'In write mode it edits files but does not run shell commands.' },
     agy: { note: 'No write permission in headless mode. Use sparingly.' }
   },
   models: {
+    cliDefault: 'Model configured in the CLI',
     sonnet: 'Everyday coding and agent work',
     opus: 'Flagship for complex work',
     haiku: 'Fastest for quick answers',

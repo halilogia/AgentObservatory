@@ -81,12 +81,14 @@ ObsI18n.addResources('tr', {
   ctx: { btn: 'Bağlam', title: 'Bağlam bilgisi', engine: 'Motor ve takım', model: 'Model', effort: 'Çaba', cwd: 'Çalışma klasörü', session: 'Oturum kimliği', messages: 'Mesaj sayısı', tokens: 'Token (tahmini)', tokensVal: 'giriş {{tin}} · çıkış {{tout}}', cache: 'Önbellek (tahmini)', cacheEmpty: 'henüz yok', cacheOff: 'yalnızca Claude Code', cacheHot: 'sıcak, {{time}} kaldı', cacheCold: 'soğudu', none: '-', auto: 'Otomatik yönlendirme açık', close: 'Kapat' },
   foot: { cwdLocked: 'Bu oturumun klasörü izinli klasörler arasında değil, mesaj gönderilmedi ({{cwd}}). Klasörü ekleyip yeniden dene.', busy: 'Görev çalışırken sohbet değiştirilemez.', disconnected: 'Bağlantı koptu, yeniden deneniyor...', startFailed: 'Başlatılamadı: {{msg}}', writeOn: 'Yazma açık.' },
   engines: {
+    commandcode: { note: 'Plan modunda dosyaları okur ve yanıt verir.' },
     claude: { note: 'Headless modda izin sorulamaz: yalnızca okuma ve yanıt.' },
     codex: { note: '' },
     opencode: { note: 'Yazma kipinde dosya düzenler, kabuk komutu çalıştırmaz.' },
     agy: { note: 'Headless modda yazma izni yok. Düşük hacimde kullan.' }
   },
   models: {
+    cliDefault: 'CLI içinde seçili model',
     sonnet: 'Günlük kodlama ve ajan işleri',
     opus: 'Karmaşık işler için amiral gemisi',
     haiku: 'Hızlı yanıtlar',
