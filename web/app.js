@@ -810,6 +810,7 @@
     if (withOut && part.out) {
       renderToolOutput(det, part);
     }
+    if (part.subs && part.subs.length) [...part.subs].reverse().forEach((s) => det.after(ObsSubagents.build(s, I18N.language, document))); // Task/Agent satırının altına alt ajan blokları
     return det;
   }
   function addTool(v, d) {
@@ -945,6 +946,7 @@
   const RC_GLYPH = { term: '$', diff: '~', read: '·', task: '>', generic: '•' };
   function rcLabel(v) {
     const tr = ObsRunCard.trailing(v.steps);
+    if (v.rec && v.rec.subRun) return ObsSubagents.text('live', I18N.language, { n: v.rec.subRun }); // canlı oturumda çalışan alt ajan sayısı
     if (!tr.kind) return t('rc.start');
     return tr.kind === 'read' ? t('rc.read', { count: tr.count }) : t('rc.' + tr.kind);
   }
