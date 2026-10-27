@@ -223,7 +223,7 @@ function wrapAnsi(line: string, width: number): string[] {
 /** Tek ajanın ayrıntı sayfası: görevi başlatan CLI'ın kendi sohbet görünümü (skin), en altı canlı izlenir; ↑/↓ ile kaydırılır. */
 export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: number; rows: number; now: number; scroll?: number; fullPrompt?: boolean }): string {
   const { cols, rows, now } = opts;
-  const width = Math.max(40, cols - 1);
+  const width = Math.max(40, cols - 2); // son iki sütun: boşluk + kaydırma çubuğu
   const live = isLive(t, now);
   const out: string[] = [];
   const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
@@ -252,7 +252,8 @@ export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: 
     const top = Math.round((start / (lines.length - room)) * (room - thumb));
     view.forEach((l, i) => {
       const on = i >= top && i < top + thumb;
-      view[i] = l + `\x1b[${cols}G` + (on ? paint('white', '┃') : paint('gray', '│'));
+      // önce satır sonunu sil, sonra çubuğu sondan bir önceki sütuna koy (son sütunda yazma sonrası silme çubuğu da silerdi)
+      view[i] = l + '\x1b[0m\x1b[K' + `\x1b[${cols - 1}G` + (on ? paint('white', '┃') : paint('gray', '│'));
     });
   }
   out.push(...view);
