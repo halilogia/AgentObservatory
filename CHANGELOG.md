@@ -7,6 +7,8 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/) standardına day
 
 ## [Unreleased]
 
+- **Dokümantasyon Sadeleştirmesi:** ROADMAP.md makro kilometre taşlarına ve uzun vadeli vizyona indirgendi; aktif sprint ve görev takibi tasks.md'ye devredildi.
+
 - **Mission Control Domain & SQLite Persistence (Faz 1):** Added core domain types (src/core/mission_types.ts) for Mission, MissionContract, TaskNode, AgentRun, and AgentCapability. Extended SQLite store (src/core/sqlite_store.ts) with missions, mission_contracts, mission_tasks, and gent_runs tables and persistence methods. Added unit test suite 	est/mission_domain.test.ts (31 test suites passing 100%).
 
 - Add Command Code (`commandcode`) to the Black Team, runner, doctor, MCP tools, and web engine picker. Parse native NDJSON events, preserve exit failures and sessions, and launch Windows npm shims without shell interpolation. The web picker uses read-only plan mode and the CLI-configured model; CLI/MCP callers can explicitly opt into `--yolo` via `dangerouslySkipPermissions` outside read-only mode.
