@@ -11,6 +11,7 @@
 <link rel="shortcut icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="stylesheet" href="/app.css?v=1.0.3">
+<link rel="stylesheet" href="/subagents.css?v=1.0.3">
 <script src="/theme.js?v=1.0.3"></script>
 </head>
 <body>
@@ -29,8 +30,8 @@
       <div class="brand">Agent Observatory</div>
       <button class="crumb" id="crumb" type="button" hidden></button>
       <div class="spacer"></div>
-      <canvas class="cup" id="cup" width="14" height="10" hidden></canvas>
       <button class="iconbtn" id="cupBtn" type="button" aria-pressed="true"><span class="ico" id="cupIco"></span></button>
+      <button class="iconbtn" id="skinBtn" type="button" aria-pressed="false"><span class="ico" id="skinIco"></span></button>
       <button class="iconbtn" id="officeBtn" type="button" title="Ajan Operasyon Panosu" data-i18n-attr="title:nav.office"><span class="ico" id="officeIco"></span></button>
       <button class="iconbtn" id="phoneBtn" type="button"><span class="ico" id="phoneIco"></span></button>
       <button class="iconbtn" id="capsBtn" type="button"><span class="ico" id="capsIco"></span></button>
@@ -64,11 +65,14 @@
           </div>
           <div class="right">
             <div class="think" id="think" role="radiogroup" hidden></div>
+            <canvas class="cup" id="cup" width="14" height="10" hidden></canvas>
+            <button class="pill ctx" id="ctxBtn" type="button" aria-haspopup="dialog"><span id="ctxLabel"></span></button>
             <button class="pill model" id="modelBtn" type="button" aria-haspopup="listbox"><span class="dot" id="modelDot"></span><span id="modelLabel"></span><span class="ico chev"></span></button>
             <button class="send" id="send" type="button"></button>
           </div>
         </div>
         <div class="menu" id="modelMenu" hidden></div>
+        <div class="menu ctxpanel" id="ctxPanel" role="dialog" hidden></div>
         <div class="menu small" id="projectMenu" hidden></div>
         <div class="menu small attach-menu" id="attachMenu" hidden>
           <button class="item" id="attachFiles" type="button">
@@ -92,9 +96,12 @@
 <script src="/lang-en.js?v=1.0.3"></script>
 <script src="/md.js?v=1.0.3"></script>
 <script src="/cup.js?v=1.0.3"></script>
+<script src="/skins.js?v=1.0.3"></script>
 <script src="/runcard.js?v=1.0.3"></script>
 <script src="/sessions.js?v=1.0.3"></script>
+<script src="/subagents.js?v=1.0.3"></script>
 <script src="/context.js?v=1.0.3"></script>
+<script src="/router.js?v=1.0.3"></script>
 <script src="/projects.js?v=1.0.3"></script>
 <script src="/store.js?v=1.0.3"></script>
 <script src="/qr.js?v=1.0.3"></script>

@@ -15,25 +15,33 @@ import { resolveBinary } from '../core/paths.ts';
 import { restoreTree, snapshotTree } from './web_snapshot.ts';
 import { readCapabilities } from './web_capabilities.ts';
 import { Remote } from './web_remote.ts';
-import { groupSessions, sessionEvents } from './web_sessions.ts';
+import { groupSessions, sessionEvents, subagentsOf } from './web_sessions.ts';
 
 export interface ModelDef { id: string; label: string; sub: string }
-export interface EngineDef { id: 'claude' | 'codex' | 'agy' | 'opencode'; label: string; color: string; models: ModelDef[]; efforts: string[]; write: boolean; note?: string }
+export type TeamId = 'turuncu' | 'mavi' | 'kirmizi' | 'siyah';
+/** Takım meta bilgisi tek yerde: renk + dil anahtarı (ad, lang-tr/lang-en içindeki team.<id> anahtarından gelir) */
+export const TEAMS: Array<{ id: TeamId; color: string; labelKey: string }> = [
+  { id: 'turuncu', color: '#D97757', labelKey: 'team.turuncu' },
+  { id: 'mavi', color: '#4285F4', labelKey: 'team.mavi' },
+  { id: 'kirmizi', color: '#E5484D', labelKey: 'team.kirmizi' },
+  { id: 'siyah', color: '#3A3A3C', labelKey: 'team.siyah' }
+];
+export interface EngineDef { id: 'claude' | 'codex' | 'agy' | 'opencode'; team: TeamId; label: string; color: string; models: ModelDef[]; efforts: string[]; write: boolean; note?: string }
 
 export const ENGINES: EngineDef[] = [
-  { id: 'claude', label: 'Claude Code', color: '#D97757', write: false, efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+  { id: 'claude', team: 'turuncu', label: 'Claude Code', color: '#D97757', write: false, efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     note: 'engines.claude.note',
     models: [
       { id: 'sonnet', label: 'Claude Sonnet 5.5', sub: 'models.sonnet' },
       { id: 'opus', label: 'Claude Opus 5.5', sub: 'models.opus' },
       { id: 'haiku', label: 'Claude Haiku 5.5', sub: 'models.haiku' }
     ] },
-  { id: 'codex', label: 'Codex', color: '#10A37F', write: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+  { id: 'codex', team: 'kirmizi', label: 'Codex', color: '#10A37F', write: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
     models: [{ id: 'gpt-6-astra', label: 'GPT-6 Astra', sub: 'models.gpt6astra' }] },
-  { id: 'opencode', label: 'OpenCode', color: '#AA82FF', write: true, efforts: [],
+  { id: 'opencode', team: 'siyah', label: 'OpenCode', color: '#AA82FF', write: true, efforts: [],
     note: 'engines.opencode.note',
     models: [{ id: 'opencode/big-pickle', label: 'Big Pickle', sub: 'models.free' }] },
-  { id: 'agy', label: 'Antigravity (agy)', color: '#4285F4', write: false, efforts: ['low', 'high'],
+  { id: 'agy', team: 'mavi', label: 'Antigravity (agy)', color: '#4285F4', write: false, efforts: ['low', 'high'],
     note: 'engines.agy.note',
     models: [{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', sub: 'models.gemini38flash' }] }
 ];
@@ -297,7 +305,8 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
       // TUI / terminal oturumları: veritabanındaki tüm oturumlar (web'den başlatılanlar da dahil; arayüz kendi sohbetlerini ayıklar)
       if (method === 'GET' && url.pathname === '/api/sessions') {
         const rows = db.prepare('SELECT task_id, session_id, agent, model, status, prompt, start_time, end_time FROM tasks WHERE session_id IS NOT NULL AND parent_task_id IS NULL ORDER BY start_time DESC LIMIT 800').all() as any[];
-        json(200, groupSessions(rows, Date.now()).slice(0, 60));
+        const subRows = db.prepare('SELECT session_id, status, start_time FROM tasks WHERE session_id IS NOT NULL AND parent_task_id IS NOT NULL').all() as any[];
+        json(200, groupSessions(rows, Date.now(), subRows).slice(0, 60));
         return true;
       }
       if (method === 'GET' && url.pathname === '/api/session') {
@@ -305,7 +314,10 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         const tasks = db.prepare('SELECT task_id, agent, model, status, prompt, start_time, end_time, error FROM tasks WHERE session_id = ? AND parent_task_id IS NULL ORDER BY start_time ASC, rowid ASC').all(id) as any[];
         if (!tasks.length) { json(404, { code: 'no_session', error: 'oturum yok' }); return true; }
         const rawEvents = db.prepare('SELECT task_id, type, data, timestamp FROM events WHERE session_id = ? AND parent_task_id IS NULL ORDER BY rowid ASC').all(id) as any[];
-        json(200, { id, tasks, events: sessionEvents(tasks, rawEvents) });
+        // alt ajanlar ana akıştan ayrı döner (ana akış süzmesi aynı kalır)
+        const subTasks = db.prepare('SELECT task_id, parent_task_id, agent, model, status, prompt, start_time, end_time FROM tasks WHERE session_id = ? AND parent_task_id IS NOT NULL ORDER BY start_time ASC, rowid ASC').all(id) as any[];
+        const subRaw = subTasks.length ? db.prepare('SELECT task_id, type, data, timestamp FROM events WHERE session_id = ? AND parent_task_id IS NOT NULL ORDER BY rowid ASC').all(id) as any[] : [];
+        json(200, { id, tasks, events: sessionEvents(tasks, rawEvents), subs: subagentsOf(subTasks, subRaw) });
         return true;
       }
 
@@ -318,7 +330,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         const projects: Array<{ name: string; path: string; custom?: boolean }> = [...added, ...listProjects(roots).filter((p) => !added.some((a) => same(a.path, p.path)))];
         json(200, {
           engines: (await enginesNow()).map((e) => ({ ...e, ...engineStatus(db, e) })),
-          roots, projects, defaultCwd: projects[0]?.path || roots[0] || '', maxActive: MAX_ACTIVE,
+          teams: TEAMS, roots, projects, defaultCwd: projects[0]?.path || roots[0] || '', maxActive: MAX_ACTIVE,
           // uzak (telefon) oturumu: yerel yönetim düğmeleri gizlenir, yazma izni cihaza bağlıdır
           remote: !!remote.deviceOf(req), writeAllowed: remote.deviceOf(req)?.write ?? true
         });

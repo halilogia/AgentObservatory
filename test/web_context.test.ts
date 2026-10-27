@@ -8,6 +8,7 @@ const bot = (label: string, v: string, tools: string[] = []) => ({ r: 'b', engin
 
 // ilk mesaj: özet yok, istem olduğu gibi gider
 assert.strictEqual(ctx.build([], 'merhaba'), null);
+assert.strictEqual(ctx.CACHE_TTL_MS, 60 * 60000, 'önbellek süresi tek sabitte, varsayılan 60 dk');
 
 const prior = [
   { r: 'u', text: 'README\'yi oku' }, bot('Deepseek V4.1 Flash', 'Kurulum var, lisans yok.', ['Read(README.md)']),

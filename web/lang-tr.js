@@ -74,7 +74,11 @@ ObsI18n.addResources('tr', {
     bad_approval: 'Onay durumu (true/false) gerekli.',
     approval_failed: 'Onay iletilemedi.'
   },
-  cup: { show: 'Kahve fincanını göster', hide: 'Kahve fincanını gizle' },
+  cup: { show: 'Kahve fincanını göster', hide: 'Kahve fincanını gizle', tip: 'Önbellek tahmini: {{time}}' },
+  skin: { on: 'CLI görünümünü aç', off: 'CLI görünümünü kapat', lines: 'satır' },
+  team: { turuncu: 'Turuncu Takım', mavi: 'Mavi Takım', kirmizi: 'Kırmızı Takım', siyah: 'Siyah Takım', auto: 'Otomatik yönlendir', autoSub: 'İsteme göre en uygun takım seçilir; yazma izni genişlemez', autoShort: 'Otomatik', autoVia: 'otomatik: {{reason}}' },
+  router: { gemini: 'Gemini istendi', review: 'denetim / test', bulk: 'toplu iş', code: 'kod yazma', fallback: 'mevcut seçim' },
+  ctx: { btn: 'Bağlam', title: 'Bağlam bilgisi', engine: 'Motor ve takım', model: 'Model', effort: 'Çaba', cwd: 'Çalışma klasörü', session: 'Oturum kimliği', messages: 'Mesaj sayısı', tokens: 'Token (tahmini)', tokensVal: 'giriş {{tin}} · çıkış {{tout}}', cache: 'Önbellek (tahmini)', cacheEmpty: 'henüz yok', cacheOff: 'yalnızca Claude Code', cacheHot: 'sıcak, {{time}} kaldı', cacheCold: 'soğudu', none: '-', auto: 'Otomatik yönlendirme açık', close: 'Kapat' },
   foot: { cwdLocked: 'Bu oturumun klasörü izinli klasörler arasında değil, mesaj gönderilmedi ({{cwd}}). Klasörü ekleyip yeniden dene.', busy: 'Görev çalışırken sohbet değiştirilemez.', disconnected: 'Bağlantı koptu, yeniden deneniyor...', startFailed: 'Başlatılamadı: {{msg}}', writeOn: 'Yazma açık.' },
   engines: {
     claude: { note: 'Headless modda izin sorulamaz: yalnızca okuma ve yanıt.' },

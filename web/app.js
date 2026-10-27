@@ -27,7 +27,7 @@
     moon: svg('<path d="M13 9.6A5.4 5.4 0 016.4 3 5.4 5.4 0 108 13.4a5.4 5.4 0 005-3.8z"/>'),
     stop: '<svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg>'
   };
-  const st = { cfg: null, engine: 'claude', model: 'sonnet', effort: 'medium', mode: 'write', cwd: '', running: null, project: null };
+  const st = { cfg: null, engine: 'claude', model: 'sonnet', effort: 'medium', mode: 'write', cwd: '', running: null, project: null, team: '' }; // team: 'auto' = otomatik yönlendirme, '' = elle seçim
   const views = new Map();
   let chat = null;
   let early = [];
@@ -36,10 +36,12 @@
 
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
   const engineById = (id) => st.cfg.engines.find((e) => e.id === id);
+  const teamById = (id) => ((st.cfg && st.cfg.teams) || []).find((x) => x.id === id);
+  const teamOf = (engineId) => { const e = st.cfg && engineById(engineId); return e ? teamById(e.team) : null; };
   const fmtTok = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n));
   const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* yoksay */ } };
-  const saveSettings = () => lsSet('obs-web', JSON.stringify({ engine: st.engine, model: st.model, effort: st.effort, cwd: st.cwd, project: st.project }));
+  const saveSettings = () => lsSet('obs-web', JSON.stringify({ engine: st.engine, model: st.model, effort: st.effort, cwd: st.cwd, project: st.project, team: st.team }));
 
   async function api(path, body) {
     const r = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json', 'x-observatory-token': TOKEN }, body: JSON.stringify(body) });
@@ -378,12 +380,18 @@
       const item = el('div', 'hitem' + (chat && chat.termId === s.id ? ' on' : ''));
       const b = el('button', 'hmain'); b.type = 'button'; b.title = s.title;
       const dot = el('span', 'dot' + (s.running ? ' live' : '')); const e = engineById(s.agent); dot.style.setProperty('--c', e ? e.color : 'var(--faint)');
-      b.append(dot, el('span', 't', smartTitle(s.title) || t('history.untitled')), el('span', 'when', s.running ? t('term.live') : when(s.end)));
+      b.append(dot, el('span', 't', smartTitle(s.title) || t('history.untitled')));
+      if (s.subs) { const bd = el('span', 'subbadge' + (s.subsRunning ? ' live' : ''), ObsSubagents.text('badge', I18N.language, { n: s.subs })); bd.title = s.subsRunning ? ObsSubagents.text('live', I18N.language, { n: s.subsRunning }) : ''; b.appendChild(bd); }
+      b.appendChild(el('span', 'when', s.running ? t('term.live') : when(s.end)));
       b.onclick = () => loadTermSession(s);
       item.appendChild(b); box.appendChild(item);
     });
   }
-  const termMessages = (data) => ObsSessions.toChat(data, { toolKind, toolSummary, color: (a) => { const e = engineById(a); return e ? e.color : '#888'; } });
+  const termMessages = (data) => {
+    const msgs = ObsSessions.toChat(data, { toolKind, toolSummary, color: (a) => { const e = engineById(a); return e ? e.color : '#888'; } });
+    ObsSubagents.attach(msgs, data.subs || [], Date.now()); // alt ajanlar Task/Agent araç satırlarının altına bağlanır
+    return msgs;
+  };
   async function loadTermSession(s) {
     if (st.running) { $('#foot').textContent = t('foot.busy'); return; }
     setOfficeView(false);
@@ -731,15 +739,17 @@
   function createBot(rec, live) {
     showThread(true);
     const row = el('div', 'msg bot'); row.style.setProperty('--c', rec.color);
+    const skin = skinOn() ? ObsSkins.skinFor(rec.engine) : ''; if (skin) row.dataset.skin = skin;
     row.appendChild(el('div', 'avatar', engineLabel(rec).charAt(0)));
     const col = el('div', 'body');
-    const who = el('div', 'who'); who.appendChild(el('span', '', `${engineLabel(rec)} · ${rec.label}`));
+    const who = el('div', 'who'); const tm = teamOf(rec.engine); if (tm) { const td = el('span', 'dot team'); td.style.setProperty('--c', tm.color); td.title = t(tm.labelKey); who.appendChild(td); }
+    who.appendChild(el('span', '', `${engineLabel(rec)} · ${rec.label}`)); if (rec.auto) who.appendChild(el('span', 'autotag', t('team.autoVia', { reason: t(rec.auto) })));
     const dots = el('span', 'state'); dots.append(el('b'), el('b'), el('b'));
     if (live || rec.live) who.appendChild(dots);
     const content = el('div'); const meta = el('div', 'meta');
     col.append(who, content, meta); row.appendChild(col);
     $('#thread').appendChild(row);
-    const v = { rec, row, content, meta, dots, curText: null, tools: new Map(), lastTool: null, raf: 0, tin: 0, tout: 0, t0: Date.now(), done: !live, steps: [] };
+    const v = { rec, row, content, meta, dots, curText: null, tools: new Map(), lastTool: null, raf: 0, tin: 0, tout: 0, t0: Date.now(), done: !live, steps: [], skin };
     if (live) { runView = v; renderRunCard(); }
     if (!live) {
       rec.parts.forEach((p) => { if (p.k === 'text') { const box = el('div'); content.appendChild(box); renderMd(box, p.v); } else buildTool(v, p, true); });
@@ -758,6 +768,7 @@
   function renderToolOutput(det, part) {
     const out = part.out || '';
     if (!out.trim()) return;
+    skinPreview(det, out);
     const kind = part.kind || toolKind(part.name);
     if (kind === 'diff') {
       const box = el('div', 'tool-diff');
@@ -775,10 +786,25 @@
     pre.appendChild(el('code', '', out));
     det.appendChild(pre);
   }
+  // CLI görünümü: açıkken bot mesajı, ait olduğu motorun TUI görünümünü (skin) kullanır; kapalıyken standart görünüm
+  const skinOn = () => lsGet('obs-skin') === '1';
+  function skinPreview(det, out) {
+    const msg = det.closest ? det.closest('.msg') : null, sum = det.firstChild;
+    if (!msg || !msg.dataset.skin || !sum || sum.querySelector('.sk-res')) return;
+    const r = ObsSkins.result(out), box = el('div', 'sk-res');
+    r.lines.forEach((l) => box.appendChild(el('div', 'sk-ln', l)));
+    if (r.more > 0) box.appendChild(el('div', 'sk-ln sk-more', ObsSkins.moreText(r.more, t('skin.lines'))));
+    sum.appendChild(box);
+  }
+  function refreshSkinBtn() {
+    const b = $('#skinBtn'), label = t(skinOn() ? 'skin.off' : 'skin.on');
+    b.title = label; b.setAttribute('aria-label', label); b.setAttribute('aria-pressed', String(skinOn())); b.classList.toggle('off', !skinOn());
+  }
   function buildTool(v, part, withOut) {
     const det = el('details', 'tool' + (part.kind ? ' tool-' + part.kind : ''));
     const sum = el('summary');
-    sum.append(el('span', 'tn', part.name), el('span', 'ts', part.summary || ''));
+    if (v.skin) { const lb = ObsSkins.label(v.skin, ObsSkins.describe(part.name, part.input, part.summary)); sum.append(el('span', 'tn', lb.name), el('span', 'ts', lb.rest)); }
+    else sum.append(el('span', 'tn', part.name), el('span', 'ts', part.summary || ''));
     det.appendChild(sum);
     v.content.appendChild(det);
     if (withOut && part.out) {
@@ -886,7 +912,7 @@
       const b = el('button'); b.type = 'button';
       const d = el('span', 'dot'); d.style.setProperty('--c', e.color);
       b.append(d, document.createTextNode(e.label));
-      b.onclick = () => { st.engine = e.id; st.model = e.models[0].id; if (!e.efforts.includes(st.effort)) st.effort = e.efforts.includes('medium') ? 'medium' : e.efforts[0] || ''; if (!e.write) st.mode = 'read'; saveSettings(); refreshControls(); runPrompt(v.rec.prompt, { bubble: false }); };
+      b.onclick = () => { st.team = ''; st.engine = e.id; st.model = e.models[0].id; if (!e.efforts.includes(st.effort)) st.effort = e.efforts.includes('medium') ? 'medium' : e.efforts[0] || ''; if (!e.write) st.mode = 'read'; saveSettings(); refreshControls(); runPrompt(v.rec.prompt, { bubble: false }); }; // elle motor seçimi: otomatik yönlendirme kapanır
       row.appendChild(b);
     });
     v.content.appendChild(row);
@@ -985,7 +1011,12 @@
   async function runPrompt(text, o = {}) {
     if (st.running || !text.trim()) return;
     ensureChat(text);
-    const e = engineById(st.engine); const m = e.models.find((x) => x.id === st.model);
+    let e = engineById(st.engine); let m = e.models.find((x) => x.id === st.model);
+    // otomatik yönlendirme: yazma izni YALNIZCA elle seçili motorun yazma düğmesi açıksa istenir; yönlendirme izni asla genişletmez
+    const route = st.team === 'auto' ? ObsRouter.pick(text, st.cfg.engines, { write: st.mode === 'write' && canWrite(e), current: { engine: st.engine, model: st.model } }) : null;
+    if (route && engineById(route.engine)) { e = engineById(route.engine); m = e.models.find((x) => x.id === route.model) || e.models[0]; }
+    const runMode = route ? (route.mode === 'write' && canWrite(e) ? 'write' : 'read') : (canWrite(e) ? st.mode : 'read');
+    const runEffort = e.efforts.length ? (e.efforts.includes(st.effort) ? st.effort : e.efforts.includes('medium') ? 'medium' : e.efforts[0]) : '';
     // oturum sürdürülemiyorsa (motor ya da klasör değişti) önceki konuşma özet olarak yeni isteme eklenir
     // terminal oturumu açıksa motor eşleştiğinde AYNI CLI oturumu oturumun kendi klasörüyle sürdürülür (klasör izni sunucuda denetlenir)
     const termResume = !!(chat.termId && chat.session && chat.session.engine === e.id);
@@ -994,15 +1025,15 @@
     const proj = chat.project ? ObsProjects.get(chat.project) : null; // proje talimatları her YENİ CLI oturumunun başında verilir
     const sendText = resume ? text : ObsCtx.build(chat.messages, text, { instructions: proj && proj.instructions }) || text;
     if (o.bubble !== false) { chat.messages.push({ r: 'u', text }); addUserDom(text); }
-    const rec = { r: 'b', engine: e.id, model: m.id, label: m.label, color: e.color, parts: [], notice: null, meta: null, prompt: text, cwd: runCwd, taskId: null, effort: e.efforts.length ? st.effort : '' };
+    const rec = { r: 'b', engine: e.id, model: m.id, label: m.label, color: e.color, parts: [], notice: null, meta: null, prompt: text, cwd: runCwd, taskId: null, effort: runEffort, auto: route && route.routed ? route.reason : '' };
     chat.messages.push(rec);
     const view = createBot(rec, true);
     st.running = 'pending'; stick = true; refreshSend(); persist();
     try {
-      if (canWrite(e) && st.mode === 'write' && !st.cfg.remote) { // dosya geri alma için: görev başlamadan önce klasörün anlık görüntüsü (git deposu değilse yok)
+      if (runMode === 'write' && !st.cfg.remote) { // dosya geri alma için: görev başlamadan önce klasörün anlık görüntüsü (git deposu değilse yok)
         try { rec.snap = (await api('/api/snapshot', { cwd: runCwd })).snap || null; rec.snapCwd = runCwd; } catch { rec.snap = null; }
       }
-      const r = await api('/api/run', { engine: e.id, model: m.id, effort: e.efforts.length ? st.effort : undefined, prompt: sendText, mode: canWrite(e) ? st.mode : 'read', cwd: runCwd, sessionId: resume });
+      const r = await api('/api/run', { engine: e.id, model: m.id, effort: runEffort || undefined, prompt: sendText, mode: runMode, cwd: runCwd, sessionId: resume });
       rec.taskId = r.taskId; views.set(r.taskId, view); st.running = r.taskId;
       const buffered = early.filter((x) => x.taskId === r.taskId); early = early.filter((x) => x.taskId !== r.taskId);
       buffered.forEach(onEvent); refreshSend();
@@ -1192,8 +1223,10 @@
   }
   function refreshControls() {
     const e = engineById(st.engine); const m = e.models.find((x) => x.id === st.model);
-    $('#modelDot').style.setProperty('--c', e.color);
-    $('#modelLabel').textContent = shortModel(m);
+    const auto = st.team === 'auto';
+    $('#modelDot').style.setProperty('--c', auto ? 'var(--accent)' : e.color);
+    $('#modelLabel').textContent = auto ? t('team.autoShort') : shortModel(m);
+    refreshCtxBtn(); refreshCup();
     // düşünme çabası kendi düğmesinde; çabası olmayan motorda (OpenCode) düğme gizlenir
     renderThink();
     $('#attachIco').innerHTML = ICON.plus;
@@ -1235,28 +1268,37 @@
     m.hidden = false;
     placeMenu(m);
   }
-  function closeMenus() { $('#modelMenu').hidden = true; $('#projectMenu').hidden = true; $('#attachMenu').hidden = true; hideSlash(); }
+  function closeMenus() { $('#ctxPanel').hidden = true; $('#modelMenu').hidden = true; $('#projectMenu').hidden = true; $('#attachMenu').hidden = true; hideSlash(); }
   function pick(engineId, modelId) {
     const e = engineById(engineId); st.engine = engineId; st.model = modelId;
     if (!e.efforts.includes(st.effort)) st.effort = e.efforts.includes('medium') ? 'medium' : e.efforts[0] || '';
     if (!e.write) st.mode = 'read';
-    saveSettings(); refreshControls(); openModelMenu(true);
+    st.team = ''; saveSettings(); refreshControls(); openModelMenu(true);
   }
   function openModelMenu(keep) {
     const menu = $('#modelMenu');
     if (!keep && !menu.hidden) { menu.hidden = true; return; }
     const keepScroll = menu.scrollTop;
     $('#projectMenu').hidden = true; hideSlash(); menu.replaceChildren();
-    st.cfg.engines.forEach((e) => {
-      const g = el('div', 'mgroup'); const gd = el('span', 'dot'); gd.style.setProperty('--c', e.color); g.append(gd, document.createTextNode(e.label)); menu.appendChild(g);
+    const ab = el('button', 'item auto'); ab.type = 'button'; ab.setAttribute('role', 'option');
+    const ad = el('span', 'dot'); ad.style.setProperty('--c', 'var(--accent)');
+    const at = el('span'); at.append(el('div', 't', t('team.auto')), el('div', 's', t('team.autoSub')));
+    const ack = el('span', 'check'); if (st.team === 'auto') ack.innerHTML = ICON.check;
+    ab.append(ad, at, ack); ab.onclick = () => { st.team = 'auto'; saveSettings(); refreshControls(); openModelMenu(true); }; menu.appendChild(ab);
+    // takım başlıkları (renk noktalı): turuncu, mavi, kırmızı, siyah
+    const groups = (st.cfg.teams || []).map((tm) => ({ tm, list: st.cfg.engines.filter((x) => x.team === tm.id) })).filter((g) => g.list.length);
+    groups.forEach(({ tm, list }) => {
+      const th = el('div', 'mgroup team'); const td = el('span', 'dot'); td.style.setProperty('--c', tm.color); th.append(td, document.createTextNode(t(tm.labelKey))); menu.appendChild(th);
+      list.forEach((e) => {
       e.models.forEach((m) => {
         const blocked = !e.installed ? t('status.notInstalled') : e.limitedUntil ? t('status.limited') : '';
         const b = el('button', 'item'); b.type = 'button'; b.disabled = !!blocked; b.setAttribute('role', 'option');
         const dot = el('span', 'dot'); dot.style.setProperty('--c', e.color);
         const txt = el('span'); txt.append(el('div', 't', m.label), el('div', 's', t(m.sub)));
         if (blocked) txt.appendChild(el('div', 'b', blocked));
-        const ck = el('span', 'check'); if (e.id === st.engine && m.id === st.model) ck.innerHTML = ICON.check;
+        const ck = el('span', 'check'); if (st.team !== 'auto' && e.id === st.engine && m.id === st.model) ck.innerHTML = ICON.check;
         b.append(dot, txt, ck); b.onclick = () => pick(e.id, m.id); menu.appendChild(b);
+      });
       });
     });
     menu.hidden = false; placeMenu(menu); menu.scrollTop = keepScroll;
@@ -1346,28 +1388,62 @@
     I18N.applyDom(); document.title = t('app.title');
     $('#phoneBtn').title = t('phone.btn'); $('#phoneBtn').setAttribute('aria-label', t('phone.btn'));
     $('#capsBtn').title = t('caps.btn'); $('#capsBtn').setAttribute('aria-label', t('caps.btn')); $('#langBtn').textContent = t('lang.switchTo'); $('#langBtn').title = t('lang.switchTitle');
-    refreshCupBtn(); refreshControls(); refreshSend(); refreshTheme(); renderEngineStatus(); renderCrumb(); renderHistory(); closeMenus();
+    refreshSkinBtn(); refreshCupBtn(); refreshControls(); refreshSend(); refreshTheme(); renderEngineStatus(); renderCrumb(); renderHistory(); closeMenus();
     if (!st.running) renderThread();
   }
 
   // kahve fincanı: yalnızca Claude sohbetinde görünür; duman = istem önbelleği (prompt cache) hâlâ sıcak
-  const CUP_TTL = 60 * 60000;
   let cupFrame = 0;
   const cupOn = () => lsGet('obs-cup') !== '0'; // varsayılan: görünür
   function refreshCupBtn() {
     const b = $('#cupBtn'), label = t(cupOn() ? 'cup.hide' : 'cup.show');
     b.title = label; b.setAttribute('aria-label', label); b.setAttribute('aria-pressed', String(cupOn())); b.classList.toggle('off', !cupOn());
   }
-  function refreshCup() {
-    const cv = $('#cup');
-    if (!cupOn()) { cv.hidden = true; return; }
+  /** önbellek durumu (TAHMİN: son yanıt zamanına göre). Süre ObsCtx.CACHE_TTL_MS'tedir (web/context.js). Claude dışı motorda null. */
+  function cacheInfo() {
     const lastBot = chat && [...chat.messages].reverse().find((m) => m.r === 'b');
-    if (!lastBot || lastBot.engine !== 'claude') { cv.hidden = true; return; }
-    const now = Date.now(), busy = !!st.running;
-    const state = ObsCup.stateOf(chat.updated, now, CUP_TTL, busy);
-    cv.hidden = false; ObsCup.draw(cv, state, cupFrame++);
-    const left = Math.max(0, Math.ceil((chat.updated + CUP_TTL - now) / 1000));
-    cv.title = busy || state === 'cold' ? '' : Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+    if (st.engine !== 'claude' || !lastBot || lastBot.engine !== 'claude') return null;
+    const ttl = ObsCtx.CACHE_TTL_MS, now = Date.now(), busy = !!st.running;
+    const state = ObsCup.stateOf(chat.updated, now, ttl, busy);
+    const left = Math.max(0, Math.ceil((chat.updated + ttl - now) / 1000));
+    return { state, busy, time: Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') };
+  }
+  // fincan yazı kutusu alt çubuğunda (model rozetinin yanında); yalnızca motor Claude iken, üst çubukta yalnız aç/kapa anahtarı
+  function refreshCup() {
+    const cv = $('#cup'); const ci = cupOn() ? cacheInfo() : null;
+    if (!ci) { cv.hidden = true; return; }
+    cv.hidden = false; ObsCup.draw(cv, ci.state, cupFrame++);
+    cv.title = ci.busy || ci.state === 'cold' ? '' : t('cup.tip', { time: ci.time });
+  }
+
+  // bağlam paneli: motor, model, klasör, oturum, mesaj ve tahmini token/önbellek bilgisi
+  function refreshCtxBtn() { const b = $('#ctxBtn'); if (!b) return; $('#ctxLabel').textContent = t('ctx.btn'); b.title = t('ctx.title'); b.setAttribute('aria-label', t('ctx.title')); }
+  function ctxRows() {
+    const e = engineById(st.engine), m = e.models.find((x) => x.id === st.model), tm = teamById(e.team);
+    const msgs = chat ? chat.messages : []; let tin = 0, tout = 0;
+    msgs.forEach((x) => { if (x.meta) { tin += x.meta.tin || 0; tout += x.meta.tout || 0; } });
+    const sid = chat && chat.session ? String(chat.session.id) : '';
+    const ci = cacheInfo();
+    const cache = st.engine !== 'claude' ? t('ctx.cacheOff') : !ci ? t('ctx.cacheEmpty') : ci.state === 'cold' ? t('ctx.cacheCold') : t('ctx.cacheHot', { time: ci.time });
+    return [
+      [t('ctx.engine'), e.label + (tm ? ' · ' + t(tm.labelKey) : '') + (st.team === 'auto' ? ' · ' + t('team.autoShort') : ''), tm && tm.color],
+      [t('ctx.model'), m ? m.label : st.model], [t('ctx.effort'), e.efforts.length ? t('effort.' + st.effort) : t('ctx.none')],
+      [t('ctx.cwd'), st.cwd || t('ctx.none')], [t('ctx.session'), sid ? sid.slice(0, 8) + '…' : t('ctx.none'), null, sid],
+      [t('ctx.messages'), String(msgs.length)], [t('ctx.tokens'), t('ctx.tokensVal', { tin: fmtTok(tin), tout: fmtTok(tout) })], [t('ctx.cache'), cache]
+    ];
+  }
+  function openCtxPanel() {
+    const p = $('#ctxPanel');
+    if (!p.hidden) { p.hidden = true; return; }
+    closeMenus(); p.replaceChildren(); p.append(el('div', 'ctx-title', t('ctx.title')));
+    if (st.team === 'auto') p.append(el('div', 'ctx-note', t('ctx.auto')));
+    ctxRows().forEach(([k, v, color, full]) => {
+      const row = el('div', 'ctx-row'); const val = el('span', 'ctx-v', v); val.title = full || v;
+      if (color) { const d = el('span', 'dot'); d.style.setProperty('--c', color); row.append(el('span', 'ctx-k', k), d, val); } else row.append(el('span', 'ctx-k', k), val);
+      if (full) { const cb = el('button', 'ctx-copy', t('common.copy')); cb.type = 'button'; cb.onclick = (ev) => { ev.stopPropagation(); copyText(full); cb.textContent = t('common.copied'); }; row.append(cb); }
+      p.appendChild(row);
+    });
+    p.hidden = false; placeMenu(p);
   }
 
   async function refreshConfig() { try { st.cfg = await api('/api/config'); renderEngineStatus(); } catch { /* sunucu yok */ } }
@@ -1380,13 +1456,17 @@
     st.engine = e0.id;
     st.model = e0.models.some((m) => m.id === saved.model) ? saved.model : e0.models[0].id;
     st.effort = e0.efforts.includes(saved.effort) ? saved.effort : e0.efforts.includes('medium') ? 'medium' : e0.efforts[0] || '';
+    st.team = saved.team === 'auto' ? 'auto' : '';
     st.project = saved.project && ObsProjects.get(saved.project) ? saved.project : null;
     const activeProj = st.project ? ObsProjects.get(st.project) : null;
     st.cwd = activeProj && activeProj.cwd ? activeProj.cwd : (st.cfg.projects.some((p) => p.path === saved.cwd) ? saved.cwd : '');
     if (!narrow() && lsGet('obs-nav') === 'closed') $('#layout').classList.add('nav-closed');
     $('#capsIco').innerHTML = ICON.caps; $('#capsBtn').onclick = openCaps;
+    $('#ctxBtn').onclick = (ev) => { ev.stopPropagation(); openCtxPanel(); };
     $('#cupIco').innerHTML = ICON.cup; $('#cupBtn').onclick = () => { lsSet('obs-cup', cupOn() ? '0' : '1'); refreshCupBtn(); refreshCup(); };
     refreshCupBtn();
+    $('#skinIco').innerHTML = ObsSkins.ICON; $('#skinBtn').onclick = () => { lsSet('obs-skin', skinOn() ? '0' : '1'); refreshSkinBtn(); if (!st.running) renderThread(); };
+    refreshSkinBtn();
     $('#officeIco').innerHTML = ICON.office;
     $('#phoneIco').innerHTML = ICON.phone; $('#phoneBtn').onclick = openPhone; $('#phoneBtn').hidden = !!st.cfg.remote;
     $('#newIco').innerHTML = ICON.plus; $('#sideIco').innerHTML = ICON.panel;

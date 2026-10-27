@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import '../web/i18n.js';
 import '../web/lang-tr.js';
 import '../web/lang-en.js';
-import { ENGINES } from '../src/commands/web.ts';
+import { ENGINES, TEAMS } from '../src/commands/web.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p: string) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -36,6 +36,9 @@ for (const e of ENGINES) {
   if (e.note) assert.ok(tr.includes(e.note), 'motor notu çevirisi yok: ' + e.note);
   for (const mo of e.models) assert.ok(tr.includes(mo.sub), 'model açıklaması çevirisi yok: ' + mo.sub);
 }
+for (const tm of TEAMS) assert.ok(tr.includes(tm.labelKey) && en.includes(tm.labelKey), 'takım adı çevirisi yok: ' + tm.labelKey);
+for (const r of ['gemini', 'review', 'bulk', 'code', 'fallback']) assert.ok(tr.includes('router.' + r), 'yönlendirme nedeni çevirisi yok: ' + r);
+for (const k of ['btn', 'title', 'engine', 'model', 'effort', 'cwd', 'session', 'messages', 'tokens', 'cache']) assert.ok(tr.includes('ctx.' + k), 'bağlam paneli anahtarı: ' + k);
 assert.ok(tr.includes('models.free'), 'OpenCode canlı modelleri için models.free');
 
 // 4) davranış: ara değer, çoğul, yedek dil, dil değiştirme

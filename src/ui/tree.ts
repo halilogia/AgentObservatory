@@ -89,14 +89,21 @@ function lastActivity(t: TaskSummary, width: number): string {
 
 function nodeLines(t: TaskSummary, prefix: string, childPrefix: string, cols: number, now: number, selected: boolean, label?: string): string[] {
   const dur = fmtDuration(isLive(t, now) ? now - t.startTime : t.durationMs);
-  const tag = (label ? paint('gray', label + ' ') : '') + (AGENT_EMOJI[t.agent] ? AGENT_EMOJI[t.agent] + ' ' : '') + paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
+  const tag = (label ? paint('gray', label + ' ') : '') + (teamBadge(t.agent) ? teamBadge(t.agent) + ' ' : '') + paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
   const tokens = t.usage?.totalTokens ? paint('gray', ' · ' + fmtTokens(t.usage.totalTokens) + ' tok') : '';
   const mark = selected ? paint('cyan', '▸') : ' ';
   const head = `${mark}${prefix}${statusGlyph(t, now)} ${tag} ${paint('gray', t.taskId.slice(-8))} ${paint('gray', 'başladı ' + hms(t.startTime) + ' · ' + (isLive(t, now) ? 'sürüyor ' : 'sürdü ') + dur)}${tokens}`;
   return [head, ` ${childPrefix}${lastActivity(t, Math.max(20, cols - childPrefix.length - 5))}`];
 }
 
-const AGENT_EMOJI: Record<string, string> = { claude: '🟠', codex: '🔴', agy: '🔵' };
+/** Takım rozeti: renkli nokta + takım adı (emoji değil). Takımlar: turuncu=claude, mavi=agy, kırmızı=codex, siyah=opencode. */
+const AGENT_TEAM: Record<string, { name: string; color: Color }> = {
+  claude: { name: 'turuncu', color: 'yellow' }, agy: { name: 'mavi', color: 'blue' }, codex: { name: 'kırmızı', color: 'red' }, opencode: { name: 'siyah', color: 'gray' }
+};
+export function teamBadge(agent: string): string {
+  const tm = AGENT_TEAM[agent];
+  return tm ? paint(tm.color, '●') + ' ' + paint('gray', tm.name) : '';
+}
 
 /** Oturum satırı süresi: dk/sa biçimi ("12dk"). */
 function fmtSpan(ms: number): string {
@@ -115,7 +122,7 @@ function sessionLine(turns: TaskSummary[], cols: number, now: number, selected: 
   const span = live ? now - turns[0].startTime : turns.reduce((a, t) => a + t.durationMs, 0);
   const tokens = turns.reduce((a, t) => a + (t.usage?.totalTokens || 0), 0);
   const name = last.model && last.model !== last.agent ? `${last.agent} (${last.model})` : last.agent;
-  const emoji = AGENT_EMOJI[last.agent] ? AGENT_EMOJI[last.agent] + ' ' : '';
+  const emoji = teamBadge(last.agent) ? teamBadge(last.agent) + ' ' : '';
   const glyph = live ? paint('yellow', spinFrame(now)) : statusGlyph(last, now);
   const fold = paint('gray', expanded ? '▾' : '▸');
   const mark = selected ? paint('cyan', '▸') : ' ';
@@ -254,7 +261,24 @@ export function scrollFromBarRow(y: number, g: { top: number; room: number; tota
 }
 
 /** Tek ajanın ayrıntı sayfası: görevi başlatan CLI'ın kendi sohbet görünümü (skin), en altı canlı izlenir; ↑/↓ ile kaydırılır. */
-export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: number; rows: number; now: number; scroll?: number }): string {
+/** Oturumun alt ajanları: ana akışın altında girintili, etiketli blok (görev, durum, süre, araçlar, son yanıt). */
+export function subagentLines(subs: TaskSummary[], width: number, now: number): string[] {
+  const out: string[] = [];
+  for (const s of subs) {
+    const dur = fmtDuration(isLive(s, now) ? now - s.startTime : s.durationMs);
+    out.push('');
+    out.push(`  ${statusGlyph(s, now)} ${paint('bold', paint('magenta', 'alt ajan'))} ${paint('gray', modelName(s) + ' · ' + dur + ' · ' + s.toolsUsed.length + ' araç')}`);
+    out.push(`  │ ${paint('gray', 'görev:')} ${truncate(cleanText(s.prompt), Math.max(10, width - 14))}`);
+    const names = [...new Set(s.toolsUsed.map((x) => x.name))].slice(0, 8).join(', ');
+    if (names) out.push(`  │ ${paint('gray', 'araçlar: ' + truncate(names, Math.max(10, width - 16)))}`);
+    const last = cleanText(s.assistantText);
+    if (s.error) out.push(`  └ ${paint('red', 'hata: ' + truncate(cleanText(s.error), Math.max(10, width - 14)))}`);
+    else if (last) out.push(`  └ ${truncate(last, Math.max(10, width - 8))}`);
+  }
+  return out;
+}
+
+export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: number; rows: number; now: number; scroll?: number; subs?: TaskSummary[] }): string {
   const { cols, rows, now } = opts;
   const width = Math.max(40, cols - 2); // son iki sütun: boşluk + kaydırma çubuğu
   const live = isLive(t, now);
@@ -273,7 +297,7 @@ export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: 
     r.push(e);
   }
   r.end();
-  const lines = buf.replace(/\s+$/, '').split('\n').flatMap((l) => wrapAnsi(l, width));
+  const lines = [...buf.replace(/\s+$/, '').split('\n'), ...(opts.subs?.length ? subagentLines(opts.subs, width, now) : [])].flatMap((l) => wrapAnsi(l, width));
   const room = Math.max(4, rows - out.length - 1);
   detailGeom = { top: out.length, room, total: lines.length };
   const maxScroll = Math.max(0, lines.length - room);
@@ -297,8 +321,9 @@ export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: 
 }
 
 /** Oturumun tüm turlarını tek sohbet akışına birleştirir; alt ajan olayları ve sahte "Interrupted for 0s" kayıtları çıkarılır. */
-export function sessionTranscript(sessionId: string): { task: TaskSummary; events: TaskEvent[] } | null {
-  const turns = globalSqlite.getTasksForSession(sessionId).filter((t) => !t.parentTaskId);
+export function sessionTranscript(sessionId: string): { task: TaskSummary; events: TaskEvent[]; subs: TaskSummary[] } | null {
+  const all = globalSqlite.getTasksForSession(sessionId);
+  const turns = all.filter((t) => !t.parentTaskId);
   if (turns.length === 0) return null;
   const lastTurn = turns[turns.length - 1];
   const started = new Map(turns.map((t) => [t.taskId, t.startTime]));
@@ -313,7 +338,7 @@ export function sessionTranscript(sessionId: string): { task: TaskSummary; event
     startTime: turns[0].startTime,
     durationMs: turns.reduce((a, t) => a + t.durationMs, 0)
   };
-  return { task, events };
+  return { task, events, subs: all.filter((t) => !!t.parentTaskId) };
 }
 
 export function runTree(args: string[]): void {
@@ -351,7 +376,7 @@ export function runTree(args: string[]): void {
     if (detailId) {
       if (detailId.startsWith('session:')) {
         const st = sessionTranscript(detailId.slice(8));
-        if (st) return renderDetail(st.task, st.events, { cols, rows, now, scroll: detailScroll });
+        if (st) return renderDetail(st.task, st.events, { cols, rows, now, scroll: detailScroll, subs: st.subs });
         detailId = null;
       }
       if (detailId) {

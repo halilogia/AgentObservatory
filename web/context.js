@@ -3,6 +3,8 @@
 // Özet yapay zekâyla değil kuralla üretilir: ek maliyet ve gecikme yok; en yeni turlar tam, eskiler kısaltılmış girer.
 (function (root) {
   'use strict';
+  // Önbellek (prompt cache) süresi: kahve fincanı ve bağlam paneli bu TEK sabite bakar. Değiştirmek için yalnızca burayı düzenle.
+  var CACHE_TTL_MS = 60 * 60000;
   var BUDGET = 9000;         // özetin en çok karakteri (sunucu istemi 20000 ile sınırlar)
   var USER_MAX = 700, BOT_MAX = 1800, OLD_MAX = 300, TOOLS_MAX = 6;
 
@@ -55,5 +57,5 @@
     return instrBlock + '<CONTEXT_SUMMARY>\n' + head + '\n\n# Previous turns\n' + body + '\n</CONTEXT_SUMMARY>\n\n<USER_REQUEST>\n' + text + '\n</USER_REQUEST>';
   }
 
-  root.ObsCtx = { build: build, turns: turns, BUDGET: BUDGET };
+  root.ObsCtx = { build: build, turns: turns, BUDGET: BUDGET, CACHE_TTL_MS: CACHE_TTL_MS };
 })(typeof window !== 'undefined' ? window : globalThis);

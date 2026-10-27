@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { globalSqlite, SqliteStore } from '../core/sqlite_store.ts';
 import { toTaskEvent } from './core.ts';
 import type { ExtEvent, LineParser, ManagedCheck } from './core.ts';
-import { ClaudeLineParser } from './claude.ts';
+import { ClaudeLineParser, ClaudeSubagentParser } from './claude.ts';
 import { CodexLineParser } from './codex.ts';
 import { OpenCodeDbSource } from './opencode.ts';
 
@@ -40,6 +40,16 @@ export function makeManagedCheck(dbPath?: string): ManagedCheck {
   };
 }
 
+/** subagents/agent-<id>.jsonl için ayrıştırıcı; ebeveyn bilinmiyorsa null. */
+function openSubagent(file: string, toolTurns: Map<string, string>): LineParser | null {
+  const base = path.basename(file, '.jsonl');
+  try {
+    const meta = JSON.parse(fs.readFileSync(path.join(path.dirname(file), base + '.meta.json'), 'utf8'));
+    const parent = toolTurns.get(String(meta.toolUseId || ''));
+    return parent ? new ClaudeSubagentParser(base.replace(/^agent-/, ''), parent) : null;
+  } catch { return null; }
+}
+
 interface FileState { offset: number; buf: string; parser: LineParser; src: Src }
 
 export interface IngestOptions {
@@ -62,6 +72,7 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
   if (opts.sources.includes('claude')) roots.push(['claude', opts.claudeDir || path.join(os.homedir(), '.claude', 'projects')]);
   if (opts.sources.includes('codex')) roots.push(['codex', opts.codexDir || path.join(os.homedir(), '.codex', 'sessions')]);
   const files = new Map<string, FileState>();
+  const toolTurns = new Map<string, string>(); // Task/Agent araç çağrısı kimliği -> ana görev kimliği
   const startedAt = Date.now();
   let oc: OpenCodeDbSource | null = null;
   if (opts.sources.includes('opencode')) {
@@ -72,7 +83,9 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
     for (const e of evs) { try { store.recordEvent(toTaskEvent(e)); count++; } catch (err: any) { log(`yazılamadı: ${err.message}`); } }
   };
 
+  let pendingSubs = false;
   const discover = () => {
+    pendingSubs = false;
     const cutoff = Date.now() - opts.activeMinutes * 60000;
     for (const [src, root] of roots) {
       const found: string[] = [];
@@ -82,7 +95,13 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
         let st: fs.Stats;
         try { st = fs.statSync(f); } catch { continue; }
         if (st.mtimeMs < cutoff) continue;
-        const parser: LineParser = src === 'claude' ? new ClaudeLineParser(isManaged) : new CodexLineParser(isManaged);
+        let parser: LineParser;
+        if (src === 'claude' && path.basename(path.dirname(f)) === 'subagents') {
+          // alt ajan dosyası: ebeveyn görev, meta dosyasındaki toolUseId ile bulunur; ana kayıt henüz okunmadıysa sonra yeniden denenir
+          const sub = openSubagent(f, toolTurns);
+          if (!sub) { pendingSubs = true; continue; }
+          parser = sub;
+        } else parser = src === 'claude' ? new ClaudeLineParser(isManaged, toolTurns) : new CodexLineParser(isManaged);
         // ingest başladıktan sonra oluşan dosya baştan okunur; eski dosyada yalnızca yeni eklenenler
         files.set(f, { offset: opts.backfill || st.birthtimeMs >= startedAt ? 0 : st.size, buf: '', parser, src });
         log(`izleniyor (${src}): ${path.basename(f)}`);
@@ -118,7 +137,7 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
   let n = 0;
   const tick = () => {
     const before = count;
-    if (n++ % 5 === 0) discover();
+    if (n++ % 5 === 0 || pendingSubs) discover();
     readNew();
     if (oc) { try { write(oc.poll()); } catch (e: any) { log(`OpenCode okunamadı: ${e.message}`); } }
     return count - before;

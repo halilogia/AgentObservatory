@@ -12,6 +12,8 @@ export interface ExtEvent {
   ts: number;
   /** olay kimliğinin tohumu: aynı tohum = aynı olay (INSERT OR IGNORE ile tekrar yazılmaz) */
   seed: string;
+  /** alt ajan görevi: onu başlatan ana görevin kimliği */
+  parentTaskId?: string;
 }
 
 /** Observatory kendi başlattığı görevi zaten kaydetti mi? (ajan, istem, zaman) */
@@ -30,7 +32,8 @@ export function toTaskEvent(e: ExtEvent): TaskEvent {
     tier: 3,
     type: e.type,
     data: { ...e.data, external: true },
-    timestamp: e.ts
+    timestamp: e.ts,
+    ...(e.parentTaskId ? { parentTaskId: e.parentTaskId } : {})
   };
 }
 

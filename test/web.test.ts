@@ -66,6 +66,9 @@ try {
   // yapılandırma
   const cfg = await (await fetch(base + '/api/config')).json() as any;
   assert.deepStrictEqual(cfg.engines.map((e: any) => e.id), ['claude', 'codex', 'opencode', 'agy'], 'dört motor');
+  assert.deepStrictEqual(cfg.engines.map((e: any) => e.team), ['turuncu', 'kirmizi', 'siyah', 'mavi'], 'motor takımları');
+  assert.deepStrictEqual(cfg.teams.map((t: any) => t.id), ['turuncu', 'mavi', 'kirmizi', 'siyah'], 'takım meta bilgisi /api/config içinde');
+  assert.ok(cfg.teams.every((t: any) => /^#[0-9A-Fa-f]{6}$/.test(t.color) && t.labelKey === 'team.' + t.id));
   assert.ok(cfg.projects.some((p: any) => p.name === 'proj'), 'proje listesi');
   assert.ok(cfg.defaultCwd.startsWith(root) && cfg.defaultCwd !== root, 'varsayılan klasör kök değil, bir proje olmalı');
   assert.ok(cfg.engines.every((e: any) => typeof e.installed === 'boolean'));

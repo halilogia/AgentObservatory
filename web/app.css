@@ -845,3 +845,58 @@ select.addin { appearance: auto; }
 .tfilter.on { background: var(--text); color: var(--bg); border-color: var(--text); }
 @media (prefers-reduced-motion: reduce) { .dot.live { animation: none; } }
 #officeBtn .ico svg { width: 16px; height: 16px; }
+
+/* ---------- CLI görünümü (skin): data-skin="claude|codex|agy|opencode|generic" ---------- */
+.msg[data-skin] { --sk: #b45a3c; --sk-tool: #2f9e5f; --sk-dim: var(--muted); }
+:root[data-theme="dark"] .msg[data-skin] { --sk: #d97757; --sk-tool: #6ec882; }
+.msg[data-skin="codex"] { --sk: #0e8f70; --sk-tool: #0e8f70; }
+:root[data-theme="dark"] .msg[data-skin="codex"] { --sk: #10a37f; --sk-tool: #10a37f; }
+.msg[data-skin="agy"] { --sk: #2f6fdc; --sk-tool: #1f9ab8; }
+:root[data-theme="dark"] .msg[data-skin="agy"] { --sk: #4285f4; --sk-tool: #50c8e6; }
+.msg[data-skin="opencode"] { --sk: #7d55e0; --sk-tool: #7d55e0; }
+:root[data-theme="dark"] .msg[data-skin="opencode"] { --sk: #aa82ff; --sk-tool: #aa82ff; }
+.msg[data-skin="generic"] { --sk: var(--muted); --sk-tool: var(--muted); }
+.iconbtn.off#skinBtn { opacity: .55; }
+
+.msg[data-skin] .tool { border: 0; border-radius: 0; margin: 0 0 .35em; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.msg[data-skin] .tool summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0; padding: 1px 0 1px 1.4em; position: relative; }
+.msg[data-skin] .tool summary::before { position: absolute; left: 0; top: 1px; color: var(--sk-tool); font-weight: 700; content: "\25CF"; }
+.msg[data-skin] .tool .tn { color: var(--text); font-weight: 700; white-space: pre; }
+.msg[data-skin] .tool .ts { flex: 1 1 0; min-width: 0; white-space: pre; color: var(--text); }
+.msg[data-skin="claude"] .tool summary::before { color: var(--sk-tool); }
+.msg[data-skin="claude"] .tool .tn { color: var(--sk); }
+.msg[data-skin="codex"] .tool summary::before { content: "\2022"; }
+.msg[data-skin="codex"] .tool .tn { color: var(--sk); }
+.msg[data-skin="agy"] .tool summary::before { content: "\25B8"; }
+.msg[data-skin="agy"] .tool .ts { color: var(--sk-dim); }
+.msg[data-skin="opencode"] .tool summary { padding-left: .9em; border-left: 2px solid var(--sk); }
+.msg[data-skin="opencode"] .tool summary::before { content: none; }
+.msg[data-skin="opencode"] .tool .tn, .msg[data-skin="opencode"] .tool .ts { color: var(--sk-dim); font-weight: 500; }
+.msg[data-skin="generic"] .tool summary { padding-left: 0; }
+.msg[data-skin="generic"] .tool summary::before { content: none; }
+.msg[data-skin="generic"] .tool .tn, .msg[data-skin="generic"] .tool .ts { color: var(--sk-dim); font-weight: 500; }
+
+.msg[data-skin] .sk-res { flex: 0 0 100%; color: var(--sk-dim); margin-top: 1px; }
+.msg[data-skin] .tool[open] .sk-res { display: none; }
+.msg[data-skin] .sk-ln { white-space: pre; overflow: hidden; text-overflow: ellipsis; padding-left: 2.2em; position: relative; }
+.msg[data-skin="claude"] .sk-ln:first-child::before { content: "\23BF"; position: absolute; left: .4em; }
+.msg[data-skin="codex"] .sk-ln:first-child::before { content: "\2514"; position: absolute; left: .4em; }
+.msg[data-skin="opencode"] .sk-ln { padding-left: 1.8em; }
+.msg[data-skin="generic"] .sk-ln { padding-left: 1.2em; }
+.msg[data-skin] .tool pre { font-size: 12px; }
+
+/* ---------- takım / bağlam paneli / yeni fincan konumu ---------- */
+.mgroup.team { margin-top: 4px; font-weight: 600; color: var(--muted); }
+.menu .item.auto .dot { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--accent); }
+.dot.team { width: 8px; height: 8px; }
+.autotag { font-size: 11px; color: var(--faint); border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; }
+.right .cup { width: 28px; height: 20px; margin: 0; }
+.pill.ctx { color: var(--muted); }
+.menu.ctxpanel { right: 0; width: min(380px, 100%); padding: 10px 12px; }
+.ctx-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.ctx-note { font-size: 12px; color: var(--accent); margin-bottom: 6px; }
+.ctx-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-top: 1px solid var(--border); font-size: 13px; min-width: 0; }
+.ctx-k { flex: 0 0 120px; color: var(--muted); font-size: 12px; }
+.ctx-v { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.ctx-copy { flex: none; background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 1px 8px; font-size: 11px; color: var(--muted); cursor: pointer; }
+.ctx-copy:hover { background: var(--sunken); }

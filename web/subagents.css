@@ -1,0 +1,21 @@
+/* Alt ajan blokları (sohbette Task/Agent araç satırının altı) ve oturum listesi rozeti */
+.subagent { margin: -.3em 0 .7em 14px; padding-left: 10px; border-left: 2px solid var(--border); font-size: 13px; }
+.subagent > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 4px 0; color: var(--muted); min-width: 0; }
+.subagent > summary::-webkit-details-marker { display: none; }
+.subagent .sa-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.subagent.sa-running .sa-dot { background: var(--warn); animation: sa-pulse 1s ease-in-out infinite; }
+.subagent.sa-done .sa-dot { background: var(--ok); }
+.subagent.sa-error .sa-dot { background: var(--err); }
+.subagent .sa-name { flex: none; font-weight: 600; color: var(--text); }
+.subagent .sa-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subagent .sa-state { flex: none; font-size: 12px; color: var(--faint); }
+.subagent .sa-body { padding: 2px 0 8px; display: flex; flex-direction: column; gap: 4px; }
+.subagent .sa-k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); margin-top: 4px; }
+.subagent .sa-v { white-space: pre-wrap; word-break: break-word; color: var(--text); }
+.subagent .sa-err { color: var(--err); }
+.subagent .sa-tools { display: flex; flex-wrap: wrap; gap: 4px; }
+.subagent .sa-chip { background: var(--sunken); border-radius: 6px; padding: 1px 7px; font-size: 12px; color: var(--muted); }
+.hitem .subbadge { flex: none; font-size: 10.5px; background: var(--sunken); color: var(--muted); border-radius: 999px; padding: 0 7px; margin-left: 4px; }
+.hitem .subbadge.live { color: var(--warn); }
+@keyframes sa-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .subagent.sa-running .sa-dot { animation: none; } }

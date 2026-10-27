@@ -74,7 +74,11 @@ ObsI18n.addResources('en', {
     bad_approval: 'Approval status (true/false) required.',
     approval_failed: 'Failed to send approval.'
   },
-  cup: { show: 'Show coffee cup', hide: 'Hide coffee cup' },
+  cup: { show: 'Show coffee cup', hide: 'Hide coffee cup', tip: 'Cache estimate: {{time}}' },
+  skin: { on: 'Show CLI view', off: 'Hide CLI view', lines: 'lines' },
+  team: { turuncu: 'Orange Team', mavi: 'Blue Team', kirmizi: 'Red Team', siyah: 'Black Team', auto: 'Route automatically', autoSub: 'Picks the best team for the prompt; never widens write access', autoShort: 'Auto', autoVia: 'auto: {{reason}}' },
+  router: { gemini: 'Gemini requested', review: 'review / tests', bulk: 'bulk work', code: 'code writing', fallback: 'current choice' },
+  ctx: { btn: 'Context', title: 'Context info', engine: 'Engine and team', model: 'Model', effort: 'Effort', cwd: 'Working folder', session: 'Session id', messages: 'Messages', tokens: 'Tokens (estimate)', tokensVal: 'in {{tin}} · out {{tout}}', cache: 'Cache (estimate)', cacheEmpty: 'none yet', cacheOff: 'Claude Code only', cacheHot: 'warm, {{time}} left', cacheCold: 'gone cold', none: '-', auto: 'Automatic routing is on', close: 'Close' },
   foot: { cwdLocked: 'The folder of this session is not among the allowed folders, message not sent ({{cwd}}). Add the folder and retry.', busy: 'You cannot switch chats while a task is running.', disconnected: 'Connection lost, retrying...', startFailed: 'Could not start: {{msg}}', writeOn: 'Write is on.' },
   engines: {
     claude: { note: 'Permissions cannot be asked in headless mode: read and answer only.' },
