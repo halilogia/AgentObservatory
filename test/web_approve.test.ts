@@ -9,6 +9,7 @@ import { SqliteStore } from '../src/core/sqlite_store.ts';
 console.log('🧪 Testing /api/approve endpoint and interactive approval...');
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'obs-appr-'));
+process.env.CODEX_BIN = process.execPath; // mock installed binary for test runner
 const testDbPath = path.join(testDir, 'test.sqlite');
 const store = new SqliteStore(testDbPath);
 
