@@ -666,7 +666,8 @@
     const content = el('div'); const meta = el('div', 'meta');
     col.append(who, content, meta); row.appendChild(col);
     $('#thread').appendChild(row);
-    const v = { rec, row, content, meta, dots, curText: null, tools: new Map(), lastTool: null, raf: 0, tin: 0, tout: 0, t0: Date.now(), done: !live };
+    const v = { rec, row, content, meta, dots, curText: null, tools: new Map(), lastTool: null, raf: 0, tin: 0, tout: 0, t0: Date.now(), done: !live, steps: [] };
+    if (live) { runView = v; renderRunCard(); }
     if (!live) {
       rec.parts.forEach((p) => { if (p.k === 'text') { const box = el('div'); content.appendChild(box); renderMd(box, p.v); } else buildTool(v, p, true); });
       if (rec.notice) content.appendChild(el('div', 'notice' + (rec.notice.warn ? ' warn' : ''), noticeText(rec.notice)));
@@ -717,9 +718,12 @@
     const kind = toolKind(d.name);
     const part = { k: 'tool', name: d.name || 'tool', kind, summary: toolSummary(d.name, d.input), out: '', input: d.input };
     v.rec.parts.push(part);
-    const rec = { part, det: buildTool(v, part, false), done: false };
+    const step = { kind, name: d.name || 'tool', summary: part.summary, t0: Date.now(), t1: 0, out: '' };
+    v.steps.push(step);
+    const rec = { part, step, det: buildTool(v, part, false), done: false };
     v.tools.set(d.id || 'n' + v.tools.size, rec);
     v.lastTool = rec;
+    renderRunCard();
     scrollDown();
   }
   function toolDone(v, d) {
@@ -728,7 +732,9 @@
     rec.done = true;
     const out = String(d.output ?? d.result ?? '').split('\n').slice(0, 60).join('\n').slice(0, 6000);
     rec.part.out = out;
+    rec.step.t1 = Date.now(); rec.step.out = out;
     renderToolOutput(rec.det, rec.part);
+    renderRunCard();
   }
   function addApproval(v, d) {
     if (!v.approvals) v.approvals = new Map();
@@ -814,6 +820,8 @@
   }
   function finish(v, kind, d) {
     if (v.done) return; v.done = true;
+    v.steps.forEach((s) => { if (!s.t1) s.t1 = Date.now(); });
+    if (runView === v) { runView = null; renderRunCard(); }
     v.dots.remove();
     if (v.raf) { cancelAnimationFrame(v.raf); v.raf = 0; }
     if (!fullText(v.rec) && d && d.result && kind === 'completed') addText(v, String(d.result));
@@ -829,6 +837,51 @@
     renderMeta(v);
     if (st.running === v.rec.taskId) st.running = null;
     persist(); refreshSend(); refreshConfig(); $('#prompt').focus(); scrollDown();
+  }
+
+  // ---------- çalışma durum kartı (kapalı: tek satır; açık: adımlar + komut çıktısı) ----------
+  let runView = null, runTimer = 0;
+  const rcDetail = () => { try { return localStorage.getItem('obs.runDetail') === '1'; } catch { return false; } };
+  const rcSetDetail = (on) => { try { localStorage.setItem('obs.runDetail', on ? '1' : '0'); } catch { /* depolama kapalı */ } };
+  const RC_GLYPH = { term: '$', diff: '~', read: '·', task: '>', generic: '•' };
+  function rcLabel(v) {
+    const tr = ObsRunCard.trailing(v.steps);
+    if (!tr.kind) return t('rc.start');
+    return tr.kind === 'read' ? t('rc.read', { count: tr.count }) : t('rc.' + tr.kind);
+  }
+  function renderRunCard() {
+    const box = $('#runCard'); const v = runView;
+    if (!v || v.done) { box.hidden = true; box.replaceChildren(); if (runTimer) { clearInterval(runTimer); runTimer = 0; } return; }
+    if (!runTimer) runTimer = setInterval(renderRunCard, 1000);
+    const detail = rcDetail(); const now = Date.now();
+    box.hidden = false; box.style.setProperty('--c', v.rec.color); box.classList.toggle('open', detail);
+    const head = el('button', 'rc-head'); head.type = 'button'; head.title = t('rc.toggle'); head.setAttribute('aria-expanded', String(detail));
+    const chev = el('span', 'ico chev'); chev.innerHTML = ICON.chev;
+    head.append(el('span', 'rc-spin'), el('span', 'rc-label', rcLabel(v)), el('span', 'rc-time', ObsRunCard.clock(now - v.t0)), chev);
+    head.onclick = () => { rcSetDetail(!rcDetail()); renderRunCard(); };
+    const kids = [head];
+    if (detail) {
+      const body = el('div', 'rc-body');
+      body.appendChild(el('div', 'rc-meta', `${engineLabel(v.rec)} · ${v.rec.label}` + (v.steps.length ? ' · ' + t('rc.step', { n: v.steps.length }) : '')));
+      const seg = el('div', 'rc-seg'); ObsRunCard.segments(v.steps, 24).forEach((s) => seg.appendChild(el('i', s))); body.appendChild(seg);
+      const list = el('div', 'rc-list');
+      v.steps.slice(-8).forEach((s) => {
+        const row = el('div', 'rc-step' + (s.t1 ? '' : ' run'));
+        row.append(el('span', 'rc-ico', RC_GLYPH[s.kind] || '•'), el('span', 'rc-sum', s.summary || s.name), el('span', 'rc-dur', ObsRunCard.dur((s.t1 || now) - s.t0)));
+        list.appendChild(row);
+        if (s.kind === 'term' && s.out) {
+          const o = ObsRunCard.outLines(s.out, 3); const pre = el('div', 'rc-out');
+          o.lines.forEach((l) => pre.appendChild(el('div', '', l)));
+          if (o.more) pre.appendChild(el('div', 'rc-more', t('rc.more', { n: o.more })));
+          list.appendChild(pre);
+        }
+      });
+      body.appendChild(list);
+      const stop = el('button', 'rc-stop', t('rc.stop')); stop.type = 'button'; stop.disabled = st.running === 'pending'; stop.onclick = send;
+      body.appendChild(stop);
+      kids.push(body);
+    }
+    box.replaceChildren(...kids);
   }
 
   // ---------- olay akışı ----------

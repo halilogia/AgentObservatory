@@ -3,6 +3,7 @@ ObsI18n.addResources('tr', {
   common: { copy: 'Kopyala', copied: 'Kopyalandı' },
   perm: { request: 'Onay İsteği', approve: '✓ İzin Ver (Evet)', reject: '✗ Reddet (Hayır)', approved: '✓ İzin Verildi', rejected: '✗ Reddedildi' },
   nav: { newChat: 'Yeni sohbet', toggle: 'Geçmişi aç veya kapat', history: 'Sohbet geçmişi', office: 'Nexus 3D Ofis' },
+  rc: { start: 'Başlıyor…', read: '{{count}} dosya okunuyor', term: 'Komut çalıştırıyor', diff: 'Dosya düzenliyor', task: 'Alt görev çalışıyor', generic: 'Araç kullanıyor', step: 'Adım {{n}}', more: '… +{{n}} satır', stop: 'Durdur', toggle: 'Ayrıntılı görünümü aç veya kapat' },
   empty: { title: 'Ne yaptırmak istersin?' },
   composer: { placeholder: 'Bir şey yaz', label: 'İstem', send: 'Gönder', stop: 'Durdur' },
   mode: { read: 'Salt okunur', write: 'Yazabilir', readTitle: 'Salt Okunur (İnceleme / Dosyalara dokunmaz)', writeTitle: 'Ajan Modu (Kod yazar ve dosyaları düzenler)', noWrite: '{{engine}}: yazma kipi yok' },

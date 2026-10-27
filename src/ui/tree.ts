@@ -36,8 +36,27 @@ function isLive(t: TaskSummary, now: number): boolean {
   return (t.status === 'running' || t.status === 'pending') && now - t.startTime < STALE_MS;
 }
 
+const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const spinFrame = (now: number): string => SPINNER[Math.floor(now / 100) % SPINNER.length];
+
+/** Ekranda çalışan bir görev var mı: animasyon zamanlayıcısı yalnızca o zaman sık çizer (son çizimden). */
+let hasLive = false;
+
+/** Ayrıntı sayfası durum satırı: dönen ikon · son araç · süre · araç sayısı çubuğu (çalışırken kısa ışık hareketi). */
+function liveBar(t: TaskSummary, now: number, width: number): string {
+  const n = t.toolsUsed.length;
+  const tool = t.toolsUsed[n - 1];
+  const label = tool ? toolLine(tool.name, tool.input) : 'başlıyor…';
+  const SEG = 12;
+  const filled = Math.min(n, SEG);
+  const pulse = Math.floor(now / 250) % 2 === 0;
+  const bar = '▰'.repeat(Math.max(0, filled - 1)) + (filled > 0 ? (pulse ? '▰' : '▱') : '') + '▱'.repeat(SEG - filled);
+  const tail = ` ${fmtDuration(now - t.startTime)} ${paint('yellow', bar)} ${paint('gray', n + ' araç')}`;
+  return `${paint('yellow', spinFrame(now))} ${truncate(label, Math.max(10, width - 32))}${tail}`;
+}
+
 function statusGlyph(t: TaskSummary, now: number): string {
-  if (isLive(t, now)) return paint('yellow', '●');
+  if (isLive(t, now)) return paint('yellow', spinFrame(now));
   if (t.status === 'running' || t.status === 'pending') return paint('gray', '◌');
   if (t.status === 'completed') return paint('green', '✔');
   if (t.status === 'cancelled') return paint('gray', '■');
@@ -97,7 +116,7 @@ function sessionLine(turns: TaskSummary[], cols: number, now: number, selected: 
   const tokens = turns.reduce((a, t) => a + (t.usage?.totalTokens || 0), 0);
   const name = last.model && last.model !== last.agent ? `${last.agent} (${last.model})` : last.agent;
   const emoji = AGENT_EMOJI[last.agent] ? AGENT_EMOJI[last.agent] + ' ' : '';
-  const glyph = live ? paint('yellow', '●') : statusGlyph(last, now);
+  const glyph = live ? paint('yellow', spinFrame(now)) : statusGlyph(last, now);
   const fold = paint('gray', expanded ? '▾' : '▸');
   const mark = selected ? paint('cyan', '▸') : ' ';
   const head = `${mark}${fold} ${glyph} ${emoji}${paint(AGENT_COLOR[last.agent] || 'white', paint('bold', name))} ${paint('gray', String(last.sessionId).slice(0, 8) + ' · ' + turns.length + ' mesaj · ' + (live ? 'sürüyor ' : 'sürdü ') + fmtSpan(span) + (tokens ? ' · ' + fmtTokens(tokens) + ' tok' : ''))}`;
@@ -131,8 +150,9 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
   roots.sort(order);
 
   const counts = { run: 0, ok: 0, fail: 0 };
+  hasLive = false;
   for (const t of shown) {
-    if (running(t)) counts.run++;
+    if (running(t)) { counts.run++; hasLive = true; }
     else if (t.status === 'completed') counts.ok++;
     else counts.fail++;
   }
@@ -242,6 +262,8 @@ export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: 
   const tag = paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
   out.push(`${paint('bold', 'Sohbet')}  ${paint('gray', hms(now))}   ${paint('gray', '[Esc] geri  [↑↓] kaydır  [P] istem: ' + (opts.fullPrompt ?? true ? 'tam' : 'kısa') + '  [O] Ofis Yönetimi  [W] Web paneli  [Q] çıkış')}`);
   out.push(`${statusGlyph(t, now)} ${tag}   ${paint('gray', t.taskId + ' · ' + fmtDuration(live ? now - t.startTime : t.durationMs))}`);
+  hasLive = live;
+  if (live) out.push(liveBar(t, now, width));
   out.push(paint('gray', '─'.repeat(Math.min(width, 120))));
 
   let buf = '';
@@ -364,6 +386,9 @@ export function runTree(args: string[]): void {
   const redraw = () => { process.stdout.write('\x1b[2J'); draw(); };
   redraw();
   const timer = setInterval(draw, 800);
+  // animasyon: çalışan görev varken dönen ikon / ışık çubuğu için daha sık çiz (yoksa 800 ms'lik çizim yeter)
+  const animTimer = setInterval(() => { if (hasLive && !officeActive) draw(); }, 150);
+  process.on('exit', () => clearInterval(animTimer));
   process.stdin.setRawMode(true);
   process.stdin.resume();
   const move = (d: number) => {

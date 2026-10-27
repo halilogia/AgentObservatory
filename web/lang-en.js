@@ -3,6 +3,7 @@ ObsI18n.addResources('en', {
   common: { copy: 'Copy', copied: 'Copied' },
   perm: { request: 'Approval Request', approve: '✓ Allow (Yes)', reject: '✗ Deny (No)', approved: '✓ Allowed', rejected: '✗ Denied' },
   nav: { newChat: 'New chat', toggle: 'Show or hide history', history: 'Chat history', office: 'Nexus 3D Office' },
+  rc: { start: 'Starting…', read: 'Reading {{count}} files', term: 'Running command', diff: 'Editing files', task: 'Running subtask', generic: 'Using a tool', step: 'Step {{n}}', more: '… +{{n}} lines', stop: 'Stop', toggle: 'Show or hide detailed view' },
   empty: { title: 'What should we get done?' },
   composer: { placeholder: 'Type something', label: 'Prompt', send: 'Send', stop: 'Stop' },
   mode: { read: 'Read-only', write: 'Can write', readTitle: 'Read-Only (Inspection / Files not touched)', writeTitle: 'Agent Mode (Writes code and edits files)', noWrite: '{{engine}}: no write mode' },
