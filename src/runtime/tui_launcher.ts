@@ -80,24 +80,7 @@ function isLockFresh(): boolean {
  * or was just spawned. Never throws, never blocks.
  */
 export function autoLaunchTui(): void {
-  try {
-    if (isDisabled()) return;
-    const now = Date.now();
-    if (now - lastLaunchAt < DEBOUNCE_MS || isLockFresh()) return;
-    lastLaunchAt = now;
-    try { fs.writeFileSync(LOCK_FILE, String(process.pid)); } catch {}
-
-    // Detect an already running watcher process (async, so the task path is never blocked)
-    const query = "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match 'cli\\.ts\"?\\s+(watch|chat|tree)' } | Measure-Object | Select-Object -ExpandProperty Count";
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', query], { windowsHide: true, timeout: 8000 }, (err, stdout) => {
-      try {
-        if (!err && parseInt(String(stdout).trim(), 10) > 0) return;
-        launchTuiWindow();
-      } catch {
-        // swallow
-      }
-    });
-  } catch {
-    // Auto-launch must never affect the task path
-  }
+  // Otomatik TUI/pencere açma kalıcı olarak tamamen devre dışı bırakıldı.
+  // Kullanıcı gerek gördüğünde `launch_observatory_tui` aracı veya `observatory` CLI ile manuel açabilir.
+  return;
 }
