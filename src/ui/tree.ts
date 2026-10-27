@@ -89,7 +89,7 @@ function lastActivity(t: TaskSummary, width: number): string {
 
 function nodeLines(t: TaskSummary, prefix: string, childPrefix: string, cols: number, now: number, selected: boolean, label?: string): string[] {
   const dur = fmtDuration(isLive(t, now) ? now - t.startTime : t.durationMs);
-  const tag = (label ? paint('gray', label + ' ') : '') + paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
+  const tag = (label ? paint('gray', label + ' ') : '') + (AGENT_EMOJI[t.agent] ? AGENT_EMOJI[t.agent] + ' ' : '') + paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
   const tokens = t.usage?.totalTokens ? paint('gray', ' · ' + fmtTokens(t.usage.totalTokens) + ' tok') : '';
   const mark = selected ? paint('cyan', '▸') : ' ';
   const head = `${mark}${prefix}${statusGlyph(t, now)} ${tag} ${paint('gray', t.taskId.slice(-8))} ${paint('gray', 'başladı ' + hms(t.startTime) + ' · ' + (isLive(t, now) ? 'sürüyor ' : 'sürdü ') + dur)}${tokens}`;
