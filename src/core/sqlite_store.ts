@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import type { TaskEvent, TaskSummary } from './types.ts';
+import type { Mission, MissionContract, TaskNode, AgentRun, TaskStatus } from './mission_types.ts';
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
@@ -95,6 +96,67 @@ export class SqliteStore {
         error TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+
+      CREATE TABLE IF NOT EXISTS missions (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        repo_path TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        completed_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_missions_status ON missions(status);
+
+      CREATE TABLE IF NOT EXISTS mission_contracts (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        contract_json TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_contracts_mission ON mission_contracts(mission_id);
+
+      CREATE TABLE IF NOT EXISTS mission_tasks (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL,
+        dependencies_json TEXT DEFAULT '[]',
+        required_capabilities_json TEXT DEFAULT '[]',
+        assigned_agent TEXT,
+        assigned_model TEXT,
+        workspace_path TEXT,
+        output_artifacts_json TEXT DEFAULT '[]',
+        retry_count INTEGER DEFAULT 0,
+        max_retries INTEGER DEFAULT 3,
+        created_at INTEGER NOT NULL,
+        started_at INTEGER,
+        completed_at INTEGER,
+        error TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_mtasks_mission ON mission_tasks(mission_id);
+      CREATE INDEX IF NOT EXISTS idx_mtasks_status ON mission_tasks(status);
+
+      CREATE TABLE IF NOT EXISTS agent_runs (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        mission_id TEXT NOT NULL,
+        agent TEXT NOT NULL,
+        model TEXT NOT NULL,
+        pid INTEGER,
+        lease_token TEXT NOT NULL,
+        lease_expires_at INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        heartbeat_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        exit_code INTEGER,
+        error TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_task ON agent_runs(task_id);
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
     `);
 
     // Safe migrations: parent_task_id on tasks and events
@@ -431,6 +493,160 @@ export class SqliteStore {
 
   close(): void {
     this.db.close();
+  }
+
+  // --- Mission Control & Adaptive Orchestrator Domain Methods ---
+
+  createMission(m: { id: string; title: string; status?: Mission['status']; mode: Mission['mode']; repoPath: string; createdAt?: number }): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO missions (id, title, status, mode, repo_path, created_at, completed_at)
+      VALUES (?, ?, ?, ?, ?, ?, NULL)
+    `);
+    stmt.run(m.id, m.title, m.status || 'draft', m.mode, m.repoPath, m.createdAt || Date.now());
+  }
+
+  getMission(id: string): Mission | null {
+    const row = this.db.prepare('SELECT * FROM missions WHERE id = ?').get(id) as any;
+    if (!row) return null;
+    const contract = this.getMissionContract(id);
+    const tasks = this.listMissionTasks(id);
+    return {
+      id: row.id,
+      title: row.title,
+      status: row.status,
+      mode: row.mode,
+      repoPath: row.repo_path,
+      contract: contract || undefined,
+      tasks,
+      createdAt: row.created_at,
+      completedAt: row.completed_at || undefined
+    };
+  }
+
+  updateMissionStatus(id: string, status: Mission['status'], completedAt?: number): void {
+    this.db.prepare('UPDATE missions SET status = ?, completed_at = COALESCE(?, completed_at) WHERE id = ?').run(status, completedAt || null, id);
+  }
+
+  listMissions(limit = 50): Mission[] {
+    const rows = this.db.prepare('SELECT * FROM missions ORDER BY created_at DESC LIMIT ?').all(limit) as any[];
+    return rows.map((r) => this.getMission(r.id)!).filter(Boolean);
+  }
+
+  createMissionContract(c: MissionContract): void {
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO mission_contracts (id, mission_id, contract_json, version, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    stmt.run(c.id, c.missionId, JSON.stringify(c), 1, c.createdAt || Date.now());
+  }
+
+  getMissionContract(missionId: string): MissionContract | null {
+    const row = this.db.prepare('SELECT contract_json FROM mission_contracts WHERE mission_id = ? ORDER BY version DESC LIMIT 1').get(missionId) as any;
+    if (!row) return null;
+    try { return JSON.parse(row.contract_json); } catch { return null; }
+  }
+
+  createMissionTask(t: TaskNode): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO mission_tasks (
+        id, mission_id, title, description, status,
+        dependencies_json, required_capabilities_json,
+        assigned_agent, assigned_model, workspace_path,
+        output_artifacts_json, retry_count, max_retries,
+        created_at, started_at, completed_at, error
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      t.id, t.missionId, t.title, t.description, t.status,
+      JSON.stringify(t.dependencies || []), JSON.stringify(t.requiredCapabilities || []),
+      t.assignedAgent || null, t.assignedModel || null, t.workspacePath || null,
+      JSON.stringify(t.outputArtifacts || []), t.retryCount || 0, t.maxRetries ?? 3,
+      t.createdAt || Date.now(), t.startedAt || null, t.completedAt || null, t.error || null
+    );
+  }
+
+  getMissionTask(id: string): TaskNode | null {
+    const row = this.db.prepare('SELECT * FROM mission_tasks WHERE id = ?').get(id) as any;
+    if (!row) return null;
+    return {
+      id: row.id,
+      missionId: row.mission_id,
+      title: row.title,
+      description: row.description,
+      status: row.status,
+      dependencies: JSON.parse(row.dependencies_json || '[]'),
+      requiredCapabilities: JSON.parse(row.required_capabilities_json || '[]'),
+      assignedAgent: row.assigned_agent || undefined,
+      assignedModel: row.assigned_model || undefined,
+      workspacePath: row.workspace_path || undefined,
+      outputArtifacts: JSON.parse(row.output_artifacts_json || '[]'),
+      retryCount: row.retry_count || 0,
+      maxRetries: row.max_retries || 3,
+      createdAt: row.created_at,
+      startedAt: row.started_at || undefined,
+      completedAt: row.completed_at || undefined,
+      error: row.error || undefined
+    };
+  }
+
+  updateMissionTaskStatus(id: string, status: TaskStatus, updates: Partial<TaskNode> = {}): void {
+    const existing = this.getMissionTask(id);
+    if (!existing) return;
+    const stmt = this.db.prepare(`
+      UPDATE mission_tasks SET
+        status = ?,
+        assigned_agent = COALESCE(?, assigned_agent),
+        assigned_model = COALESCE(?, assigned_model),
+        workspace_path = COALESCE(?, workspace_path),
+        started_at = COALESCE(?, started_at),
+        completed_at = COALESCE(?, completed_at),
+        error = COALESCE(?, error),
+        retry_count = COALESCE(?, retry_count)
+      WHERE id = ?
+    `);
+    stmt.run(
+      status,
+      updates.assignedAgent || null,
+      updates.assignedModel || null,
+      updates.workspacePath || null,
+      updates.startedAt || (status === 'running' ? Date.now() : null),
+      updates.completedAt || (['completed', 'failed'].includes(status) ? Date.now() : null),
+      updates.error || null,
+      updates.retryCount !== undefined ? updates.retryCount : null,
+      id
+    );
+  }
+
+  listMissionTasks(missionId: string): TaskNode[] {
+    const rows = this.db.prepare('SELECT id FROM mission_tasks WHERE mission_id = ? ORDER BY created_at ASC').all(missionId) as any[];
+    return rows.map((r) => this.getMissionTask(r.id)!).filter(Boolean);
+  }
+
+  createAgentRun(r: AgentRun): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO agent_runs (
+        id, task_id, mission_id, agent, model, pid,
+        lease_token, lease_expires_at, status,
+        started_at, heartbeat_at, completed_at, exit_code, error
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      r.id, r.taskId, r.missionId, r.agent, r.model, r.pid || null,
+      r.leaseToken, r.leaseExpiresAt, r.status,
+      r.startedAt || Date.now(), r.heartbeatAt || Date.now(),
+      r.completedAt || null, r.exitCode ?? null, r.error || null
+    );
+  }
+
+  heartbeatAgentRun(id: string, now = Date.now()): void {
+    this.db.prepare('UPDATE agent_runs SET heartbeat_at = ? WHERE id = ?').run(now, id);
+  }
+
+  completeAgentRun(id: string, status: AgentRun['status'], exitCode?: number, error?: string): void {
+    this.db.prepare(`
+      UPDATE agent_runs SET status = ?, completed_at = ?, exit_code = ?, error = ?
+      WHERE id = ?
+    `).run(status, Date.now(), exitCode ?? null, error || null, id);
   }
 }
 

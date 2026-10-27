@@ -7,6 +7,8 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/) standardına day
 
 ## [Unreleased]
 
+- **Mission Control Domain & SQLite Persistence (Faz 1):** Added core domain types (src/core/mission_types.ts) for Mission, MissionContract, TaskNode, AgentRun, and AgentCapability. Extended SQLite store (src/core/sqlite_store.ts) with missions, mission_contracts, mission_tasks, and gent_runs tables and persistence methods. Added unit test suite 	est/mission_domain.test.ts (31 test suites passing 100%).
+
 - Add Command Code (`commandcode`) to the Black Team, runner, doctor, MCP tools, and web engine picker. Parse native NDJSON events, preserve exit failures and sessions, and launch Windows npm shims without shell interpolation. The web picker uses read-only plan mode and the CLI-configured model; CLI/MCP callers can explicitly opt into `--yolo` via `dangerouslySkipPermissions` outside read-only mode.
 
 - **Canlı AI Ofis Simülasyonu (2026-10-27):** `web/office_sim.js` (saf Canvas 2D, CSP uyumlu) Ajan Operasyon Panosu çekmecesine eklendi. SSE olayları animasyona eşlenir: yazma/komut araçları → masada klavye, okuma/arama → kitaplık, `permission.requested` → ünlem rozeti, `task.completed` → yeşil onay + beyaz tahta sayacı, boşta → kahve/su alanı. Ajana tıklayınca kartı vurgulanır. Test: `test/web_office_sim.test.ts`.
