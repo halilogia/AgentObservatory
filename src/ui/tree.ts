@@ -244,8 +244,18 @@ export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: 
   const scroll = Math.min(Math.max(0, opts.scroll ?? 0), maxScroll);
   const end = lines.length - scroll;
   const view = lines.slice(Math.max(0, end - room), end);
+  if (scroll > 0 && view.length) view[view.length - 1] = paint('gray', `… ${scroll} satır aşağıda (↓ ile in)`);
+  // sağ kenarda kaydırma çubuğu: yalnızca içerik ekrana sığmıyorsa (iz: gri, tutamaç: parlak)
+  if (lines.length > room) {
+    const start = Math.max(0, end - room);
+    const thumb = Math.max(1, Math.round((room * room) / lines.length));
+    const top = Math.round((start / (lines.length - room)) * (room - thumb));
+    view.forEach((l, i) => {
+      const on = i >= top && i < top + thumb;
+      view[i] = l + `\x1b[${cols}G` + (on ? paint('white', '┃') : paint('gray', '│'));
+    });
+  }
   out.push(...view);
-  if (scroll > 0) out[out.length - 1] = paint('gray', `… ${scroll} satır aşağıda (↓ ile in)`);
   return out.join('\n');
 }
 
