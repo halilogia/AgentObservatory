@@ -10,6 +10,7 @@
     caps: svg('<path d="M8 2.5l1.3 3.2 3.2 1.3-3.2 1.3L8 11.5 6.7 8.3 3.5 7l3.2-1.3z"/><path d="M12.5 11v3M11 12.5h3"/>'),
     think: svg('<path d="M8 2.5a4 4 0 00-2 7.4V11h4V9.9A4 4 0 008 2.5z"/><path d="M6.5 13.5h3"/>'),
     phone: svg('<rect x="5" y="1.8" width="6" height="12.4" rx="1.6"/><path d="M7.2 12.2h1.6"/>'),
+    office: svg('<rect x="3.5" y="2" width="9" height="12" rx="1"/><path d="M6 5h1M9 5h1M6 8h1M9 8h1M7 14v-2.5h2V14"/>'),
     undo: svg('<path d="M6 3.5L3 6.5l3 3"/><path d="M3 6.5h6.5a3.5 3.5 0 010 7H6"/>'),
     check: svg('<path d="M3.5 8.5l3 3 6-7"/>'),
     folder: svg('<path d="M2 4.5A1.5 1.5 0 013.5 3h2.3l1.4 1.5h5.3A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/>'),
@@ -364,13 +365,18 @@
   function scheduleTermRefresh() { if (!termTimer) termTimer = setTimeout(() => { termTimer = 0; refreshTermSessions(); }, 3000); }
   function renderTermSessions(box, localChats) {
     const known = new Set(localChats.map((c) => c.session && c.session.id).filter(Boolean));
-    const list = termSessions.filter((s) => !known.has(s.id));
-    if (!list.length) return;
-    box.appendChild(el('div', 'hgroup', t('term.title')));
+    const all = termSessions.filter((s) => !known.has(s.id));
+    if (!all.length) return;
+    const only = lsGet('obs-term-live') === '1';
+    const list = only ? all.filter((s) => s.running) : all;
+    const head = el('div', 'hgroup phead'); head.appendChild(el('span', '', t('term.title')));
+    const flt = el('button', 'tfilter' + (only ? ' on' : ''), t('term.liveOnly')); flt.type = 'button'; flt.setAttribute('aria-pressed', String(only));
+    flt.onclick = () => { lsSet('obs-term-live', only ? '0' : '1'); renderHistory(); };
+    head.appendChild(flt); box.appendChild(head);
     list.slice(0, 30).forEach((s) => {
       const item = el('div', 'hitem' + (chat && chat.termId === s.id ? ' on' : ''));
       const b = el('button', 'hmain'); b.type = 'button'; b.title = s.title;
-      const dot = el('span', 'dot'); const e = engineById(s.agent); dot.style.setProperty('--c', e ? e.color : 'var(--faint)');
+      const dot = el('span', 'dot' + (s.running ? ' live' : '')); const e = engineById(s.agent); dot.style.setProperty('--c', e ? e.color : 'var(--faint)');
       b.append(dot, el('span', 't', smartTitle(s.title) || t('history.untitled')), el('span', 'when', s.running ? t('term.live') : when(s.end)));
       b.onclick = () => loadTermSession(s);
       item.appendChild(b); box.appendChild(item);
@@ -1359,6 +1365,7 @@
     st.cwd = activeProj && activeProj.cwd ? activeProj.cwd : (st.cfg.projects.some((p) => p.path === saved.cwd) ? saved.cwd : '');
     if (!narrow() && lsGet('obs-nav') === 'closed') $('#layout').classList.add('nav-closed');
     $('#capsIco').innerHTML = ICON.caps; $('#capsBtn').onclick = openCaps;
+    $('#officeIco').innerHTML = ICON.office;
     $('#phoneIco').innerHTML = ICON.phone; $('#phoneBtn').onclick = openPhone; $('#phoneBtn').hidden = !!st.cfg.remote;
     $('#newIco').innerHTML = ICON.plus; $('#sideIco').innerHTML = ICON.panel;
     applyLanguage();

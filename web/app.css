@@ -837,3 +837,10 @@ select.addin { appearance: auto; }
 @media (prefers-reduced-motion: reduce) { .rc-spin, .rc-seg i.run { animation: none; } }
 
 #officeBtn { display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }
+
+/* terminal oturumları: çalışan oturumun dönen göstergesi ve süzgeç düğmesi */
+.dot.live { width: 11px; height: 11px; background: transparent; border: 2px solid var(--border-strong); border-top-color: var(--c, var(--accent)); animation: rcspin .9s linear infinite; box-sizing: border-box; }
+.tfilter { border: 1px solid var(--border); background: transparent; color: var(--muted); border-radius: 999px; font: inherit; font-size: 10.5px; padding: 1px 8px; cursor: pointer; text-transform: none; letter-spacing: 0; }
+.tfilter.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .dot.live { animation: none; } }
+#officeBtn .ico svg { width: 16px; height: 16px; }

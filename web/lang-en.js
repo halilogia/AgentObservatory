@@ -17,7 +17,7 @@ ObsI18n.addResources('en', {
   jump: 'Jump to latest',
   effort: { title: 'Thinking effort', none: 'not available for this engine', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Xhigh', max: 'Max', ultra: 'Ultra' },
   status: { notInstalled: 'not installed', limited: 'quota reached', limitUntil: '{{engine}} · limit until {{time}}', engines: 'Engine status' },
-  term: { title: 'Terminal sessions', live: 'live' },
+  term: { title: 'Terminal sessions', live: 'live', liveOnly: 'Running' },
   history: { today: 'Today', yesterday: 'Yesterday', older: 'Earlier', delete: 'Delete chat', untitled: 'Chat', rename: 'Rename' },
   time: { now: 'now', min: '{{n}} min', hour: '{{n}} h', minutes_one: '{{count}} min', minutes_other: '{{count}} min', hours_one: '{{count}} hour', hours_other: '{{count}} hours' },
   slash: { model: 'Choose the model', new: 'Start a new chat', folder: 'Choose the working folder', write: 'Turn write mode on or off', history: 'Show or hide chat history', copy: 'Copy the last answer to the clipboard' },
