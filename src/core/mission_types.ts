@@ -24,7 +24,31 @@ export type AgentCapability =
   | 'git.modify'
   | 'browser.inspect'
   | 'review.readonly'
-  | 'batch.process';
+  | 'batch.process'
+  | 'session.pause'
+  | 'approval.structured'
+  | 'diff.inspect'
+  | 'subagent.spawn'
+  | 'model.switch';
+
+export interface AgentDescriptor {
+  agent: string;
+  displayName: string;
+  version?: string;
+  executablePath?: string;
+  isAvailable: boolean;
+  capabilities: AgentCapability[];
+  supportedControls: {
+    canPause: boolean;
+    canResume: boolean;
+    canInspectDiff: boolean;
+    supportsStructuredApproval: boolean;
+    supportsStreamingJson: boolean;
+    supportsModelSwitching: boolean;
+  };
+  supportedModels?: string[];
+  probedAt: number;
+}
 
 export interface MissionContract {
   id: string;

@@ -7,6 +7,9 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/) standardına day
 
 ## [Unreleased]
 
+- **AgentAdapter Standardizasyonu & Capability Discovery (Faz 2):** ChatGPT Red Team ve OpenCode DeepSeek analizleriyle BaseAdapter uzerine getCapabilities(), supports() ve onbellekli asenkron probe(): Promise<AgentDescriptor> metotlari eklendi. Tum 6 CLI adaptorunun (claude, codex, agy, opencode, commandcode, freebuff) yetenek matrisi, diff denetimi, duraklatma ve onay kontrolleri standartlastirildi; asilsiz onay ve kontrol varsayimlari engellendi. test/adapter_capabilities.test.ts eklendi (toplam 32 test paketi %100 basariyla geciyor).
+
+
 - **Dokümantasyon Sadeleştirmesi:** ROADMAP.md makro kilometre taşlarına ve uzun vadeli vizyona indirgendi; aktif sprint ve görev takibi tasks.md'ye devredildi.
 
 - **Mission Control Domain & SQLite Persistence (Faz 1):** Added core domain types (src/core/mission_types.ts) for Mission, MissionContract, TaskNode, AgentRun, and AgentCapability. Extended SQLite store (src/core/sqlite_store.ts) with missions, mission_contracts, mission_tasks, and gent_runs tables and persistence methods. Added unit test suite 	est/mission_domain.test.ts (31 test suites passing 100%).

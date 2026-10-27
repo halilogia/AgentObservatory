@@ -3,6 +3,7 @@ import path from 'node:path';
 import { BaseAdapter } from './base_adapter.ts';
 import type { BuiltCommand, CommandOptions } from './base_adapter.ts';
 import type { EventStore } from '../core/event_store.ts';
+import type { AgentCapability, AgentDescriptor } from '../core/mission_types.ts';
 import { createEvent } from '../core/types.ts';
 import type { EventType } from '../core/types.ts';
 import { classifyFailure } from '../core/failure.ts';
@@ -22,6 +23,42 @@ export class CommandCodeAdapter extends BaseAdapter {
   private streamErrors = new Map<string, string>();
 
   constructor() { super('commandcode'); }
+
+  override getCapabilities(): AgentCapability[] {
+    return [
+      'code.read',
+      'code.write',
+      'terminal.execute',
+      'git.inspect',
+      'model.switch'
+    ];
+  }
+
+  override async probe(forceRefresh = false): Promise<AgentDescriptor> {
+    if (!forceRefresh && this.cachedDescriptor) {
+      return this.cachedDescriptor;
+    }
+    const info = this.probeBinary('commandcode');
+    const desc: AgentDescriptor = {
+      agent: 'commandcode',
+      displayName: 'Command Code CLI',
+      version: info.version,
+      executablePath: info.exePath,
+      isAvailable: info.isAvailable,
+      capabilities: this.getCapabilities(),
+      supportedControls: {
+        canPause: false,
+        canResume: false,
+        canInspectDiff: false,
+        supportsStructuredApproval: false,
+        supportsStreamingJson: false,
+        supportsModelSwitching: true
+      },
+      probedAt: Date.now()
+    };
+    this.cachedDescriptor = desc;
+    return desc;
+  }
 
   buildCommand(opts: CommandOptions): BuiltCommand {
     const cwd = validateCwd(opts.cwd);

@@ -1,6 +1,7 @@
 import { BaseAdapter } from './base_adapter.ts';
 import type { BuiltCommand, CommandOptions } from './base_adapter.ts';
 import type { EventStore } from '../core/event_store.ts';
+import type { AgentCapability, AgentDescriptor } from '../core/mission_types.ts';
 import { createEvent } from '../core/types.ts';
 import { resolveBinary, validateCwd } from '../core/paths.ts';
 import { resolveClaudeSessionId, updateClaudeSessionId } from '../core/claude_session_manager.ts';
@@ -10,6 +11,49 @@ export class ClaudeAdapter extends BaseAdapter {
 
   constructor() {
     super('claude');
+  }
+
+  override getCapabilities(): AgentCapability[] {
+    return [
+      'code.read',
+      'code.write',
+      'terminal.execute',
+      'git.inspect',
+      'git.modify',
+      'session.pause',
+      'approval.structured',
+      'diff.inspect',
+      'subagent.spawn',
+      'review.readonly',
+      'model.switch'
+    ];
+  }
+
+  override async probe(forceRefresh = false): Promise<AgentDescriptor> {
+    if (!forceRefresh && this.cachedDescriptor) {
+      return this.cachedDescriptor;
+    }
+    const info = this.probeBinary('claude');
+    const desc: AgentDescriptor = {
+      agent: 'claude',
+      displayName: 'Claude Code',
+      version: info.version,
+      executablePath: info.exePath,
+      isAvailable: info.isAvailable,
+      capabilities: this.getCapabilities(),
+      supportedControls: {
+        canPause: true,
+        canResume: true,
+        canInspectDiff: true,
+        supportsStructuredApproval: true,
+        supportsStreamingJson: true,
+        supportsModelSwitching: true
+      },
+      supportedModels: ['claude-3-7-sonnet', 'claude-3-5-sonnet', 'claude-3-5-haiku', 'claude-3-opus'],
+      probedAt: Date.now()
+    };
+    this.cachedDescriptor = desc;
+    return desc;
   }
 
   buildCommand(opts: CommandOptions): BuiltCommand {

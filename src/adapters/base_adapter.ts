@@ -1,6 +1,10 @@
+import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import type { EventStore } from '../core/event_store.ts';
 import type { AgentType } from '../core/types.ts';
+import type { AgentCapability, AgentDescriptor } from '../core/mission_types.ts';
 import { classifyFailure } from '../core/failure.ts';
+import { resolveBinary } from '../core/paths.ts';
 
 export interface CommandOptions {
   taskId?: string;
@@ -33,6 +37,64 @@ export abstract class BaseAdapter {
   abstract buildCommand(opts: CommandOptions): BuiltCommand;
 
   abstract handleStdoutLine(line: string, taskId: string, store: EventStore): void;
+
+  getCapabilities(): AgentCapability[] {
+    return [];
+  }
+
+  supports(cap: AgentCapability): boolean {
+    return this.getCapabilities().includes(cap);
+  }
+
+  protected probeBinary(name: string): { isAvailable: boolean; version?: string; exePath?: string } {
+    try {
+      const exe = resolveBinary(name);
+      const exists = fs.existsSync(exe);
+      if (!exists) {
+        return { isAvailable: false, exePath: exe };
+      }
+      const viaShell = /\.(cmd|bat)$/i.test(exe);
+      const r = viaShell
+        ? spawnSync(`"${exe}" --version`, { encoding: 'utf8', timeout: 5000, shell: true, windowsHide: true })
+        : spawnSync(exe, ['--version'], { encoding: 'utf8', timeout: 5000, windowsHide: true });
+      const version = ((r.stdout || '') + (r.stderr || '')).trim().split('\n')[0] || undefined;
+      return {
+        isAvailable: true,
+        version: version && !r.error ? version : undefined,
+        exePath: exe
+      };
+    } catch {
+      return { isAvailable: false };
+    }
+  }
+
+  protected cachedDescriptor?: AgentDescriptor;
+
+  async probe(forceRefresh = false): Promise<AgentDescriptor> {
+    if (!forceRefresh && this.cachedDescriptor) {
+      return this.cachedDescriptor;
+    }
+    const info = this.probeBinary(this.name);
+    const desc: AgentDescriptor = {
+      agent: this.name,
+      displayName: this.name,
+      version: info.version,
+      executablePath: info.exePath,
+      isAvailable: info.isAvailable,
+      capabilities: this.getCapabilities(),
+      supportedControls: {
+        canPause: false,
+        canResume: false,
+        canInspectDiff: false,
+        supportsStructuredApproval: false,
+        supportsStreamingJson: false,
+        supportsModelSwitching: false
+      },
+      probedAt: Date.now()
+    };
+    this.cachedDescriptor = desc;
+    return desc;
+  }
 
   handleExit(code: number | null, taskId: string, store: EventStore, stderr: string): void {
     const task = store.getTask(taskId);
