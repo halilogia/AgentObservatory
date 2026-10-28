@@ -102,6 +102,26 @@ export class StateMachine {
       return interrupted;
     });
   }
+
+  completeRun(runId: string, leaseToken: string, success = true, error?: string, now = Date.now()): boolean {
+    const run = this.store.withTransaction((db) => {
+      const row = db.prepare('SELECT task_id, status FROM agent_runs WHERE id = ? AND lease_token = ?').get(runId, leaseToken) as
+        { task_id: string; status: string } | undefined;
+      if (!row || row.status !== 'active') {
+        return undefined; // Stale or expired lease! Rejected.
+      }
+      if (error) {
+        db.prepare('UPDATE mission_tasks SET error = ? WHERE id = ?').run(error, row.task_id);
+      }
+      return row;
+    });
+
+    if (!run) return false;
+
+    const nextTaskStatus: TaskStatus = success ? 'completed' : 'failed';
+    this.transition(run.task_id, nextTaskStatus, now);
+    return true;
+  }
 }
 
 export const globalStateMachine = new StateMachine();

@@ -1,6 +1,6 @@
 {
   "name": "agent-observatory",
-  "version": "1.0.0-alpha",
+  "version": "1.0.0-rc.1",
   "description": "Event-First Hybrid AI Agent Management and Observability System",
   "main": "src/index.js",
   "bin": {

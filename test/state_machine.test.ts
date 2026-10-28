@@ -26,7 +26,8 @@ test('StateMachine applies atomic task transitions, leases, heartbeats and crash
     assert.equal(store.getMissionTask('t1')?.status, 'interrupted');
     assert.deepEqual(machine.recoverExpired(500, 2_000), []);
     const retry = machine.startRun({ taskId: 't1', agent: 'codex', now: 2_001 });
-    machine.transition('t1', 'completed', 2_010);
+    assert.equal(machine.completeRun(run.id, run.leaseToken, true, undefined, 2_005), false, 'Eski/zamanı geçmiş lease tamamlayamaz');
+    assert.equal(machine.completeRun(retry.id, retry.leaseToken, true, undefined, 2_010), true, 'Geçerli lease başarıyla tamamlar');
     assert.equal(store.getMissionTask('t1')?.status, 'completed');
     assert.notEqual(run.leaseToken, retry.leaseToken);
   } finally {

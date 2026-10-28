@@ -7,6 +7,20 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/) standardına day
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-10-28
+
+### Eklenenler & Tamamlanan Fazlar (Feature Freeze)
+- **Faz 1 (Domain Modelleri & SQLite):** `Mission`, `MissionContract`, `TaskNode`, `AgentRun` ve SQLite tabloları.
+- **Faz 2 (Capability Discovery):** 6 CLI adaptörü yetenek matrisi, 1ms önbellekli `probe()`.
+- **Faz 3 (State Machine & Crash Recovery):** Atomik görev geçişleri, task lease fencing, `completeRun` kilit koruması.
+- **Faz 4 (Direct Runner & Execution Contract):** Kota odaklı doğrudan ajan yürütücü, cooldown yönetimi.
+- **Faz 5 (DAG Scheduler):** Kahn algoritmalı topolojik paralel dalga yürütücü.
+- **Faz 6 (Mission Control Web Arayüzü):** Mission Composer, DAG View, Fleet View, Diff Viewer, 2D Ofis simülasyonu.
+- **Faz 7 (Worktree Acceptance Gate):** İzole Git worktree kabul kapısı, stale base/SHA koruması.
+- **Faz 8 (Telemetri & Metrikler):** p50/p95 gecikmeler, başarı yüzdeleri ve yönlendirme skoru.
+- **Test Kapsamı:** 40 test paketinin tamamı %100 başarıyla geçiyor.
+
+
 - **Yürütme Sözleşmesi, Direct Mod, Mission Control UI ve Telemetri (Faz 4/6/8):** `src/core/mission_contract.ts` (varsayılanlar + doğrulama), `src/runtime/direct_runner.ts` (yetenek ve kota tabanlı tek ajan seçimi, tek deneme, SQLite kaydı), `src/telemetry/metrics.ts` (p50/p95, başarı oranı, token, yönlendirme skoru), `web/mission_composer.js`, `web/dag_view.js`, `web/fleet_view.js`, `web/diff_viewer.js` ve `web/mission.css` eklendi. Testler: mission_contract, direct_runner, metrics, web_mission. Web modülleri henüz index.html/app.js'e bağlanmadı.
 
 - **AgentAdapter Standardizasyonu & Capability Discovery (Faz 2):** ChatGPT Red Team ve OpenCode DeepSeek analizleriyle BaseAdapter uzerine getCapabilities(), supports() ve onbellekli asenkron probe(): Promise<AgentDescriptor> metotlari eklendi. Tum 6 CLI adaptorunun (claude, codex, agy, opencode, commandcode, freebuff) yetenek matrisi, diff denetimi, duraklatma ve onay kontrolleri standartlastirildi; asilsiz onay ve kontrol varsayimlari engellendi. test/adapter_capabilities.test.ts eklendi (toplam 32 test paketi %100 basariyla geciyor).

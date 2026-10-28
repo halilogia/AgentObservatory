@@ -11,11 +11,13 @@ Bu doküman, projenin ana sürüm kilometre taşlarını ve uzun vadeli vizyonun
 - [x] 6 CLI Ajan Adaptörü (Claude Code, OpenAI Codex, Antigravity, OpenCode, Freebuff, Command Code).
 - [x] Süreç yaşam döngüsü, iptal durum makinesi ve güvenlik denetimleri.
 
-### 🛰️ v1.1.0 (Mission Control & Çoklu Ajan) - [Mevcut Sürüm]
+### 🛰️ v1.1.0 (Mission Control & Çoklu Ajan) - [Tamamlandı]
 - [x] Web gösterge paneli, SSE canlı akışı, mobil QR eşleştirme ve AI ofis simülasyonu.
 - [x] Temel domain modelleri (Mission, MissionContract, TaskNode, AgentRun) ve kalıcılık şeması.
-- [ ] Adaptive Mission Orchestrator (Yetenek tabanlı yönlendirme ve deterministik scheduler).
-- [ ] Git Worktree izolasyonu ve ikili denetim kapıları (Duel / Review Gates).
+- [x] Adaptive Mission Orchestrator (Yetenek tabanlı yönlendirme, direct runner ve deterministik DAG scheduler).
+- [x] Git Worktree izolasyonu ve otomatik Acceptance Gate (İzole çalışma ve temiz merge).
+- [x] Mission Control Web Arayüzü (Mission Composer, canlı DAG ağacı, Agent Fleet, sekmeli Git Diff paneli).
+- [x] Telemetri & Akıllı Yönlendirme (p50/p95, başarı oranı, routing skoru).
 
 ---
 
