@@ -152,13 +152,15 @@ export class CodexAdapter extends BaseAdapter {
       const itype = item.type;
 
       if (itype === 'agent_message') {
+        const rawText = item.text || '';
+        const cleanedText = rawText.replace(/<\/?(?:citation_entries|rollout_ids|oai-mem-citation)[^>]*>/gi, '').trim();
         store.recordEvent(createEvent({
           taskId,
           sessionId: currentSession,
           agent: 'codex',
           tier: 1,
           type: 'message.delta',
-          data: { text: item.text || '' }
+          data: { text: cleanedText || rawText }
         }));
       } else if (itype === 'command_execution' || itype === 'tool_call' || itype === 'mcp_tool_call') {
         const toolName = item.name || (itype === 'command_execution' ? 'bash' : itype);

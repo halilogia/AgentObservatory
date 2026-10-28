@@ -31,9 +31,11 @@
       var l = lines[i];
       if (/^\s*$/.test(l)) { i++; continue; }
       if (/^\s*```/.test(l)) {
+        var mTag = /^\s*```\s*([\w-]+)?/.exec(l);
+        var tag = mTag && mTag[1] ? mTag[1].toLowerCase() : '';
         var buf = []; i++;
         while (i < lines.length && !/^\s*```/.test(lines[i])) buf.push(lines[i++]);
-        i++; blocks.push({ t: 'code', v: buf.join('\n') }); continue;
+        i++; blocks.push({ t: 'code', lang: tag, v: buf.join('\n') }); continue;
       }
       var h = /^(#{1,4})\s+(.*)$/.exec(l);
       if (h) { blocks.push({ t: 'h', level: h[1].length, c: parseInline(h[2]) }); i++; continue; }
@@ -76,6 +78,22 @@
     parse(text).forEach(function (b) {
       var e;
       if (b.t === 'code') {
+        if ((b.lang === 'diff' || b.lang === 'patch') && typeof root.ObsDiff !== 'undefined') {
+          var parsed = root.ObsDiff.parseUnifiedDiff(b.v);
+          if (parsed && parsed.lines && parsed.lines.length) {
+            root.ObsDiff.renderDiff(doc, box, {
+              action: 'Diff',
+              file: parsed.file || 'patch',
+              add: parsed.add,
+              del: parsed.del,
+              lines: parsed.lines
+            }, {
+              maxLines: 40,
+              moreLabel: opts.moreLabel || 'lines'
+            });
+            return;
+          }
+        }
         e = doc.createElement('div'); e.className = 'codebox';
         var pre = doc.createElement('pre'), code = doc.createElement('code'); code.textContent = b.v; pre.appendChild(code); e.appendChild(pre);
         if (opts.onCopy) { var btn = doc.createElement('button'); btn.type = 'button'; btn.className = 'copy'; btn.textContent = opts.copyLabel || 'Copy'; btn.onclick = function () { opts.onCopy(b.v, btn); }; e.appendChild(btn); }

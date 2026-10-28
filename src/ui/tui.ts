@@ -16,7 +16,8 @@ export const COLORS = {
   magenta: '\x1b[35m',
   cyan: '\x1b[36m',
   white: '\x1b[37m',
-  gray: '\x1b[90m'
+  gray: '\x1b[90m',
+  orange: '\x1b[38;5;208m'
 };
 
 export function paint(color: keyof typeof COLORS, text: string): string {

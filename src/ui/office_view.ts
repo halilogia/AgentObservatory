@@ -61,7 +61,7 @@ interface Station {
 
 const STATIONS: Station[] = [
   { emoji: '🔵', title: 'Antigravity', role: 'Sistem Mimarisi & Koordinasyon', color: 'blue', agents: ['agy', 'antigravity'] },
-  { emoji: '🟠', title: 'Claude Code', role: 'Ağır Kodlama, Test & Refactor', color: 'yellow', agents: ['claude'] },
+  { emoji: '🟠', title: 'Claude Code', role: 'Ağır Kodlama, Test & Refactor', color: 'orange', agents: ['claude'] },
   { emoji: '🔴', title: 'Codex CLI', role: 'Statik Güvenlik & Red-Team Denetimi', color: 'magenta', agents: ['codex'] },
   { emoji: '⚫', title: 'OpenCode / Command Code', role: 'Toplu Veri Motoru & ETL', color: 'gray', agents: ['opencode', 'commandcode'] }
 ];

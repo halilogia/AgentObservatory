@@ -9,6 +9,7 @@ const types = (s: string) => md.parse(s).map((b: any) => b.t);
 assert.deepStrictEqual(types('# Başlık\n\nmetin'), ['h', 'p']);
 assert.deepStrictEqual(types('- a\n- b\n\n1. x\n2. y'), ['ul', 'ol']);
 assert.deepStrictEqual(types('```js\nconst a = 1;\n```\nsonra'), ['code', 'p']);
+assert.strictEqual(md.parse('```diff\n+eklendi\n-silindi\n```')[0].lang, 'diff');
 assert.strictEqual(md.parse('```\nkod\nsatır\n```')[0].v, 'kod\nsatır');
 assert.deepStrictEqual(types('| a | b |\n|---|---|\n| 1 | 2 |'), ['table']);
 const t = md.parse('| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |')[0];

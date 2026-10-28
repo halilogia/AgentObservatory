@@ -1,5 +1,6 @@
 // web/skins.js: motor -> skin eşlemesi, araç etiketi biçimi, sonuç kısaltma
 import assert from 'node:assert';
+import '../web/diff.js';
 import '../web/skins.js';
 
 const S = (globalThis as any).ObsSkins;
@@ -24,6 +25,8 @@ assert.strictEqual(S.describe('Mystery', { a: 1 }).kind, 'other');
 // etiket biçimi
 const full = (id: string, v: any) => { const l = S.label(id, v); return l.name + l.rest; };
 assert.strictEqual(full('claude', bash), 'Bash(npm test --silent)');
+const editDesc = S.describe('Edit', { file_path: 'src/app/Jarvis.tsx', old_string: 'a=1', new_string: 'a=2\nb=3' });
+assert.strictEqual(full('claude', editDesc), 'Updated src/app/Jarvis.tsx (+2 -1)');
 assert.strictEqual(full('codex', bash), 'Ran npm test --silent');
 assert.strictEqual(full('codex', S.describe('Read', { path: 'a.ts' })), 'Explored a.ts');
 assert.strictEqual(full('agy', bash), 'Bash npm test --silent');

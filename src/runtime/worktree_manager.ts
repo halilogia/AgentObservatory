@@ -1,6 +1,7 @@
-import { execFileSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 
 export interface WorktreeInfo {
   worktreePath: string;
@@ -15,6 +16,14 @@ export interface WorktreeCreateResult {
   worktreePath: string;
   branch: string;
   created: boolean;
+}
+
+export interface AcceptanceGateResult {
+  accepted: boolean;
+  verificationPassed: boolean;
+  merged: boolean;
+  conflictFiles?: string[];
+  error?: string;
 }
 
 export class WorktreeManager {
@@ -35,6 +44,78 @@ export class WorktreeManager {
     } catch (err: any) {
       const stderr = err.stderr ? String(err.stderr).trim() : err.message;
       throw new Error(`Git komutu başarısız (${args.join(' ')}): ${stderr}`);
+    }
+  }
+
+  /** Creates a uniquely named branch and isolated worktree for one agent run. */
+  createAgentWorktree(repoPath: string, taskId: string, baseRef = 'HEAD'): WorktreeCreateResult {
+    const slug = taskId.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 48) || 'task';
+    const unique = crypto.randomBytes(5).toString('hex');
+    return this.createWorktree(repoPath, `observatory/${slug}-${unique}`, undefined, baseRef);
+  }
+
+  /**
+   * Tests a source branch in a disposable worktree based on the target branch,
+   * then merges it into the target only after merge and verification succeed.
+   */
+  acceptBranch(options: {
+    repoPath: string;
+    sourceBranch: string;
+    targetBranch?: string;
+    verificationCommand: string;
+    timeoutMs?: number;
+  }): AcceptanceGateResult {
+    const repoPath = path.resolve(options.repoPath);
+    const targetBranch = options.targetBranch ?? this.getCurrentBranch(repoPath);
+    if (!options.verificationCommand.trim()) {
+      return { accepted: false, verificationPassed: false, merged: false, error: 'Doğrulama komutu zorunludur.' };
+    }
+    if (this.getCurrentBranch(repoPath) !== targetBranch) {
+      return { accepted: false, verificationPassed: false, merged: false, error: `Hedef branch checkout değil: ${targetBranch}` };
+    }
+    if (this.runGit(repoPath, ['status', '--porcelain'])) {
+      return { accepted: false, verificationPassed: false, merged: false, error: 'Hedef çalışma ağacı temiz değil.' };
+    }
+    const targetSha = this.getHeadSha(repoPath);
+
+    const gateBranch = `observatory/gate-${crypto.randomBytes(6).toString('hex')}`;
+    const gatePath = path.resolve(repoPath, '..', '.observatory-worktrees', gateBranch.replaceAll('/', '-'));
+    let gateCreated = false;
+    try {
+      this.createWorktree(repoPath, gateBranch, gatePath, targetBranch);
+      gateCreated = true;
+      const merge = this.mergeBranch(gatePath, options.sourceBranch, 'observatory: acceptance gate candidate');
+      if (!merge.success) {
+        return { accepted: false, verificationPassed: false, merged: false, conflictFiles: merge.conflictFiles, error: merge.error };
+      }
+
+      try {
+        execSync(options.verificationCommand, {
+          cwd: gatePath,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: options.timeoutMs ?? 120_000,
+          windowsHide: true
+        });
+      } catch (error: any) {
+        const detail = error.stderr ? String(error.stderr).trim() : error.message;
+        return { accepted: false, verificationPassed: false, merged: false, error: `Acceptance doğrulaması başarısız: ${detail}` };
+      }
+
+      if (this.getCurrentBranch(repoPath) !== targetBranch || this.getHeadSha(repoPath) !== targetSha ||
+          this.runGit(repoPath, ['status', '--porcelain'])) {
+        return { accepted: false, verificationPassed: true, merged: false, error: 'Doğrulama sırasında hedef branch veya çalışma ağacı değişti.' };
+      }
+
+      const finalMerge = this.mergeBranch(repoPath, options.sourceBranch, `observatory: accept ${options.sourceBranch}`);
+      if (!finalMerge.success) {
+        return { accepted: false, verificationPassed: true, merged: false, conflictFiles: finalMerge.conflictFiles, error: finalMerge.error };
+      }
+      return { accepted: true, verificationPassed: true, merged: true };
+    } catch (error: any) {
+      return { accepted: false, verificationPassed: false, merged: false, error: error.message };
+    } finally {
+      if (gateCreated) this.removeWorktree(repoPath, gatePath, true);
+      try { this.deleteBranch(repoPath, gateBranch, true); } catch { /* gate branch may already be absent */ }
     }
   }
 

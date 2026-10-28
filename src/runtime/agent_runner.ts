@@ -110,7 +110,18 @@ export class AgentRunner {
       }
 
       // OpenCode may keep waiting for stdin EOF after completing a prompt passed in argv.
-      if (adapter.name === 'opencode' || adapter.name === 'commandcode') child.stdin?.end();
+      if (adapter.name === 'opencode' || adapter.name === 'commandcode' || adapter.name === 'codex') child.stdin?.end();
+
+      const defaultModel = adapter.name === 'codex'
+        ? (process.env.CODEX_DEFAULT_MODEL || 'gpt-6-astra')
+        : adapter.name === 'claude'
+        ? 'claude-sonnet-5-5'
+        : adapter.name === 'agy'
+        ? 'gemini-3.8-flash'
+        : adapter.name === 'opencode'
+        ? 'opencode/big-pickle'
+        : '';
+      const effectiveModel = options.model || defaultModel;
 
       // Record task.started WITH child.pid for process tree tracking
       this.store.recordEvent(createEvent({
@@ -119,7 +130,7 @@ export class AgentRunner {
         agent: adapter.name,
         tier: 1,
         type: 'task.started',
-        data: { prompt, cwd: cmd.cwd, timeoutSeconds, pid: child.pid },
+        data: { prompt, cwd: cmd.cwd, model: effectiveModel, timeoutSeconds, pid: child.pid },
         parentTaskId: options.parentTaskId
       }), child.pid);
 

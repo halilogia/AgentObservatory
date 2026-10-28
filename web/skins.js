@@ -37,7 +37,15 @@
     }
     if (/^(read|view_file|cat|open|list_dir|ls|dir|list)/.test(k)) return { kind: 'read', name: n, summary: pathSum };
     if (/^(write|write_to_file|create)/.test(k)) return { kind: 'write', name: n, summary: pathSum };
-    if (/(edit|replace|patch)/.test(k)) return { kind: 'edit', name: n, summary: pathSum };
+    if (/(edit|replace|patch)/.test(k)) {
+      var d = { kind: 'edit', name: n, summary: pathSum };
+      if (o && (o.old_string != null || o.new_string != null)) {
+        if (typeof root.ObsDiff !== 'undefined') {
+          d.diffStats = root.ObsDiff.computeStats(o.old_string, o.new_string);
+        }
+      }
+      return d;
+    }
     if (/^(grep|glob|find|search|grep_search|find_by_name|websearch)/.test(k)) {
       return { kind: 'search', name: n, summary: o ? clip(o.pattern || o.query || o.Query || o.Pattern || str(o), 90) : clip(fb, 90) };
     }
@@ -51,7 +59,12 @@
   function label(skinId, view) {
     var v = view;
     switch (skinId) {
-      case 'claude': return { name: v.name, rest: '(' + v.summary + ')' };
+      case 'claude': {
+        if (v.kind === 'edit' && v.diffStats) {
+          return { name: 'Updated ' + v.summary, rest: ' (+' + v.diffStats.add + ' -' + v.diffStats.del + ')' };
+        }
+        return { name: v.name, rest: '(' + v.summary + ')' };
+      }
       case 'codex': return { name: VERB[v.kind] || 'Used', rest: ' ' + (v.kind === 'other' ? v.name + ' ' : '') + v.summary };
       case 'agy': return { name: v.name, rest: ' ' + v.summary };
       case 'commandcode': return { name: '› ' + v.name, rest: ' ' + v.summary };

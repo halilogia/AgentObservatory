@@ -495,6 +495,19 @@ export class SqliteStore {
     this.db.close();
   }
 
+  /** Runs a callback inside an immediate SQLite transaction. */
+  withTransaction<T>(operation: (db: DatabaseSync) => T): T {
+    this.db.exec('BEGIN IMMEDIATE;');
+    try {
+      const result = operation(this.db);
+      this.db.exec('COMMIT;');
+      return result;
+    } catch (error) {
+      this.db.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+
   // --- Mission Control & Adaptive Orchestrator Domain Methods ---
 
   createMission(m: { id: string; title: string; status?: Mission['status']; mode: Mission['mode']; repoPath: string; createdAt?: number }): void {

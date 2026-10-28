@@ -63,9 +63,18 @@ function statusGlyph(t: TaskSummary, now: number): string {
   return paint('red', '✖');
 }
 
-/** Tam model adı; kayıtta yoksa ajan adı. */
-function modelName(t: TaskSummary): string {
-  return t.model && t.model !== t.agent ? t.model : t.agent;
+export const DEFAULT_AGENT_MODEL: Record<string, string> = {
+  codex: 'gpt-6-astra',
+  claude: 'claude-sonnet-5-5',
+  agy: 'gemini-3.8-flash',
+  opencode: 'opencode/big-pickle',
+  commandcode: 'commandcode'
+};
+
+/** Kullanılan model adı; model belirtilmemişse veya ajan adıyla aynıysa ajanın varsayılan modeli. */
+export function modelName(t: TaskSummary): string {
+  if (t.model && t.model !== t.agent) return t.model;
+  return DEFAULT_AGENT_MODEL[t.agent] || t.model || t.agent;
 }
 
 function toolLine(name: string, input: any): string {
@@ -98,11 +107,11 @@ function nodeLines(t: TaskSummary, prefix: string, childPrefix: string, cols: nu
 
 /** Takım rozeti: renkli nokta + takım adı (emoji değil). Takımlar: turuncu=claude, mavi=agy, kırmızı=codex, siyah=opencode. */
 const AGENT_TEAM: Record<string, { name: string; color: Color }> = {
-  claude: { name: 'turuncu', color: 'yellow' }, agy: { name: 'mavi', color: 'blue' }, codex: { name: 'kırmızı', color: 'red' }, opencode: { name: 'siyah', color: 'gray' }, commandcode: { name: 'siyah', color: 'gray' }
+  claude: { name: 'turuncu', color: 'orange' }, agy: { name: 'mavi', color: 'blue' }, codex: { name: 'kırmızı', color: 'red' }, opencode: { name: 'siyah', color: 'gray' }, commandcode: { name: 'siyah', color: 'gray' }
 };
 export function teamBadge(agent: string): string {
   const tm = AGENT_TEAM[agent];
-  return tm ? paint(tm.color, '●') + ' ' + paint('gray', tm.name) : '';
+  return tm ? paint(tm.color, '●') : '';
 }
 
 /** Oturum satırı süresi: dk/sa biçimi ("12dk"). */
@@ -121,7 +130,7 @@ function sessionLine(turns: TaskSummary[], cols: number, now: number, selected: 
   const live = turns.some((t) => isLive(t, now));
   const span = live ? now - turns[0].startTime : turns.reduce((a, t) => a + t.durationMs, 0);
   const tokens = turns.reduce((a, t) => a + (t.usage?.totalTokens || 0), 0);
-  const name = last.model && last.model !== last.agent ? `${last.agent} (${last.model})` : last.agent;
+  const name = modelName(last);
   const emoji = teamBadge(last.agent) ? teamBadge(last.agent) + ' ' : '';
   const glyph = live ? paint('yellow', spinFrame(now)) : statusGlyph(last, now);
   const fold = paint('gray', expanded ? '▾' : '▸');

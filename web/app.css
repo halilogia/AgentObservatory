@@ -271,6 +271,155 @@ main[hidden], .dock[hidden] { display: none !important; }
   background: rgba(239, 68, 68, 0.12);
   color: #f87171;
 }
+
+/* Claude Code / Terminal TUI Stili Zengin Kod Değişikliği (Diff) Kartı */
+.diff-card {
+  margin: 6px 0 8px;
+  background: var(--code-bg, #0d1117);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+.diff-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+  gap: 12px;
+}
+.diff-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.diff-action {
+  color: var(--muted, #94a3b8);
+  font-weight: 600;
+}
+.diff-file {
+  color: var(--text, #e2e8f0);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.diff-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--faint, #64748b);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.diff-stat {
+  font-weight: 600;
+}
+.diff-stat-add {
+  color: #10b981;
+}
+.diff-stat-del {
+  color: #ef4444;
+}
+.diff-stat-del.diff-zero {
+  color: var(--faint, #64748b);
+}
+.diff-body {
+  padding: 4px 0;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+.diff-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 1px 8px;
+  min-height: 20px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.diff-num {
+  width: 44px;
+  min-width: 44px;
+  text-align: right;
+  padding-right: 12px;
+  color: var(--faint, #64748b);
+  user-select: none;
+  font-size: 11px;
+  line-height: 20px;
+  opacity: 0.75;
+}
+.diff-sign {
+  width: 14px;
+  min-width: 14px;
+  text-align: center;
+  user-select: none;
+  font-weight: bold;
+  line-height: 20px;
+}
+.diff-text {
+  flex: 1;
+  line-height: 20px;
+  padding-left: 2px;
+}
+.diff-row.diff-add {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+}
+.diff-row.diff-add .diff-sign {
+  color: #10b981;
+}
+.diff-row.diff-del {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+}
+.diff-row.diff-del .diff-sign {
+  color: #ef4444;
+}
+.diff-row.diff-same {
+  color: var(--text, #cbd5e1);
+}
+.diff-row.diff-same .diff-sign {
+  color: transparent;
+}
+.diff-hunk {
+  padding: 4px 12px;
+  color: var(--accent, #38bdf8);
+  background: rgba(56, 189, 248, 0.08);
+  font-size: 11px;
+  font-style: italic;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+  margin: 2px 0;
+}
+.diff-more {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 0;
+  border-top: 1px dashed var(--border);
+  color: var(--muted, #94a3b8);
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.diff-more:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text, #e2e8f0);
+}
+.diff-more.is-expanded {
+  text-align: center;
+  color: var(--accent, #38bdf8);
+}
 .meta { font-size: 12px; color: var(--faint); margin-top: 2px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .meta button { background: transparent; border: 0; color: var(--muted); font-size: 12px; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
 .meta button:hover { color: var(--text); }

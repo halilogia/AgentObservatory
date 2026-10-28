@@ -768,8 +768,19 @@
   }
   function renderToolOutput(det, part) {
     const out = part.out || '';
-    if (!out.trim()) return;
+    if (!out.trim() && !(part.input && (part.input.old_string || part.input.new_string || part.input.content))) return;
     skinPreview(det, out);
+    if (typeof ObsDiff !== 'undefined' && ObsDiff.isDiffLike(part)) {
+      const data = ObsDiff.fromToolPart(part);
+      if (data && data.lines && data.lines.length) {
+        ObsDiff.renderDiff(document, det, data, {
+          maxLines: 40,
+          moreLabel: t('skin.lines') || 'lines',
+          collapseLabel: t('caps.close') || 'Kapat'
+        });
+        return;
+      }
+    }
     const kind = part.kind || toolKind(part.name);
     if (kind === 'diff') {
       const box = el('div', 'tool-diff');
@@ -808,7 +819,7 @@
     else sum.append(el('span', 'tn', part.name), el('span', 'ts', part.summary || ''));
     det.appendChild(sum);
     v.content.appendChild(det);
-    if (withOut && part.out) {
+    if (withOut && (part.out || (part.input && (part.input.old_string || part.input.new_string || part.input.content)))) {
       renderToolOutput(det, part);
     }
     if (part.subs && part.subs.length) [...part.subs].reverse().forEach((s) => det.after(ObsSubagents.build(s, I18N.language, document))); // Task/Agent satırının altına alt ajan blokları
@@ -834,6 +845,14 @@
     const out = String(d.output ?? d.result ?? '').split('\n').slice(0, 60).join('\n').slice(0, 6000);
     rec.part.out = out;
     rec.step.t1 = Date.now(); rec.step.out = out;
+    if (v.skin) {
+      const sum = rec.det.querySelector('summary');
+      if (sum) {
+        sum.replaceChildren();
+        const lb = ObsSkins.label(v.skin, ObsSkins.describe(rec.part.name, rec.part.input, rec.part.summary));
+        sum.append(el('span', 'tn', lb.name), el('span', 'ts', lb.rest));
+      }
+    }
     renderToolOutput(rec.det, rec.part);
     renderRunCard();
   }
