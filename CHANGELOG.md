@@ -7,6 +7,8 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/) standardına day
 
 ## [Unreleased]
 
+- **Yürütme Sözleşmesi, Direct Mod, Mission Control UI ve Telemetri (Faz 4/6/8):** `src/core/mission_contract.ts` (varsayılanlar + doğrulama), `src/runtime/direct_runner.ts` (yetenek ve kota tabanlı tek ajan seçimi, tek deneme, SQLite kaydı), `src/telemetry/metrics.ts` (p50/p95, başarı oranı, token, yönlendirme skoru), `web/mission_composer.js`, `web/dag_view.js`, `web/fleet_view.js`, `web/diff_viewer.js` ve `web/mission.css` eklendi. Testler: mission_contract, direct_runner, metrics, web_mission. Web modülleri henüz index.html/app.js'e bağlanmadı.
+
 - **AgentAdapter Standardizasyonu & Capability Discovery (Faz 2):** ChatGPT Red Team ve OpenCode DeepSeek analizleriyle BaseAdapter uzerine getCapabilities(), supports() ve onbellekli asenkron probe(): Promise<AgentDescriptor> metotlari eklendi. Tum 6 CLI adaptorunun (claude, codex, agy, opencode, commandcode, freebuff) yetenek matrisi, diff denetimi, duraklatma ve onay kontrolleri standartlastirildi; asilsiz onay ve kontrol varsayimlari engellendi. test/adapter_capabilities.test.ts eklendi (toplam 32 test paketi %100 basariyla geciyor).
 
 

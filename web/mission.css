@@ -1,0 +1,32 @@
+/* Mission Control: composer, DAG, fleet ve diff viewer stilleri (tema değişkenlerini kullanır). */
+.mc-form{display:flex;flex-direction:column;gap:10px}
+.mc-modes{display:flex;gap:6px}
+.mc-mode{flex:1;padding:8px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);color:var(--text);cursor:pointer}
+.mc-mode.is-active{background:var(--accent);color:var(--accent-text)}
+.mc-hint{color:var(--muted);font-size:12px}
+.mc-field{display:flex;flex-direction:column;gap:4px}
+.mc-label{font-size:12px;color:var(--muted)}
+.mc-field input,.mc-field textarea{padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--sunken);color:var(--text);font:inherit}
+.mc-errors{color:var(--err);font-size:12px;min-height:1em}
+.mc-submit{padding:10px;border:0;border-radius:8px;background:var(--accent);color:var(--accent-text);cursor:pointer}
+.dag-svg{width:100%;height:auto;max-height:60vh}
+.dag-label{fill:var(--text);font-size:12px}.dag-sub{fill:var(--muted);font-size:10px}
+.dag-edge{opacity:.6}
+.dag-yellow rect{fill:rgba(234,179,8,.12)}.dag-green rect{fill:rgba(34,197,94,.12)}
+.dag-red rect{fill:rgba(239,68,68,.12)}.dag-blue rect{fill:rgba(59,130,246,.12)}
+.fleet-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.fleet-card{border:1px solid var(--border);border-top:3px solid var(--border-strong);border-radius:10px;padding:10px;background:var(--surface)}
+.fleet-head{display:flex;justify-content:space-between;font-weight:600}
+.fleet-state{font-size:11px;color:var(--muted)}
+.fleet-working .fleet-state{color:var(--warn)}.fleet-error .fleet-state,.fleet-rate_limited .fleet-state{color:var(--err)}
+.fleet-body{margin:8px 0;font-size:13px;min-height:1.4em}.fleet-foot{font-size:11px;color:var(--faint)}
+.dv-summary{font-size:12px;color:var(--muted);margin-bottom:6px}
+.dv-tabs{display:flex;gap:4px;overflow-x:auto;margin-bottom:8px;scrollbar-width:none}
+.dv-tabs::-webkit-scrollbar{display:none}
+.dv-tab{padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);cursor:pointer;white-space:nowrap;font-size:12px}
+.dv-tab.is-active{background:var(--accent);color:var(--accent-text)}
+.dv-added{border-color:var(--ok)}.dv-deleted{border-color:var(--err)}
+.dv-actions{display:flex;gap:8px;margin-top:10px}
+.dv-approve{background:var(--ok);color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
+.dv-reject{background:var(--err);color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
+.dv-empty{color:var(--muted);padding:12px}
