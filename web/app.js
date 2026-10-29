@@ -1601,18 +1601,47 @@
     const content = el('div'); const meta = el('div', 'meta');
     col.append(who, content, meta); row.appendChild(col);
     $('#thread').appendChild(row);
-    const v = { rec, row, content, meta, dots, curText: null, tools: new Map(), lastTool: null, raf: 0, tin: 0, tout: 0, t0: Date.now(), done: !live, steps: [], skin };
+    const v = { rec, row, content, meta, dots, curText: null, curThinking: null, tools: new Map(), lastTool: null, raf: 0, tin: 0, tout: 0, t0: Date.now(), done: !live, steps: [], skin };
     if (live) { runView = v; renderRunCard(); }
     if (!live) {
-      rec.parts.forEach((p) => { if (p.k === 'text') { const box = el('div'); content.appendChild(box); renderMd(box, p.v); } else buildTool(v, p, true); });
+      rec.parts.forEach((p) => {
+        if (p.k === 'text') { const box = el('div'); content.appendChild(box); renderMd(box, p.v); }
+        else if (p.k === 'thinking') { buildThinking(v, p); }
+        else buildTool(v, p, true);
+      });
       if (rec.notice) content.appendChild(el('div', 'notice' + (rec.notice.warn ? ' warn' : ''), noticeText(rec.notice)));
       renderMeta(v);
     }
     scrollDown();
     return v;
   }
+  function buildThinking(v, part) {
+    const box = el('details', 'thinking-box');
+    const sum = el('summary', 'thinking-summary', t('common.thinking') || 'Düşünme süreci');
+    const body = el('div', 'thinking-body');
+    if (part.v) renderMd(body, part.v);
+    box.append(sum, body);
+    v.content.appendChild(box);
+    return { box, body, part };
+  }
+  function addThinking(v, txt) {
+    if (!txt) return;
+    v.curText = null;
+    if (!v.curThinking) {
+      const part = { k: 'thinking', v: '' };
+      v.rec.parts.push(part);
+      v.curThinking = buildThinking(v, part);
+    }
+    v.curThinking.part.v += txt;
+    if (!v.raf) v.raf = requestAnimationFrame(() => {
+      v.raf = 0;
+      if (v.curThinking) renderMd(v.curThinking.body, v.curThinking.part.v);
+      scrollDown();
+    });
+  }
   function addText(v, txt) {
     if (!txt) return;
+    v.curThinking = null;
     if (!v.curText) { const part = { k: 'text', v: '' }; v.rec.parts.push(part); v.curText = { part, box: el('div') }; v.content.appendChild(v.curText.box); }
     v.curText.part.v += txt;
     if (!v.raf) v.raf = requestAnimationFrame(() => { v.raf = 0; if (v.curText) renderMd(v.curText.box, v.curText.part.v); scrollDown(); });
@@ -1678,6 +1707,7 @@
   }
   function addTool(v, d) {
     v.curText = null;
+    v.curThinking = null;
     const kind = toolKind(d.name);
     const part = { k: 'tool', name: d.name || 'tool', kind, summary: toolSummary(d.name, d.input), out: '', input: d.input };
     v.rec.parts.push(part);
@@ -1713,6 +1743,7 @@
     if (v.approvals.has(key)) return;
 
     v.curText = null;
+    v.curThinking = null;
     const card = el('div', 'perm-card');
     const head = el('div', 'perm-head');
     const badge = el('span', 'perm-badge', t('perm.request'));
@@ -1798,6 +1829,7 @@
     if (!fullText(v.rec) && d && d.result && kind === 'completed') addText(v, String(d.result));
     if (v.raf) { cancelAnimationFrame(v.raf); v.raf = 0; }
     if (v.curText) renderMd(v.curText.box, v.curText.part.v);
+    if (v.curThinking) renderMd(v.curThinking.body, v.curThinking.part.v);
     let notice = null;
     if (kind === 'failed') notice = noticeFor(d || {});
     else if (kind === 'cancelled') notice = { key: 'notice.cancelled', warn: true };
@@ -1864,7 +1896,10 @@
     if (!v) { followTermSession(ev); early.push(ev); if (early.length > 600) early = early.slice(-300); if (ev.type === 'task.started' || ev.type === 'task.completed') scheduleTermRefresh(); return; }
     if (ev.sessionId && !v.done && chat) chat.session = { id: ev.sessionId, engine: v.rec.engine, cwd: v.rec.cwd };
     const d = ev.data || {};
-    if (ev.type === 'message.delta') addText(v, String(d.text || ''));
+    if (ev.type === 'message.delta') {
+      if (d.thinking) addThinking(v, String(d.thinking));
+      if (d.text) addText(v, String(d.text));
+    }
     else if (ev.type === 'tool.invoked') addTool(v, d);
     else if (ev.type === 'tool.completed') toolDone(v, d);
     else if (ev.type === 'permission.requested') addApproval(v, d);

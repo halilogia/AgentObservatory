@@ -1,6 +1,6 @@
 ObsI18n.addResources('tr', {
   app: { title: 'Agent Observatory' },
-  common: { copy: 'Kopyala', copied: 'Kopyalandı' },
+  common: { copy: 'Kopyala', copied: 'Kopyalandı', thinking: 'Düşünme süreci' },
   perm: { request: 'Onay İsteği', approve: '✓ İzin Ver (Evet)', reject: '✗ Reddet (Hayır)', approved: '✓ İzin Verildi', rejected: '✗ Reddedildi' },
   nav: { newChat: 'Yeni sohbet', toggle: 'Geçmişi aç veya kapat', history: 'Sohbet geçmişi', office: 'Nexus 3D Ofis' },
   rc: { start: 'Başlıyor…', read: '{{count}} dosya okunuyor', term: 'Komut çalıştırıyor', diff: 'Dosya düzenliyor', task: 'Alt görev çalışıyor', generic: 'Araç kullanıyor', step: 'Adım {{n}}', more: '… +{{n}} satır', stop: 'Durdur', toggle: 'Ayrıntılı görünümü aç veya kapat' },

@@ -144,8 +144,12 @@ export class AntigravityLineParser implements LineParser {
 
       const content = flattenOutput(o.content).trim();
       const thinking = flattenOutput(o.thinking).trim();
-      const text = content || thinking;
-      if (text) out.push(this.ev('message.delta', { text }, ts, `${key}:msg`));
+      if (thinking) {
+        out.push(this.ev('message.delta', { thinking }, ts, `${key}:think`));
+      }
+      if (content) {
+        out.push(this.ev('message.delta', { text: content }, ts, `${key}:msg`));
+      }
 
       // Araç çağrısı olmayan nihai yanıt: tur tamamlandı (aksi halde görev sonsuz "sürüyor" görünür).
       if (calls.length === 0 && (o.status === 'DONE' || content)) {

@@ -30,9 +30,27 @@
       var rec = bot(ev.taskId);
       if (ev.timestamp > rec._lastTs) rec._lastTs = ev.timestamp;
       if (ev.type === 'message.delta') {
-        var text = String(d.text || ''); if (!text) return;
-        if (!rec._cur) { rec._cur = { k: 'text', v: '' }; rec.parts.push(rec._cur); }
-        rec._cur.v += text;
+        var thinking = String(d.thinking || '');
+        if (thinking) {
+          rec._cur = null;
+          rec.parts.push({ k: 'thinking', v: thinking });
+        }
+        var text = String(d.text || '');
+        if (text && /<(?:thought|thinking)>([\s\S]*?)<\/(?:thought|thinking)>/i.test(text)) {
+          var m = /<(?:thought|thinking)>([\s\S]*?)<\/(?:thought|thinking)>/i.exec(text);
+          if (m) {
+            rec._cur = null;
+            rec.parts.push({ k: 'thinking', v: m[1].trim() });
+            text = text.replace(/<(?:thought|thinking)>[\s\S]*?<\/(?:thought|thinking)>/gi, '').trim();
+          }
+        }
+        if (text) {
+          if (!rec._cur || rec._cur.k !== 'text') {
+            rec._cur = { k: 'text', v: '' };
+            rec.parts.push(rec._cur);
+          }
+          rec._cur.v += text;
+        }
       } else if (ev.type === 'tool.invoked') {
         rec._cur = null;
         var part = { k: 'tool', name: d.name || 'tool', kind: h.toolKind(d.name), summary: h.toolSummary(d.name, d.input), out: '', input: d.input, t0: ev.timestamp, t1: 0 };

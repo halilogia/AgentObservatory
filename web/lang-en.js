@@ -1,6 +1,6 @@
 ObsI18n.addResources('en', {
   app: { title: 'Agent Observatory' },
-  common: { copy: 'Copy', copied: 'Copied' },
+  common: { copy: 'Copy', copied: 'Copied', thinking: 'Thinking process' },
   perm: { request: 'Approval Request', approve: '✓ Allow (Yes)', reject: '✗ Deny (No)', approved: '✓ Allowed', rejected: '✗ Denied' },
   nav: { newChat: 'New chat', toggle: 'Show or hide history', history: 'Chat history', office: 'Nexus 3D Office' },
   rc: { start: 'Starting…', read: 'Reading {{count}} files', term: 'Running command', diff: 'Editing files', task: 'Running subtask', generic: 'Using a tool', step: 'Step {{n}}', more: '… +{{n}} lines', stop: 'Stop', toggle: 'Show or hide detailed view' },
