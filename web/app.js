@@ -127,71 +127,96 @@
   // ---------- sohbet verisi ve geçmiş ----------
   function smartTitle(raw) {
     if (!raw) return '';
-    let text = String(raw).replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
-    text = text.replace(/^[`#>*_\-\s]+/, '').trim();
+    let text = String(raw).trim();
 
-    // Görsel etiketlerini (<image ...> veya [Image #1]) tespit et ve temizle
-    const hasImage = /<image[^>]*>|\[Image\s*#?\d*\]/i.test(text);
-    text = text.replace(/<image[^>]*>/gi, ' ').replace(/\[Image\s*#?\d*\]/gi, ' ').replace(/\s+/g, ' ').trim();
+    // 1. Antigravity ve XML sarmalayıcılarını ayıkla
+    const userReqMatch = /<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/i.exec(text);
+    if (userReqMatch) {
+      text = userReqMatch[1].trim();
+    }
+    // XML/HTML etiketlerini (image, metadata, context, instructions vb.) tamamen temizle
+    text = text.replace(/<ADDITIONAL_METADATA>[\s\S]*?<\/ADDITIONAL_METADATA>/gi, ' ')
+               .replace(/<USER_SETTINGS_CHANGE>[\s\S]*?<\/USER_SETTINGS_CHANGE>/gi, ' ')
+               .replace(/<\/?[a-zA-Z0-9_\-]+(?:\s+[^>]*)?>/g, ' ')
+               .replace(/\[Image\s*#?\d*\]/gi, ' ')
+               .replace(/media_\d+_[a-f0-9]+\.(?:png|jpg|jpeg|webp)/gi, ' ');
 
-    // Web URL formatı: https://avenox.io/slaytlar/...
-    if (/^https?:\/\//i.test(text)) {
+    // 2. Parantez içi görev başlıkları: [GÖREV: Başlık] veya [TASK: Title]
+    const bracketTask = /^\s*\[(?:GÖREV|TASK|INSTRUCTION)\s*:\s*([^\]]+)\]/i.exec(text);
+    if (bracketTask) {
+      text = bracketTask[1].trim();
+    }
+
+    // 3. Ön ekleri ve sarmalayıcı tırnakları temizle
+    text = text.replace(/^["'`#>*_\-\s]+/, '').replace(/["'`\s]+$/, '');
+    text = text.replace(/^\s*(?:görev|task|instruction|prompt)\s*:\s*/i, '');
+    text = text.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/i, '');
+    text = text.replace(/^echo\s+["']?([^"']+)["']?/i, '$1');
+    text = text.replace(/^["'`#>*_\-\s]+/, '').replace(/["'`\s]+$/, '');
+
+    // 4. URL'leri ve Dosya Yollarını Akıllı Yönet
+    // Linkleri çıkarınca geriye anlamlı metin kalıyor mu?
+    const textWithoutUrls = text.replace(/\[?(?:https?|file):\/\/\/[^\s\])]+\]?/gi, ' ')
+                                .replace(/https?:\/\/[^\s]+/gi, ' ')
+                                .replace(/\(\s*\)/g, ' ')
+                                .replace(/\s+/g, ' ')
+                                .trim();
+
+    // Eğer URL dışında en az 2 kelime veya 8 harf açıklama varsa, açıklamayı kullan!
+    if (textWithoutUrls.replace(/[^a-zA-Z0-9ğüşıöçĞÜŞİÖÇ]/g, '').length >= 8) {
+      text = textWithoutUrls;
+    } else if (/^https?:\/\//i.test(text)) {
+      // Sadece URL'den ibaretse: Domain ve path'i temiz göster (asla emoji/ikon eklenmez)
       try {
         const u = new URL(text.split(/\s+/)[0]);
         const domain = u.hostname.replace(/^www\./, '');
-        const p = u.pathname.replace(/\/+$/, '');
-        return ('🌐 ' + domain + (p && p !== '/' ? p.slice(0, 24) : '')).slice(0, 48);
+        const pathname = u.pathname.replace(/\/+$/, '');
+        text = (domain + (pathname && pathname !== '/' ? pathname.slice(0, 30) : '')).slice(0, 48);
       } catch (_uErr) {
-        return text.slice(0, 48);
+        text = text.slice(0, 48);
       }
     }
 
-    // Yerel dosya URL'si: file:///C:/Users/...
-    if (/^file:\/\/\//i.test(text)) {
-      try {
-        const cleanPath = decodeURIComponent(text.replace(/^file:\/\/\/?/i, ''));
-        const parts = cleanPath.split(/[\\/]/).filter(Boolean);
-        const last = parts[parts.length - 1] || 'Dosya';
-        return ('📄 ' + last).slice(0, 48);
-      } catch (_fErr) {
-        return text.slice(0, 48);
+    // Windows / Unix uzun dosya yollarını basename'e dönüştür: C:\...\file.ts -> file.ts
+    text = text.replace(/[A-Za-z]:\\(?:[^:*?"<>|\r\n]+\\)+([a-zA-Z0-9_\-.]+\.[a-zA-Z0-9]+)/g, '$1');
+    text = text.replace(/(?:\/[a-zA-Z0-9_.\-]+)+\/([a-zA-Z0-9_\-.]+\.[a-zA-Z0-9]+)/g, '$1');
+
+    // 5. Selamlaşma, kibarlık ve dolgu kelimelerini (filler noise) temizle
+    const noisePatterns = [
+      /^(?:lütfen\s+|acaba\s+|bana\s+|merhaba[,!\s]*|selam[,!\s]*|selamlar[,!\s]*|hey[,!\s]*|hi[,!\s]*|hello[,!\s]*)+/i,
+      /^(?:böyle bir video buldum\s+|şöyle bir video buldum\s+|buna bakar mısın\s+|bakar mısın\s+|bişey sorcam\s+|bir şey soracağım\s+|şunu yapar mısın\s+)+/i,
+      /^(?:please\s+|can you\s+|could you\s+|help me\s+|how to\s+)+/i
+    ];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const pat of noisePatterns) {
+        if (pat.test(text)) {
+          text = text.replace(pat, '').trim();
+          changed = true;
+        }
       }
     }
 
-    // Terminal echo komutu: echo "claude online"
-    if (/^echo\s+["']?([^"']+)["']?/i.test(text)) {
-      text = text.replace(/^echo\s+["']?([^"']+)["']?/i, '$1').trim();
+    // 6. Tek satıra indir, çoklu boşlukları erit
+    text = text.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+    text = text.replace(/^[`#>*_\-\s:;,]+/, '').replace(/[`*_\-\s:;,]+$/, '').trim();
+
+    // 7. Noop veya anlamsız kısa girdiler
+    if (!text || /^noop$/i.test(text)) {
+      return t('history.untitled') || 'Başlıksız oturum';
     }
 
-    // Windows/Unix dizin yolu ile başlıyorsa: C:\Users\...
-    if (/^[A-Za-z]:[\\/]/.test(text)) {
-      const parts = text.split(/\s+/)[0].split(/[\\/]/).filter(Boolean);
-      const last = parts[parts.length - 1] || 'Dizin';
-      return ('📂 ' + last).slice(0, 48);
-    }
+    // 8. İlk harfi büyük yap
+    text = text.charAt(0).toLocaleUpperCase('tr-TR') + text.slice(1);
 
-    // Kibarlık ve gürültü kelimeleri
-    const noise = /^(lütfen\s+|bana\s+|acaba\s+|merhaba[,!\s]*|selam[,!\s]*|hey[,!\s]*|hi[,!\s]*|hello[,!\s]*|please\s+|can you\s+|could you\s+|how to\s+|yardımcı olur musun[,?\s]*)+/i;
-    while (noise.test(text)) {
-      text = text.replace(noise, '').trim();
-    }
-
-    // Eğer istem sadece görselden ibaret idiyse:
-    if (!text && hasImage) {
-      return '🖼️ Görsel İnceleme';
-    }
-    if (hasImage && text) {
-      text = '🖼️ ' + text;
-    }
-
-    if (text.length > 0) {
-      text = text.charAt(0).toLocaleUpperCase('tr-TR') + text.slice(1);
-    }
+    // 9. Uzunluk sınırlandırması (kelime bölmeden en fazla ~48 karakter)
     if (text.length > 48) {
       const cut = text.slice(0, 48);
       const lastSpace = cut.lastIndexOf(' ');
       text = (lastSpace > 18 ? cut.slice(0, lastSpace) : cut).trim() + '…';
     }
+
     return text || String(raw).slice(0, 48);
   }
   function ensureChat(firstText) {

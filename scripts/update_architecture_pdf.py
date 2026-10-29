@@ -21,21 +21,43 @@ if sys.platform == "win32":
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REPO_PDF = REPO_ROOT / "AgentObservatory_Tum_Dosyalar_Mimari_Rehberi.pdf"
-DESKTOP_PDF = Path(os.path.expanduser("~")) / "Desktop" / "AgentObservatory_Tum_Dosyalar_Mimari_Rehberi.pdf"
+DESKTOP_LNK = Path(os.path.expanduser("~")) / "Desktop" / "AgentObservatory_Tum_Dosyalar_Mimari_Rehberi.lnk"
+DESKTOP_OLD_PDF = Path(os.path.expanduser("~")) / "Desktop" / "AgentObservatory_Tum_Dosyalar_Mimari_Rehberi.pdf"
 
-def sync_copies():
-    """Repo içindeki güncel PDF'i masaüstüne senkronize eder."""
+def ensure_desktop_shortcut():
+    """Masaüstünde doğrudan repodaki PDF'i gösteren Windows kısayolunu (.lnk) sağlar."""
     if not REPO_PDF.exists():
         print(f"[HATA] Kaynak PDF bulunamadı: {REPO_PDF}", file=sys.stderr)
         return False
     
-    try:
-        shutil.copy2(REPO_PDF, DESKTOP_PDF)
-        print(f"✔ PDF senkronize edildi: {DESKTOP_PDF.name} (Boyut: {REPO_PDF.stat().st_size} bayt)")
+    # Eski mükerrer fiziksel PDF varsa temizle
+    if DESKTOP_OLD_PDF.exists():
+        try:
+            DESKTOP_OLD_PDF.unlink()
+        except Exception as del_err:
+            sys.stderr.write(f"[UYARI] Eski fiziksel dosya silinemedi: {del_err}\n")
+
+    # Kısayol zaten varsa ve geçerliyse
+    if DESKTOP_LNK.exists():
+        print(f"✔ Masaüstü kısayolu zaten hazır ve repo PDF'ine bağlı: {DESKTOP_LNK.name}")
         return True
-    except Exception as e:
-        print(f"[UYARI] Masaüstüne kopyalanamadı: {e}", file=sys.stderr)
+
+    try:
+        import win32com.client
+        shell = win32com.client.Dispatch("WScript.Shell")
+        shortcut = shell.CreateShortCut(str(DESKTOP_LNK))
+        shortcut.Targetpath = str(REPO_PDF)
+        shortcut.WorkingDirectory = str(REPO_ROOT)
+        shortcut.Description = "Agent Observatory Tüm Dosyalar Mimari Rehberi"
+        shortcut.save()
+        print(f"✔ Masaüstü kısayolu oluşturuldu: {DESKTOP_LNK.name} -> {REPO_PDF.name}")
+        return True
+    except Exception as sc_err:
+        sys.stderr.write(f"[UYARI] Kısayol oluşturulamadı: {sc_err}\n")
         return False
+
+def sync_copies():
+    return ensure_desktop_shortcut()
 
 def add_section(title: str, body: str, subtitle: str = "Mimari ve Kod Değişikliği Güncellemesi"):
     """PDF sonuna yeni bir zeyilname / mimari güncelleme sayfası ekler."""
