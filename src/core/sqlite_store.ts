@@ -5,6 +5,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import type { TaskEvent, TaskSummary } from './types.ts';
+import { detectSpawn, promptKey, promptsMatch, SPAWN_WINDOW_AFTER_MS, SPAWN_WINDOW_BEFORE_MS } from './spawn_link.ts';
 import type { Mission, MissionContract, TaskNode, AgentRun, TaskStatus } from './mission_types.ts';
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
@@ -164,6 +165,16 @@ export class SqliteStore {
       CREATE INDEX IF NOT EXISTS idx_tasks_start_time ON tasks(start_time DESC);
       CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session_id);
 
+      -- ajan başka bir ajanı başlattı ama alt görev henüz kaydedilmedi: alt görev gelince parent_task_id buradan bağlanır
+      CREATE TABLE IF NOT EXISTS spawn_intents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_task_id TEXT NOT NULL,
+        agent TEXT,
+        prompt_key TEXT NOT NULL,
+        ts INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_spawn_intents_ts ON spawn_intents(ts);
+
       CREATE TABLE IF NOT EXISTS missions (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -299,6 +310,10 @@ export class SqliteStore {
     }
 
     if (!existing) {
+      if (!parentTaskId && event.data?.prompt) {
+        parentTaskId = this.claimSpawnIntent(event);
+        if (parentTaskId) this.prep('UPDATE events SET parent_task_id = ? WHERE id = ?').run(parentTaskId, event.id);
+      }
       this.getStmtInsertTask().run(
         event.taskId,
         event.sessionId || null,
@@ -333,7 +348,12 @@ export class SqliteStore {
       // tools_json yüzlerce KB olabilir: yalnızca tool.invoked'da dokunulur, o da parse etmeden sona eklenerek
       let toolsJson: string = existing.tools_json || '[]';
       let error = existing.error;
-      const taskParentId = existing.parent_task_id || parentTaskId || null;
+      let taskParentId = existing.parent_task_id || parentTaskId || null;
+      // istemi sonradan gelen görev (ilk olayı istemsizdi): bekleyen başlatma niyetine şimdi bağlanır
+      if (!taskParentId && event.type === 'task.started' && event.data?.prompt && !existing.prompt) {
+        taskParentId = this.claimSpawnIntent(event);
+        if (taskParentId) this.prep('UPDATE events SET parent_task_id = ? WHERE task_id = ?').run(taskParentId, event.taskId);
+      }
 
       switch (event.type) {
         case 'task.started':
@@ -402,6 +422,58 @@ export class SqliteStore {
         event.taskId
       );
     }
+    if (event.type === 'tool.invoked') this.linkSpawn(event);
+  }
+
+  /** Araç çağrısı başka bir ajanı başlattıysa: kayıtlı sahipsiz alt görevi bağla, yoksa niyeti alt görev gelene kadar sakla. */
+  private linkSpawn(event: TaskEvent): void {
+    const intent = detectSpawn(event.data?.name, event.data?.input);
+    if (!intent) return;
+    const key = promptKey(intent.prompt);
+    if (!key) return;
+    const parent = this.getStmtGetTask().get(event.taskId) as any;
+    const rows = this.prep(`SELECT task_id, agent, prompt, session_id FROM tasks
+      WHERE parent_task_id IS NULL AND task_id != ? AND start_time BETWEEN ? AND ?
+      ORDER BY start_time ASC LIMIT 50`).all(event.taskId, event.timestamp - SPAWN_WINDOW_BEFORE_MS, event.timestamp + SPAWN_WINDOW_AFTER_MS) as any[];
+    const child = rows.find((r) =>
+      (!intent.agent || r.agent === intent.agent) &&
+      !(parent?.session_id && r.session_id === parent.session_id) &&
+      promptsMatch(promptKey(r.prompt), key) &&
+      !this.isAncestor(r.task_id, event.taskId));
+    if (child) {
+      this.prep('UPDATE tasks SET parent_task_id = ? WHERE task_id = ? AND parent_task_id IS NULL').run(event.taskId, child.task_id);
+      this.prep('UPDATE events SET parent_task_id = ? WHERE task_id = ? AND parent_task_id IS NULL').run(event.taskId, child.task_id);
+      return;
+    }
+    this.prep('DELETE FROM spawn_intents WHERE ts < ?').run(event.timestamp - 3600_000);
+    this.prep('INSERT INTO spawn_intents (parent_task_id, agent, prompt_key, ts) VALUES (?, ?, ?, ?)').run(event.taskId, intent.agent, key, event.timestamp);
+  }
+
+  /** Yeni görev, bekleyen bir başlatma niyetine uyuyorsa o niyetin sahibini ebeveyn olarak döndürür (niyet tüketilir). */
+  private claimSpawnIntent(event: TaskEvent): string | null {
+    const key = promptKey(event.data.prompt);
+    if (!key) return null;
+    const rows = this.prep(`SELECT i.id, i.parent_task_id, i.agent, i.prompt_key, p.session_id FROM spawn_intents i
+      LEFT JOIN tasks p ON p.task_id = i.parent_task_id
+      WHERE i.ts BETWEEN ? AND ? ORDER BY i.ts ASC LIMIT 50`).all(event.timestamp - SPAWN_WINDOW_AFTER_MS, event.timestamp + SPAWN_WINDOW_BEFORE_MS) as any[];
+    const hit = rows.find((r) =>
+      r.parent_task_id !== event.taskId &&
+      (!r.agent || r.agent === event.agent) &&
+      !(event.sessionId && r.session_id === event.sessionId) &&
+      promptsMatch(r.prompt_key, key));
+    if (!hit) return null;
+    this.prep('DELETE FROM spawn_intents WHERE id = ?').run(hit.id);
+    return String(hit.parent_task_id);
+  }
+
+  /** `candidate`, `taskId`'nin ebeveyn zincirinde mi? (döngüsel bağ kurulmasın) */
+  private isAncestor(candidate: string, taskId: string): boolean {
+    let cur: string | null = taskId;
+    for (let i = 0; cur && i < 16; i++) {
+      if (cur === candidate) return true;
+      cur = ((this.getStmtGetParent().get(cur) as any)?.parent_task_id as string) || null;
+    }
+    return false;
   }
 
   getTask(taskId: string): TaskSummary | null {

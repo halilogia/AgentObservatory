@@ -318,7 +318,8 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
       // TUI / terminal oturumları: veritabanındaki tüm oturumlar (web'den başlatılanlar da dahil; arayüz kendi sohbetlerini ayıklar)
       if (method === 'GET' && url.pathname === '/api/sessions') {
         const rows = db.prepare('SELECT task_id, session_id, agent, model, status, prompt, start_time, end_time FROM tasks WHERE session_id IS NOT NULL AND parent_task_id IS NULL ORDER BY start_time DESC LIMIT 800').all() as any[];
-        const subRows = db.prepare('SELECT session_id, status, start_time FROM tasks WHERE session_id IS NOT NULL AND parent_task_id IS NOT NULL').all() as any[];
+        // alt ajan, ebeveyninin oturumunda sayılır (başka ajanın kendi oturumu olsa bile; ör. Claude'un başlattığı Codex)
+        const subRows = db.prepare('SELECT p.session_id, c.status, c.start_time FROM tasks c JOIN tasks p ON p.task_id = c.parent_task_id WHERE c.parent_task_id IS NOT NULL AND p.session_id IS NOT NULL').all() as any[];
         json(200, groupSessions(rows, Date.now(), subRows).slice(0, 60));
         return true;
       }
@@ -328,8 +329,8 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         if (!tasks.length) { json(404, { code: 'no_session', error: 'oturum yok' }); return true; }
         const rawEvents = db.prepare('SELECT task_id, type, data, timestamp FROM events WHERE session_id = ? AND parent_task_id IS NULL ORDER BY rowid ASC').all(id) as any[];
         // alt ajanlar ana akıştan ayrı döner (ana akış süzmesi aynı kalır)
-        const subTasks = db.prepare('SELECT task_id, parent_task_id, agent, model, status, prompt, start_time, end_time FROM tasks WHERE session_id = ? AND parent_task_id IS NOT NULL ORDER BY start_time ASC, rowid ASC').all(id) as any[];
-        const subRaw = subTasks.length ? db.prepare('SELECT task_id, type, data, timestamp FROM events WHERE session_id = ? AND parent_task_id IS NOT NULL ORDER BY rowid ASC').all(id) as any[] : [];
+        const subTasks = db.prepare('SELECT task_id, parent_task_id, agent, model, status, prompt, start_time, end_time FROM tasks WHERE parent_task_id IS NOT NULL AND (session_id = ? OR parent_task_id IN (SELECT task_id FROM tasks WHERE session_id = ?)) ORDER BY start_time ASC, rowid ASC').all(id, id) as any[];
+        const subRaw = subTasks.length ? db.prepare(`SELECT task_id, type, data, timestamp FROM events WHERE task_id IN (${subTasks.map(() => '?').join(',')}) ORDER BY rowid ASC`).all(...subTasks.map((t) => t.task_id)) as any[] : [];
         json(200, { id, tasks, events: sessionEvents(tasks, rawEvents), subs: subagentsOf(subTasks, subRaw) });
         return true;
       }

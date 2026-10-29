@@ -142,13 +142,18 @@ function lastActivity(t: TaskSummary, width: number): string {
   return paint('gray', truncate(cleanText(t.prompt), width));
 }
 
-function nodeLines(t: TaskSummary, prefix: string, childPrefix: string, cols: number, now: number, selected: boolean, label?: string): string[] {
+/** Alt ajan rozeti: `[N alt ajan]` (dal kapalıysa önünde ▸). */
+function subBadge(n: number, folded = false): string {
+  return n > 0 ? ' ' + paint('magenta', (folded ? '▸ ' : '') + `[${n} alt ajan]`) : '';
+}
+
+function nodeLines(t: TaskSummary, prefix: string, childPrefix: string, cols: number, now: number, selected: boolean, label?: string, badge = ''): string[] {
   const contentWidth = Math.max(30, cols - 3);
   const dur = fmtDuration(isLive(t, now) ? now - t.startTime : t.durationMs);
   const tag = (label ? paint('gray', label + ' ') : '') + (teamBadge(t.agent) ? teamBadge(t.agent) + ' ' : '') + paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
   const tokens = t.usage?.totalTokens ? paint('gray', ' · ' + fmtTokens(t.usage.totalTokens) + ' tok') : '';
   const mark = selected ? paint('cyan', '▸') : ' ';
-  const head = `${mark}${prefix}${statusGlyph(t, now)} ${tag} ${paint('gray', t.taskId.slice(-8))} ${paint('gray', 'başladı ' + hms(t.startTime) + ' · ' + (isLive(t, now) ? 'sürüyor ' : 'sürdü ') + dur)}${tokens}`;
+  const head = `${mark}${prefix}${statusGlyph(t, now)} ${tag} ${paint('gray', t.taskId.slice(-8))} ${paint('gray', 'başladı ' + hms(t.startTime) + ' · ' + (isLive(t, now) ? 'sürüyor ' : 'sürdü ') + dur)}${tokens}${badge}`;
   const act = lastActivity(t, Math.max(20, contentWidth - childPrefix.length - 5));
   return [clipAnsi(head, contentWidth), clipAnsi(` ${childPrefix}${act}`, contentWidth)];
 }
@@ -173,7 +178,7 @@ function fmtSpan(ms: number): string {
 export const sessionKey = (sessionId: string) => `session:${sessionId}`;
 
 /** Aynı oturumun turları (eskiden yeniye) tek satırda: durum · ajan/model · oturum · mesaj sayısı · süre · token › son etkinlik. */
-function sessionLine(turns: TaskSummary[], cols: number, now: number, selected: boolean, expanded: boolean): string {
+function sessionLine(turns: TaskSummary[], cols: number, now: number, selected: boolean, expanded: boolean, subs = 0): string {
   const contentWidth = Math.max(30, cols - 3);
   const last = turns[turns.length - 1];
   const live = turns.some((t) => isLive(t, now));
@@ -185,12 +190,13 @@ function sessionLine(turns: TaskSummary[], cols: number, now: number, selected: 
   const fold = paint('gray', expanded ? '▾' : '▸');
   const mark = selected ? paint('cyan', '▸') : ' ';
   const startStr = turns[0]?.startTime ? `başladı ${hms(turns[0].startTime)} · ` : '';
-  const head = `${mark}${fold} ${glyph} ${emoji}${paint(AGENT_COLOR[last.agent] || 'white', paint('bold', name))} ${paint('gray', String(last.sessionId).slice(0, 8) + ' ' + startStr + turns.length + ' mesaj · ' + (live ? 'sürüyor ' : 'sürdü ') + fmtSpan(span) + (tokens ? ' · ' + fmtTokens(tokens) + ' tok' : ''))}`;
+  const head = `${mark}${fold} ${glyph} ${emoji}${paint(AGENT_COLOR[last.agent] || 'white', paint('bold', name))} ${paint('gray', String(last.sessionId).slice(0, 8) + ' ' + startStr + turns.length + ' mesaj · ' + (live ? 'sürüyor ' : 'sürdü ') + fmtSpan(span) + (tokens ? ' · ' + fmtTokens(tokens) + ' tok' : ''))}${subBadge(subs)}`;
   const room = Math.max(8, contentWidth - visibleLen(head) - 1);
   return clipAnsi(head + ' ' + lastActivity(last, room), contentWidth);
 }
 
-export interface TreeFrame { text: string; order: string[] }
+/** `foldable`: alt ajanı olan (dalı açılıp kapanabilen) görevler. */
+export interface TreeFrame { text: string; order: string[]; foldable: string[] }
 
 /** Son çizilen ağacın gövde satırı -> görev kimliği eşlemesi (fare tıklamasında seçim için). */
 export let treeLineMap: (string | null)[] = [];
@@ -199,7 +205,7 @@ export let treeLineMap: (string | null)[] = [];
 let treeScroll = 0;
 
 /** Ağaç: metin + ekrandaki görev sırası (seçim için). */
-export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; cols: number; rows: number; now: number; selectedId?: string | null; expanded?: Set<string>; statusBanner?: string | null }): TreeFrame {
+export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; cols: number; rows: number; now: number; selectedId?: string | null; expanded?: Set<string>; collapsed?: Set<string>; statusBanner?: string | null }): TreeFrame {
   const { cols, now } = opts;
   const running = (t: TaskSummary) => isLive(t, now);
   // [A]: yalnızca çalışanlar <-> bugünün görevleri (yoksa kayıtlı en yeni görevler, TASK_LIMIT'e kadar)
@@ -220,6 +226,9 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
   const lastActive = (t: TaskSummary) => (running(t) ? now : t.endTime ?? t.startTime);
   const order = (a: TaskSummary, b: TaskSummary) => lastActive(b) - lastActive(a) || b.startTime - a.startTime;
   roots.sort(order);
+  // alt ajan sayısı tüm alt dalları kapsar (alt ajanın alt ajanı da sayılır)
+  const descendants = (id: string, depth = 0): number =>
+    depth > 16 ? 0 : (children.get(id) ?? []).reduce((n, k) => n + 1 + descendants(k.taskId, depth + 1), 0);
 
   const counts = { run: 0, ok: 0, fail: 0 };
   hasLive = false;
@@ -253,12 +262,14 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
   const walk = (t: TaskSummary, prefix: string, childPrefix: string, label?: string, inSession = false) => {
     ids.push(t.taskId);
     if (t.taskId === opts.selectedId) selectedLine = body.length;
-    body.push(...nodeLines(t, prefix, childPrefix + (children.has(t.taskId) ? '│ ' : '  '), cols, now, t.taskId === opts.selectedId, label));
+    const folded = !!opts.collapsed?.has(t.taskId);
+    const open = children.has(t.taskId) && !folded;
+    body.push(...nodeLines(t, prefix, childPrefix + (open ? '│ ' : '  '), cols, now, t.taskId === opts.selectedId, label, subBadge(descendants(t.taskId), folded)));
     lineToId.push(t.taskId, t.taskId);
-    const kids = (children.get(t.taskId) ?? []).sort(order);
+    const kids = open ? (children.get(t.taskId) ?? []).sort(order) : [];
     kids.forEach((k, i) => {
       const last = i === kids.length - 1;
-      walk(k, childPrefix + (last ? '└─ ' : '├─ '), childPrefix + (last ? '   ' : '│  '), inSession ? '[ALT AJAN]' : undefined, inSession);
+      walk(k, childPrefix + (last ? '└─ ' : '├─ '), childPrefix + (last ? '   ' : '│  '), '[ALT AJAN]', inSession);
     });
   };
   // aynı oturumun (≥2) kök turları tek satırda toplanır; sessionId'siz / tekil görevler olduğu gibi kalır
@@ -285,7 +296,7 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
     const open = !!opts.expanded?.has(r.sessionId!);
     ids.push(key);
     if (key === opts.selectedId) selectedLine = body.length;
-    body.push(sessionLine(turns, cols, now, key === opts.selectedId, open));
+    body.push(sessionLine(turns, cols, now, key === opts.selectedId, open, turns.reduce((n, t) => n + descendants(t.taskId), 0)));
     lineToId.push(key);
     if (open) {
       turns.forEach((t, i) => {
@@ -326,7 +337,7 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
     const hiddenBelow = body.length - scrollOffset - view.length;
     out.push(paint('gray', `… ${hiddenAbove} yukarıda · ${hiddenBelow} aşağıda (↑↓ ile kaydır)`));
   }
-  return { text: out.join('\n'), order: ids };
+  return { text: out.join('\n'), order: ids, foldable: [...children.keys()].filter((id) => ids.includes(id)) };
 }
 
 /** Görünür genişliğe göre (ANSI kaçışlarını saymadan) satırı böler; kare yüksekliği doğru kalsın diye. */
@@ -573,6 +584,8 @@ export function runTree(args: string[]): void {
   let detailScroll = 0;
   let lastOrder: string[] = [];
   const expanded = new Set<string>();
+  const collapsed = new Set<string>(); // alt ajan dalı kapatılmış görevler (varsayılan: açık)
+  let lastFoldable: string[] = [];
   let statusBanner: string | null = null;
   let statusTimer: NodeJS.Timeout | null = null;
   let officeActive = false;
@@ -629,11 +642,12 @@ export function runTree(args: string[]): void {
     }
     detail = null;
     const tasks = refreshTasks();
-    const f = renderTree(tasks, { onlyRunning, cols, rows, now, selectedId, expanded, statusBanner });
+    const f = renderTree(tasks, { onlyRunning, cols, rows, now, selectedId, expanded, collapsed, statusBanner });
     lastOrder = f.order;
+    lastFoldable = f.foldable;
     if (!selectedId || !f.order.includes(selectedId)) {
       selectedId = f.order[0] ?? null;
-      if (selectedId && !once) return renderTree(tasks, { onlyRunning, cols, rows, now, selectedId, expanded, statusBanner }).text;
+      if (selectedId && !once) return renderTree(tasks, { onlyRunning, cols, rows, now, selectedId, expanded, collapsed, statusBanner }).text;
     }
     return f.text;
   };
@@ -753,7 +767,14 @@ export function runTree(args: string[]): void {
     else if (k === '\r' || k === '\n') { if (selectedId) { detailId = selectedId; detailScroll = 0; redraw(); } }
     else if (k === ' ' || k === '[C' || k === '[D') {
       const sid = sessionOf(selectedId);
-      if (sid && lastOrder.includes(sessionKey(sid))) {
+      // alt ajanı olan görev: kendi dalı açılır/kapanır (oturum turu olsa bile önce görev dalı)
+      if (selectedId && lastFoldable.includes(selectedId)) {
+        const shut = collapsed.has(selectedId);
+        if (k === '[D' ? !shut : k === '[C' ? shut : true) {
+          if (shut) collapsed.delete(selectedId); else collapsed.add(selectedId);
+          redraw();
+        }
+      } else if (sid && lastOrder.includes(sessionKey(sid))) {
         const open = expanded.has(sid);
         if (k === '[D' ? open : k === '[C' ? !open : true) {
           if (open) expanded.delete(sid); else expanded.add(sid);
