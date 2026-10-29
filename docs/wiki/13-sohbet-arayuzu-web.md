@@ -19,6 +19,8 @@ node bin/observatory.js web --port 9000
   - OpenCode için interaktif görev kontrol listesi (`task` checklist).
   - Terminal komutları için `$ <komut>` kabuk kutucukları.
 - **Kip düğmesi**: `Salt okunur` (varsayılan) veya `Yazabilir`. Yazma yalnızca destekleyen motorlarda açılır.
+- **Düşünme Süreci Akordiyonu (`<details class="thinking-box">`):** Antigravity ve akıl yürüten modellerin iç monoloğu (`o.thinking` / CoT) asistan yanıtından ayrılarak açılır-kapanır `▸ Düşünme süreci` akordiyonu içinde sunulur. Kapalıyken yanıtı temiz tutar, tıklandığında detayları açar.
+- **Dinamik Başlık Seçimi (`pickSessionTitle`):** Terminal oturumları listesinde ilk mesajdaki kör kilit ("selam", "...", "say hello in 2 words") kaldırılmıştır. ChatGPT, Claude ve Cursor standardına uygun puanlama ile oturumun en bilgilendirici ve eylem odaklı istemi dinamik olarak başlık seçilir.
 - **Canlı yanıt**: metin akar, araç çağrıları katlanabilir kartlarda görünür (komut ve çıktısı), altta süre ve token, **Kopyala** düğmesi. Hata olursa türüne göre Türkçe açıklama.
 - **Başka motorla dene**: Görev hata verirse (kota, model, giriş...) altında kullanılabilir diğer motorların düğmeleri çıkar; tıklayınca aynı istem o motorla yeniden çalışır.
 - **Sohbet geçmişi** (sol kenar çubuğu): sohbetler tarayıcıda saklanır (`localStorage`, sunucuya gitmez), Bugün / Dün / Daha önce diye gruplanır. Bir sohbeti açınca mesajlar, araç kartları ve model ayarı geri gelir; yazdığın her şey o oturumu sürdürür. Silme düğmesi satırın üzerine gelince çıkar. Kenar çubuğu açılıp kapanır (dar ekranda üstten kayar).
