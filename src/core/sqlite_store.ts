@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import type { StatementSync } from 'node:sqlite';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -41,6 +42,17 @@ function boundPayload(data: any): string {
   return JSON.stringify({ _truncated: truncateText(json, MAX_EVENT_PAYLOAD_BYTES) });
 }
 
+/** JSON dizisi metninin sonuna öğe ekler; geçerli dizi değilse bozuk kaydı atıp yeni diziyle başlar (eski davranışla aynı). */
+function appendJsonArray(json: string, item: unknown): string {
+  const s = json.trim();
+  const itemJson = JSON.stringify(item);
+  if (s.startsWith('[') && s.endsWith(']')) {
+    const inner = s.slice(1, -1).trim();
+    return inner ? `[${inner},${itemJson}]` : `[${itemJson}]`;
+  }
+  return `[${itemJson}]`;
+}
+
 export class SqliteStore {
   private db: DatabaseSync;
   private stmtInsertEvt: any = null;
@@ -49,21 +61,29 @@ export class SqliteStore {
   private stmtInsertTask: any = null;
   private stmtUpdateTask: any = null;
   private stmtUpdateModel: any = null;
+  /** SQL metni -> hazır ifade: TUI/ingest her tick'te aynı sorguları çalıştırır, her seferinde yeniden derlenmesin. */
+  private stmts = new Map<string, StatementSync>();
+
+  private prep(sql: string): StatementSync {
+    let s = this.stmts.get(sql);
+    if (!s) { s = this.db.prepare(sql); this.stmts.set(sql, s); }
+    return s;
+  }
 
   private getStmtInsertEvt() {
-    return (this.stmtInsertEvt ??= this.db.prepare(`
+    return (this.stmtInsertEvt ??= this.prep(`
       INSERT OR IGNORE INTO events (id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `));
   }
   private getStmtGetParent() {
-    return (this.stmtGetParent ??= this.db.prepare('SELECT parent_task_id FROM tasks WHERE task_id = ?'));
+    return (this.stmtGetParent ??= this.prep('SELECT parent_task_id FROM tasks WHERE task_id = ?'));
   }
   private getStmtGetTask() {
-    return (this.stmtGetTask ??= this.db.prepare('SELECT * FROM tasks WHERE task_id = ?'));
+    return (this.stmtGetTask ??= this.prep('SELECT * FROM tasks WHERE task_id = ?'));
   }
   private getStmtInsertTask() {
-    return (this.stmtInsertTask ??= this.db.prepare(`
+    return (this.stmtInsertTask ??= this.prep(`
       INSERT INTO tasks (
         task_id, session_id, agent, status, prompt, model, pid,
         start_time, end_time, duration_ms, assistant_text,
@@ -73,7 +93,7 @@ export class SqliteStore {
     `));
   }
   private getStmtUpdateTask() {
-    return (this.stmtUpdateTask ??= this.db.prepare(`
+    return (this.stmtUpdateTask ??= this.prep(`
       UPDATE tasks SET
         session_id = ?, status = ?, prompt = ?, model = ?, pid = ?,
         end_time = ?, duration_ms = ?, assistant_text = ?,
@@ -83,7 +103,7 @@ export class SqliteStore {
     `));
   }
   private getStmtUpdateModel() {
-    return (this.stmtUpdateModel ??= this.db.prepare('UPDATE tasks SET model = ? WHERE task_id = ?'));
+    return (this.stmtUpdateModel ??= this.prep('UPDATE tasks SET model = ? WHERE task_id = ?'));
   }
 
   constructor(dbPath?: string) {
@@ -117,6 +137,9 @@ export class SqliteStore {
       );
       CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id);
       CREATE INDEX IF NOT EXISTS idx_events_ts ON events(timestamp);
+      -- oturum sohbeti (ağaç ayrıntısı) ve reapStaleTasks'taki MAX(timestamp) tam tablo taraması yapmasın
+      CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
+      CREATE INDEX IF NOT EXISTS idx_events_task_ts ON events(task_id, timestamp);
 
       CREATE TABLE IF NOT EXISTS tasks (
         task_id TEXT PRIMARY KEY,
@@ -205,7 +228,7 @@ export class SqliteStore {
 
     // Safe migrations: parent_task_id on tasks and events
     for (const table of ['tasks', 'events']) {
-      const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+      const cols = this.prep(`PRAGMA table_info(${table})`).all() as any[];
       if (!cols.some((c) => c.name === 'parent_task_id')) {
         try {
           this.db.exec(`ALTER TABLE ${table} ADD COLUMN parent_task_id TEXT`);
@@ -307,8 +330,8 @@ export class SqliteStore {
       let cachedTokens = existing.cached_tokens || 0;
       let outputTokens = existing.output_tokens || 0;
       let reasoningTokens = existing.reasoning_tokens || 0;
-      let tools: any[] = [];
-      try { tools = JSON.parse(existing.tools_json || '[]'); } catch {}
+      // tools_json yüzlerce KB olabilir: yalnızca tool.invoked'da dokunulur, o da parse etmeden sona eklenerek
+      let toolsJson: string = existing.tools_json || '[]';
       let error = existing.error;
       const taskParentId = existing.parent_task_id || parentTaskId || null;
 
@@ -320,7 +343,7 @@ export class SqliteStore {
           break;
 
         case 'tool.invoked':
-          tools.push({
+          toolsJson = appendJsonArray(toolsJson, {
             name: event.data.name || 'tool',
             input: boundValue(event.data.input || {}),
             timestamp: event.timestamp
@@ -375,22 +398,22 @@ export class SqliteStore {
         sessionId, status, prompt, model, taskPid,
         endTime, durationMs, assistantText,
         inputTokens, cachedTokens, outputTokens, reasoningTokens,
-        JSON.stringify(tools), error, taskParentId,
+        toolsJson, error, taskParentId,
         event.taskId
       );
     }
   }
 
   getTask(taskId: string): TaskSummary | null {
-    const row = this.db.prepare('SELECT * FROM tasks WHERE task_id = ?').get(taskId) as any;
+    const row = this.prep('SELECT * FROM tasks WHERE task_id = ?').get(taskId) as any;
     if (!row) return null;
     return this.mapTaskSummary(row);
   }
 
   /** Includes writes by this connection and other SQLite connections. */
   getTaskRevision(): string {
-    const external = this.db.prepare('PRAGMA data_version').get() as any;
-    const local = this.db.prepare('SELECT total_changes() AS n').get() as any;
+    const external = this.prep('PRAGMA data_version').get() as any;
+    const local = this.prep('SELECT total_changes() AS n').get() as any;
     return `${external.data_version}:${local.n}`;
   }
 
@@ -400,7 +423,7 @@ export class SqliteStore {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const now = Date.now();
-      const rows = this.db.prepare(`
+      const rows = this.prep(`
         SELECT t.task_id, t.session_id, t.agent, t.pid,
           COALESCE((SELECT MAX(timestamp) FROM events WHERE task_id = t.task_id), t.start_time) AS last_event
         FROM tasks t WHERE status = 'running'
@@ -435,12 +458,12 @@ export class SqliteStore {
   }
 
   getRecentTasks(limit: number = 10): TaskSummary[] {
-    const rows = this.db.prepare('SELECT * FROM tasks ORDER BY start_time DESC LIMIT ?').all(limit) as any[];
+    const rows = this.prep('SELECT * FROM tasks ORDER BY start_time DESC LIMIT ?').all(limit) as any[];
     return rows.map((r) => this.mapTaskSummary(r));
   }
 
   getEvents(taskId: string): TaskEvent[] {
-    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id FROM events WHERE task_id = ? ORDER BY rowid ASC').all(taskId) as any[];
+    const rows = this.prep('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id FROM events WHERE task_id = ? ORDER BY rowid ASC').all(taskId) as any[];
     return rows.map((r) => ({
       id: r.id,
       taskId: r.task_id,
@@ -456,13 +479,19 @@ export class SqliteStore {
 
   /** Bir oturumun tüm görevleri, kronolojik (eskiden yeniye). */
   getTasksForSession(sessionId: string): TaskSummary[] {
-    const rows = this.db.prepare('SELECT * FROM tasks WHERE session_id = ? ORDER BY start_time ASC, rowid ASC').all(sessionId) as any[];
+    const rows = this.prep('SELECT * FROM tasks WHERE session_id = ? ORDER BY start_time ASC, rowid ASC').all(sessionId) as any[];
     return rows.map((r) => this.mapTaskSummary(r));
+  }
+
+  /** Oturum görevlerinin hafif dökümü (büyük tools_json/assistant_text sütunları okunmaz), kronolojik. */
+  getSessionTaskIndex(sessionId: string): Array<{ taskId: string; startTime: number; durationMs: number; parentTaskId: string | null }> {
+    const rows = this.prep('SELECT task_id, start_time, duration_ms, parent_task_id FROM tasks WHERE session_id = ? ORDER BY start_time ASC, rowid ASC').all(sessionId) as any[];
+    return rows.map((r) => ({ taskId: r.task_id, startTime: r.start_time, durationMs: r.duration_ms || 0, parentTaskId: r.parent_task_id || null }));
   }
 
   /** Bir oturumun tüm görevlerinin olayları tek kronolojik akışta (rowid sırası). */
   getEventsForSession(sessionId: string): TaskEvent[] {
-    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id FROM events WHERE session_id = ? ORDER BY rowid ASC').all(sessionId) as any[];
+    const rows = this.prep('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id FROM events WHERE session_id = ? ORDER BY rowid ASC').all(sessionId) as any[];
     return rows.map((r) => ({
       id: r.id,
       taskId: r.task_id,
@@ -476,9 +505,35 @@ export class SqliteStore {
     }));
   }
 
+  /**
+   * Görev/oturum olaylarının en yeni `limit` tanesi (kronolojik, seq'li); afterSeq verilirse yalnızca ondan sonrakiler.
+   * Ayrıntı ekranı yüz binlerce olaylı oturumda tüm geçmişi parse etmesin, canlı güncellemede yalnızca yenileri okusun diye.
+   */
+  getEventsTail(by: 'task' | 'session', id: string, limit: number, afterSeq = 0): Array<TaskEvent & { seq: number }> {
+    const col = by === 'task' ? 'task_id' : 'session_id';
+    const rows = this.prep(`SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id FROM events WHERE ${col} = ? AND rowid > ? ORDER BY rowid DESC LIMIT ?`).all(id, afterSeq, limit) as any[];
+    return rows.reverse().map((r) => ({
+      seq: r.seq,
+      id: r.id,
+      taskId: r.task_id,
+      sessionId: r.session_id,
+      agent: r.agent,
+      tier: r.tier,
+      type: r.type,
+      data: JSON.parse(r.data || '{}'),
+      timestamp: r.timestamp,
+      ...(r.parent_task_id ? { parentTaskId: r.parent_task_id } : {})
+    }));
+  }
+
+  countEvents(by: 'task' | 'session', id: string): number {
+    const col = by === 'task' ? 'task_id' : 'session_id';
+    return Number((this.prep(`SELECT COUNT(*) AS n FROM events WHERE ${col} = ?`).get(id) as any).n);
+  }
+
   getMaxSeq(): number {
     try {
-      const row = this.db.prepare('SELECT COALESCE(MAX(rowid), 0) AS maxSeq FROM events').get() as any;
+      const row = this.prep('SELECT COALESCE(MAX(rowid), 0) AS maxSeq FROM events').get() as any;
       return row ? Number(row.maxSeq) : 0;
     } catch {
       return 0;
@@ -486,7 +541,7 @@ export class SqliteStore {
   }
 
   getEventsSinceSeq(lastSeq: number): Array<TaskEvent & { seq: number }> {
-    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id FROM events WHERE rowid > ? ORDER BY rowid ASC').all(lastSeq) as any[];
+    const rows = this.prep('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id FROM events WHERE rowid > ? ORDER BY rowid ASC').all(lastSeq) as any[];
     return rows.map((r) => ({
       seq: r.seq,
       id: r.id,
@@ -502,7 +557,7 @@ export class SqliteStore {
   }
 
   getEventsSince(lastTimestamp: number): TaskEvent[] {
-    const rows = this.db.prepare('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id FROM events WHERE timestamp > ? ORDER BY rowid ASC').all(lastTimestamp) as any[];
+    const rows = this.prep('SELECT rowid AS seq, id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id FROM events WHERE timestamp > ? ORDER BY rowid ASC').all(lastTimestamp) as any[];
     return rows.map((r) => ({
       id: r.id,
       taskId: r.task_id,
@@ -517,7 +572,7 @@ export class SqliteStore {
   }
 
   cancelTask(taskId: string, reason: string = 'Kullanıcı tarafından iptal edildi'): boolean {
-    const row = this.db.prepare('SELECT * FROM tasks WHERE task_id = ?').get(taskId) as any;
+    const row = this.prep('SELECT * FROM tasks WHERE task_id = ?').get(taskId) as any;
     if (!row) return false;
     if (TERMINAL_STATUSES.has(row.status)) return false; // Already finished or cancelled
 
@@ -549,9 +604,21 @@ export class SqliteStore {
     return true;
   }
 
-  private mapTaskSummary(row: any): TaskSummary {
+  /** task_id -> son parse edilen tools_json: ağaç her revizyonda 80 görevi okur, değişmeyen araç listesi yeniden parse edilmesin. */
+  private toolsCache = new Map<string, { raw: string; tools: any[] }>();
+
+  private parseTools(taskId: string, raw: string): any[] {
+    const hit = this.toolsCache.get(taskId);
+    if (hit && hit.raw === raw) return hit.tools;
     let tools: any[] = [];
-    try { tools = JSON.parse(row.tools_json || '[]'); } catch {}
+    try { tools = JSON.parse(raw); } catch { tools = []; }
+    if (this.toolsCache.size > 2000) this.toolsCache.clear();
+    this.toolsCache.set(taskId, { raw, tools });
+    return tools;
+  }
+
+  private mapTaskSummary(row: any): TaskSummary {
+    const tools = this.parseTools(row.task_id, row.tools_json || '[]');
 
     const inTok = row.input_tokens || 0;
     const outTok = row.output_tokens || 0;
@@ -600,7 +667,7 @@ export class SqliteStore {
   // --- Mission Control & Adaptive Orchestrator Domain Methods ---
 
   createMission(m: { id: string; title: string; status?: Mission['status']; mode: Mission['mode']; repoPath: string; createdAt?: number }): void {
-    const stmt = this.db.prepare(`
+    const stmt = this.prep(`
       INSERT INTO missions (id, title, status, mode, repo_path, created_at, completed_at)
       VALUES (?, ?, ?, ?, ?, ?, NULL)
     `);
@@ -608,7 +675,7 @@ export class SqliteStore {
   }
 
   getMission(id: string): Mission | null {
-    const row = this.db.prepare('SELECT * FROM missions WHERE id = ?').get(id) as any;
+    const row = this.prep('SELECT * FROM missions WHERE id = ?').get(id) as any;
     if (!row) return null;
     const contract = this.getMissionContract(id);
     const tasks = this.listMissionTasks(id);
@@ -626,16 +693,16 @@ export class SqliteStore {
   }
 
   updateMissionStatus(id: string, status: Mission['status'], completedAt?: number): void {
-    this.db.prepare('UPDATE missions SET status = ?, completed_at = COALESCE(?, completed_at) WHERE id = ?').run(status, completedAt || null, id);
+    this.prep('UPDATE missions SET status = ?, completed_at = COALESCE(?, completed_at) WHERE id = ?').run(status, completedAt || null, id);
   }
 
   listMissions(limit = 50): Mission[] {
-    const rows = this.db.prepare('SELECT * FROM missions ORDER BY created_at DESC LIMIT ?').all(limit) as any[];
+    const rows = this.prep('SELECT * FROM missions ORDER BY created_at DESC LIMIT ?').all(limit) as any[];
     return rows.map((r) => this.getMission(r.id)!).filter(Boolean);
   }
 
   createMissionContract(c: MissionContract): void {
-    const stmt = this.db.prepare(`
+    const stmt = this.prep(`
       INSERT OR REPLACE INTO mission_contracts (id, mission_id, contract_json, version, created_at)
       VALUES (?, ?, ?, ?, ?)
     `);
@@ -643,13 +710,13 @@ export class SqliteStore {
   }
 
   getMissionContract(missionId: string): MissionContract | null {
-    const row = this.db.prepare('SELECT contract_json FROM mission_contracts WHERE mission_id = ? ORDER BY version DESC LIMIT 1').get(missionId) as any;
+    const row = this.prep('SELECT contract_json FROM mission_contracts WHERE mission_id = ? ORDER BY version DESC LIMIT 1').get(missionId) as any;
     if (!row) return null;
     try { return JSON.parse(row.contract_json); } catch { return null; }
   }
 
   createMissionTask(t: TaskNode): void {
-    const stmt = this.db.prepare(`
+    const stmt = this.prep(`
       INSERT INTO mission_tasks (
         id, mission_id, title, description, status,
         dependencies_json, required_capabilities_json,
@@ -668,7 +735,7 @@ export class SqliteStore {
   }
 
   getMissionTask(id: string): TaskNode | null {
-    const row = this.db.prepare('SELECT * FROM mission_tasks WHERE id = ?').get(id) as any;
+    const row = this.prep('SELECT * FROM mission_tasks WHERE id = ?').get(id) as any;
     if (!row) return null;
     return {
       id: row.id,
@@ -694,7 +761,7 @@ export class SqliteStore {
   updateMissionTaskStatus(id: string, status: TaskStatus, updates: Partial<TaskNode> = {}): void {
     const existing = this.getMissionTask(id);
     if (!existing) return;
-    const stmt = this.db.prepare(`
+    const stmt = this.prep(`
       UPDATE mission_tasks SET
         status = ?,
         assigned_agent = COALESCE(?, assigned_agent),
@@ -720,12 +787,12 @@ export class SqliteStore {
   }
 
   listMissionTasks(missionId: string): TaskNode[] {
-    const rows = this.db.prepare('SELECT id FROM mission_tasks WHERE mission_id = ? ORDER BY created_at ASC').all(missionId) as any[];
+    const rows = this.prep('SELECT id FROM mission_tasks WHERE mission_id = ? ORDER BY created_at ASC').all(missionId) as any[];
     return rows.map((r) => this.getMissionTask(r.id)!).filter(Boolean);
   }
 
   createAgentRun(r: AgentRun): void {
-    const stmt = this.db.prepare(`
+    const stmt = this.prep(`
       INSERT INTO agent_runs (
         id, task_id, mission_id, agent, model, pid,
         lease_token, lease_expires_at, status,
@@ -741,11 +808,11 @@ export class SqliteStore {
   }
 
   heartbeatAgentRun(id: string, now = Date.now()): void {
-    this.db.prepare('UPDATE agent_runs SET heartbeat_at = ? WHERE id = ?').run(now, id);
+    this.prep('UPDATE agent_runs SET heartbeat_at = ? WHERE id = ?').run(now, id);
   }
 
   completeAgentRun(id: string, status: AgentRun['status'], exitCode?: number, error?: string): void {
-    this.db.prepare(`
+    this.prep(`
       UPDATE agent_runs SET status = ?, completed_at = ?, exit_code = ?, error = ?
       WHERE id = ?
     `).run(status, Date.now(), exitCode ?? null, error || null, id);

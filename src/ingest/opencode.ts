@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { StatementSync } from 'node:sqlite';
 import { parseJson, shortId } from './core.ts';
 import type { ExtEvent, ManagedCheck } from './core.ts';
 
@@ -16,6 +17,9 @@ export class OpenCodeDbSource {
   private readonly db: DatabaseSync;
   private lastTime: number;
   private lastRowid = 0;
+  private lastVersion = -1;
+  private readonly stmtVersion: StatementSync;
+  private readonly stmtParts: StatementSync;
   private readonly sessions = new Map<string, SessState>();
 
   private readonly isManaged: ManagedCheck;
@@ -27,6 +31,13 @@ export class OpenCodeDbSource {
     this.db = new DatabaseSync(dbPath, { readOnly: true });
     this.db.exec('PRAGMA busy_timeout = 3000;');
     this.lastTime = startFrom;
+    this.stmtVersion = this.db.prepare('PRAGMA data_version');
+    this.stmtParts = this.db.prepare(
+      `SELECT p.rowid AS rid, p.id, p.message_id, p.session_id, p.time_updated, p.data, m.data AS mdata, s.directory
+         FROM part p JOIN message m ON m.id = p.message_id JOIN session s ON s.id = p.session_id
+        WHERE p.time_updated > ? OR (p.time_updated = ? AND p.rowid > ?)
+        ORDER BY p.time_updated, p.rowid LIMIT 500`
+    );
   }
 
   private st(id: string): SessState {
@@ -36,12 +47,13 @@ export class OpenCodeDbSource {
   }
 
   poll(): ExtEvent[] {
-    const rows = this.db.prepare(
-      `SELECT p.rowid AS rid, p.id, p.message_id, p.session_id, p.time_updated, p.data, m.data AS mdata, s.directory
-         FROM part p JOIN message m ON m.id = p.message_id JOIN session s ON s.id = p.session_id
-        WHERE p.time_updated > ? OR (p.time_updated = ? AND p.rowid > ?)
-        ORDER BY p.time_updated, p.rowid LIMIT 500`
-    ).all(this.lastTime, this.lastTime, this.lastRowid) as any[];
+    // part.time_updated indekssiz (OpenCode'un şeması): sorgu her saniye tam tablo tarar (~40 ms).
+    // PRAGMA data_version yalnızca başka bir bağlantı yazınca değişir; değişmediyse tarama atlanır.
+    const version = Number((this.stmtVersion.get() as any).data_version);
+    if (version === this.lastVersion) return [];
+    const rows = this.stmtParts.all(this.lastTime, this.lastTime, this.lastRowid) as any[];
+    // 500'lük sayfa doluysa geride okunmamış satır var: sürümü kaydetme, sonraki poll devam etsin
+    this.lastVersion = rows.length < 500 ? version : -1;
     const out: ExtEvent[] = [];
     for (const r of rows) {
       this.lastTime = Number(r.time_updated);

@@ -37,6 +37,7 @@ function isLive(t: TaskSummary, now: number): boolean {
 }
 
 const ANSI_RE = /\x1b\[[0-9;?]*[A-Za-z]/g;
+const ANSI_AT = /\x1b\[[0-9;?]*[A-Za-z]/y;
 
 /** ANSI kaçış dizilerini saymadan görünür karakter uzunluğu. */
 export function visibleLen(s: string): number {
@@ -51,7 +52,9 @@ function clipAnsi(s: string, max: number): string {
   let out = '';
   let vis = 0;
   for (let i = 0; i < s.length;) {
-    const m = /^\x1b\[[0-9;?]*[A-Za-z]/.exec(s.slice(i));
+    // yapışkan (y) regex: her karakterde s.slice(i) kopyası yok (eski hali uzun satırda O(n²) idi)
+    ANSI_AT.lastIndex = i;
+    const m = s.charCodeAt(i) === 27 ? ANSI_AT.exec(s) : null;
     if (m) { out += m[0]; i += m[0].length; continue; }
     if (vis >= limit) break;
     out += s[i];
@@ -117,11 +120,19 @@ function toolLine(name: string, input: any): string {
   return `${info.name} ${info.target}`.trim();
 }
 
+/** assistantText 50 KB'a kadar büyür: temizlenmiş hali görev nesnesi başına bir kez hesaplanır (animasyon her 200 ms'de çizer). */
+const cleanedText = new WeakMap<TaskSummary, string>();
+function cleanAssistant(t: TaskSummary): string {
+  let v = cleanedText.get(t);
+  if (v === undefined) { v = cleanText(t.assistantText); cleanedText.set(t, v); }
+  return v;
+}
+
 function lastActivity(t: TaskSummary, width: number): string {
   if (t.error) return paint('red', 'hata: ' + truncate(cleanText(t.error), width));
   const tool = t.toolsUsed[t.toolsUsed.length - 1];
   if (t.status === 'running' && tool) return paint('gray', '› ' + truncate(toolLine(tool.name, tool.input), width));
-  const text = cleanText(t.assistantText);
+  const text = cleanAssistant(t);
   if (text) {
     // son söz: kelime ortasından başlamasın
     const tail = text.length > width ? text.slice(-width).replace(/^\S*\s/, '') : text;
@@ -326,7 +337,8 @@ function wrapAnsi(line: string, width: number): string[] {
   let active = ''; // açık renk/stil kodları: bölünen satırın devamı aynı renkte kalsın
   for (let i = 0; i < line.length; i++) {
     if (line[i] === '\x1b') {
-      const m = /^\x1b\[[0-9;?]*[A-Za-z]/.exec(line.slice(i));
+      ANSI_AT.lastIndex = i;
+      const m = ANSI_AT.exec(line);
       if (m) {
         if (m[0].endsWith('m')) active = m[0] === '\x1b[0m' || m[0] === '\x1b[m' ? '' : active + m[0];
         cur += m[0]; i += m[0].length - 1; continue;
@@ -374,7 +386,62 @@ export function subagentLines(subs: TaskSummary[], width: number, now: number): 
   return out;
 }
 
-export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: number; rows: number; now: number; scroll?: number; subs?: TaskSummary[] }): string {
+/**
+ * Ayrıntı sayfasının sohbet metni, artımlı: olaylar bir kez işlenir, tamamlanan satırlar genişlik başına bir kez sarılır.
+ * Eskiden her kare (çalışırken 200 ms'de bir) tüm olaylar baştan çiziliyordu: 958 turluk oturumda kare başına ~2 sn.
+ */
+export class TranscriptView {
+  private raw = '';
+  private tail = '';            // son '\n'den sonraki yarım satır (henüz sarılmadı)
+  private wrapped: string[] = [];
+  private width = 0;
+  private readonly r: TranscriptRenderer;
+  private readonly model: string;
+
+  constructor(model?: string, omitted = 0) {
+    this.model = model || '';
+    this.r = new TranscriptRenderer((x) => this.append(x), { color: true, fullPrompt: true });
+    if (omitted > 0) this.append(paint('gray', `… önceki ${omitted} olay gösterilmiyor (yalnızca en yeni ${DETAIL_EVENT_LIMIT} olay)`) + '\n\n');
+  }
+
+  push(events: TaskEvent[]): void {
+    for (const e of events) {
+      if (e.type === 'task.started' && !e.data?.model && this.model) e.data = { ...e.data, model: this.model };
+      this.r.push(e);
+    }
+  }
+
+  private append(x: string): void {
+    this.raw += x;
+    this.tail += x;
+    if (!this.width || !x.includes('\n')) return;
+    const parts = this.tail.split('\n');
+    this.tail = parts.pop() ?? '';
+    for (const p of parts) for (const w of wrapAnsi(p, this.width)) this.wrapped.push(w);
+  }
+
+  /** Sarılmış satırlar; sondaki boşluk/boş satırlar atılır (tam çizimdeki trimEnd ile aynı görünüm). */
+  lines(width: number): string[] {
+    if (width !== this.width) {
+      this.width = width;
+      const parts = this.raw.split('\n');
+      this.tail = parts.pop() ?? '';
+      this.wrapped = [];
+      for (const p of parts) for (const w of wrapAnsi(p, width)) this.wrapped.push(w);
+    }
+    const out = this.wrapped.slice();
+    const tail = this.tail.replace(/\s+$/, '');
+    if (tail) {
+      out.push(...wrapAnsi(tail, width));
+    } else {
+      while (out.length && !out[out.length - 1].trim()) out.pop();
+      if (out.length) out[out.length - 1] = out[out.length - 1].replace(/\s+$/, '');
+    }
+    return out;
+  }
+}
+
+export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: number; rows: number; now: number; scroll?: number; subs?: TaskSummary[]; view?: TranscriptView }): string {
   const { cols, rows, now } = opts;
   const width = Math.max(40, cols - 2); // son iki sütun: boşluk + kaydırma çubuğu
   const live = isLive(t, now);
@@ -386,14 +453,10 @@ export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: 
   if (live) out.push(liveBar(t, now, width));
   out.push(paint('gray', '─'.repeat(Math.min(width, 120))));
 
-  let buf = '';
-  const r = new TranscriptRenderer((x) => { buf += x; }, { color: true, fullPrompt: true });
-  for (const e of events) {
-    if (e.type === 'task.started' && !e.data?.model && t.model) e.data = { ...e.data, model: t.model };
-    r.push(e);
-  }
-  r.end();
-  const lines = [...buf.replace(/\s+$/, '').split('\n'), ...(opts.subs?.length ? subagentLines(opts.subs, width, now) : [])].flatMap((l) => wrapAnsi(l, width));
+  let tv = opts.view;
+  if (!tv) { tv = new TranscriptView(t.model); tv.push(events); }
+  const lines = tv.lines(width);
+  if (opts.subs?.length) for (const l of subagentLines(opts.subs, width, now)) lines.push(...wrapAnsi(l, width));
   const room = Math.max(4, rows - out.length - 1);
   detailGeom = { top: out.length, room, total: lines.length };
   const maxScroll = Math.max(0, lines.length - room);
@@ -418,23 +481,76 @@ export function renderDetail(t: TaskSummary, events: TaskEvent[], opts: { cols: 
 
 /** Oturumun tüm turlarını tek sohbet akışına birleştirir; alt ajan olayları ve sahte "Interrupted for 0s" kayıtları çıkarılır. */
 export function sessionTranscript(sessionId: string): { task: TaskSummary; events: TaskEvent[]; subs: TaskSummary[] } | null {
-  const all = globalSqlite.getTasksForSession(sessionId);
-  const turns = all.filter((t) => !t.parentTaskId);
+  const meta = sessionMeta(sessionId);
+  if (!meta) return null;
+  return { task: meta.task, events: globalSqlite.getEventsForSession(sessionId).filter(meta.keep), subs: meta.subs };
+}
+
+/** Oturumun özet görevi + olay süzgeci (ana tur olayları; "Interrupted for 0s" iptalleri hariç). */
+function sessionMeta(sessionId: string): { task: TaskSummary; subs: TaskSummary[]; turnKey: string; keep: (e: TaskEvent) => boolean } | null {
+  // yüzlerce turlu oturumda tüm görev satırlarını (araç listesi + yanıt metni) okumak revizyon başına ~250 ms sürüyordu:
+  // tur yapısı hafif dökümden, tam özet yalnızca son tur ve alt ajanlar için okunur
+  const index = globalSqlite.getSessionTaskIndex(sessionId);
+  const turns = index.filter((t) => !t.parentTaskId);
   if (turns.length === 0) return null;
-  const lastTurn = turns[turns.length - 1];
+  const lastTurn = globalSqlite.getTask(turns[turns.length - 1].taskId);
+  if (!lastTurn) return null;
+  const subs = index.filter((t) => !!t.parentTaskId).map((t) => globalSqlite.getTask(t.taskId)).filter((t): t is TaskSummary => !!t);
   const started = new Map(turns.map((t) => [t.taskId, t.startTime]));
-  const events = globalSqlite.getEventsForSession(sessionId).filter((e) => {
+  const keep = (e: TaskEvent) => {
     if (e.parentTaskId || !started.has(e.taskId)) return false;
     if (e.type === 'task.cancelled') return e.taskId === lastTurn.taskId && e.timestamp - (started.get(e.taskId) ?? 0) >= 1000;
     return true;
-  });
+  };
   const task: TaskSummary = {
     ...lastTurn,
     taskId: `${sessionId.slice(0, 8)} · ${turns.length} mesaj`,
     startTime: turns[0].startTime,
     durationMs: turns.reduce((a, t) => a + t.durationMs, 0)
   };
-  return { task, events, subs: all.filter((t) => !!t.parentTaskId) };
+  return { task, subs, turnKey: `${turns.length}:${lastTurn.taskId}`, keep };
+}
+
+/** Ayrıntı sayfasında en fazla bu kadar en yeni olay yüklenir (yüz binlerce olaylı oturumda açılış saniyeler sürmesin). */
+export const DETAIL_EVENT_LIMIT = 5000;
+
+/** Açık ayrıntı sayfasının durumu: veritabanı revizyonu değişince yalnızca son okunan seq'ten sonraki olaylar eklenir. */
+export interface DetailState { id: string; task: TaskSummary; subs: TaskSummary[]; view: TranscriptView; lastSeq: number; turnKey: string }
+
+export function loadDetail(id: string): DetailState | null {
+  const bySession = id.startsWith('session:');
+  const key = bySession ? id.slice(8) : id;
+  const meta = bySession ? sessionMeta(key) : null;
+  const task = bySession ? meta?.task : globalSqlite.getTask(key);
+  if (!task) return null;
+  const by = bySession ? 'session' : 'task';
+  const events = globalSqlite.getEventsTail(by, key, DETAIL_EVENT_LIMIT);
+  const omitted = events.length >= DETAIL_EVENT_LIMIT ? Math.max(0, globalSqlite.countEvents(by, key) - events.length) : 0;
+  const view = new TranscriptView(task.model, omitted);
+  view.push(meta ? events.filter(meta.keep) : events);
+  return { id, task, subs: meta?.subs ?? [], view, lastSeq: events.length ? events[events.length - 1].seq : 0, turnKey: meta?.turnKey ?? '' };
+}
+
+/** Yeni olayları mevcut görünüme ekler; oturumda yeni tur başladıysa (süzgeç değişir) baştan yükler. */
+export function refreshDetail(d: DetailState): DetailState | null {
+  if (!d.id.startsWith('session:')) {
+    const task = globalSqlite.getTask(d.id);
+    if (!task) return null;
+    const events = globalSqlite.getEventsTail('task', d.id, DETAIL_EVENT_LIMIT, d.lastSeq);
+    d.view.push(events);
+    if (events.length) d.lastSeq = events[events.length - 1].seq;
+    d.task = task;
+    return d;
+  }
+  const meta = sessionMeta(d.id.slice(8));
+  if (!meta) return null;
+  if (meta.turnKey !== d.turnKey) return loadDetail(d.id);
+  const events = globalSqlite.getEventsTail('session', d.id.slice(8), DETAIL_EVENT_LIMIT, d.lastSeq);
+  d.view.push(events.filter(meta.keep));
+  if (events.length) d.lastSeq = events[events.length - 1].seq;
+  d.task = meta.task;
+  d.subs = meta.subs;
+  return d;
 }
 
 /** Cursor-addressed updates also erase rows removed from a shorter frame. */
@@ -467,15 +583,15 @@ export function runTree(args: string[]): void {
   let cacheAt = 0;
   let revision = '';
   let animationOnly = false;
-  let cachedDetail: ReturnType<typeof sessionTranscript> = null;
-  let cachedDetailId: string | null = null;
+  let detail: DetailState | null = null;
+  let detailStale = false;
   const refreshTasks = (force = false): TaskSummary[] => {
     const now = Date.now();
     if (force || (!animationOnly && now - cacheAt >= 800)) {
       const nextRevision = globalSqlite.getTaskRevision();
       if (force || revision !== nextRevision) {
         cachedTasks = globalSqlite.getRecentTasks(TASK_LIMIT);
-        cachedDetailId = null;
+        detailStale = true;
         revision = nextRevision;
       }
       cacheAt = now;
@@ -504,17 +620,14 @@ export function runTree(args: string[]): void {
     refreshTasks();
     if (officeActive) return renderOfficeView({ cols, rows, now, tasks: refreshTasks(), statusBanner });
     if (detailId) {
-      if (cachedDetailId !== detailId) {
-        if (detailId.startsWith('session:')) cachedDetail = sessionTranscript(detailId.slice(8));
-        else {
-          const task = globalSqlite.getTask(detailId);
-          cachedDetail = task ? { task, events: globalSqlite.getEvents(detailId), subs: [] } : null;
-        }
-        cachedDetailId = detailId;
-      }
-      if (cachedDetail) return renderDetail(cachedDetail.task, cachedDetail.events, { cols, rows, now, scroll: detailScroll, subs: cachedDetail.subs });
+      // açılışta son DETAIL_EVENT_LIMIT olay yüklenir; sonra yalnızca revizyon değişince yeni olaylar eklenir
+      if (!detail || detail.id !== detailId) detail = loadDetail(detailId);
+      else if (detailStale) detail = refreshDetail(detail);
+      detailStale = false;
+      if (detail) return renderDetail(detail.task, [], { cols, rows, now, scroll: detailScroll, subs: detail.subs, view: detail.view });
       detailId = null;
     }
+    detail = null;
     const tasks = refreshTasks();
     const f = renderTree(tasks, { onlyRunning, cols, rows, now, selectedId, expanded, statusBanner });
     lastOrder = f.order;

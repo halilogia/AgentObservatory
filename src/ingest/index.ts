@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { StatementSync } from 'node:sqlite';
 import { globalSqlite, SqliteStore } from '../core/sqlite_store.ts';
 import { toTaskEvent } from './core.ts';
 import type { ExtEvent, LineParser, ManagedCheck } from './core.ts';
@@ -27,9 +28,9 @@ const IGNORE_DIRS = new Set([
 ]);
 
 function walkJsonl(dir: string, out: string[], depth = 0): void {
-  if (depth > 5 || !fs.existsSync(dir)) return;
+  if (depth > 5) return;
   let entries: fs.Dirent[];
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; } // klasör yok/erişilemez
   for (const e of entries) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) {
@@ -39,16 +40,37 @@ function walkJsonl(dir: string, out: string[], depth = 0): void {
   }
 }
 
+/** walkJsonl'ın asenkron eşi: readdir libuv iş parçacığında çalışır, TUI'nin event loop'u beklemez. */
+async function walkJsonlAsync(dir: string, out: string[], depth = 0): Promise<void> {
+  if (depth > 5) return;
+  let entries: fs.Dirent[];
+  try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; } // klasör yok/erişilemez
+  const subdirs: Promise<void>[] = [];
+  for (const e of entries) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      if (!IGNORE_DIRS.has(e.name)) subdirs.push(walkJsonlAsync(p, out, depth + 1));
+    } else if (e.name.endsWith('.jsonl')) out.push(p);
+  }
+  await Promise.all(subdirs);
+}
+
+/** Antigravity konuşmaları doğrudan <root>/<konuşma>/.system_generated/logs/transcript.jsonl: yalnızca birinci seviye klasörler (varlık stat ile denetlenir). */
+function agyCandidates(root: string, entries: fs.Dirent[]): string[] {
+  return entries.filter((e) => e.isDirectory()).map((e) => path.join(root, e.name, '.system_generated', 'logs', 'transcript.jsonl'));
+}
+
 /** Observatory'nin kendi başlattığı görevle aynı istem + yakın zaman: çift kayıt olmasın. */
 export function makeManagedCheck(dbPath?: string): ManagedCheck {
   const p = dbPath || process.env.OBSERVATORY_DB || path.join(os.homedir(), '.observatory', 'observatory.sqlite');
-  let db: DatabaseSync | null = null;
+  let stmt: StatementSync | null = null;
   return (agent, prompt, ts) => {
     try {
-      db = db || new DatabaseSync(p, { readOnly: true });
-      const row = db.prepare(
+      // her yeni istemde yeniden derlenmesin: bağlantı ve ifade bir kez hazırlanır
+      stmt = stmt || new DatabaseSync(p, { readOnly: true }).prepare(
         "SELECT 1 FROM tasks WHERE agent = ? AND prompt = ? AND ABS(start_time - ?) < 180000 AND task_id NOT LIKE 'ext\\_%' ESCAPE '\\' LIMIT 1"
-      ).get(agent, prompt, ts);
+      );
+      const row = stmt.get(agent, prompt, ts);
       return !!row;
     } catch { return false; }
   };
@@ -77,6 +99,8 @@ export interface IngestOptions {
   antigravityDir?: string;
   isManaged?: ManagedCheck;
   log?: (s: string) => void;
+  /** İlk taramadan sonraki periyodik taramalar asenkron (varsayılan: follow). Tek seferlik/test çağrılarında senkron kalır. */
+  asyncDiscover?: boolean;
 }
 
 export function startIngest(opts: IngestOptions): { tick: () => number; stop: () => void } {
@@ -108,44 +132,75 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
   };
 
   let pendingSubs = false;
+  let stopped = false;
+  /** stat'ı alınmış aday dosyayı (son activeMinutes içinde değiştiyse) izlemeye alır. */
+  const track = (src: Src, f: string, st: fs.Stats, cutoff: number) => {
+    if (files.has(f) || st.mtimeMs < cutoff) return;
+    let parser: LineParser;
+    if (src === 'claude' && path.basename(path.dirname(f)) === 'subagents') {
+      // alt ajan dosyası: ebeveyn görev, meta dosyasındaki toolUseId ile bulunur; ana kayıt henüz okunmadıysa sonra yeniden denenir
+      const sub = openSubagent(f, toolTurns);
+      if (!sub) { pendingSubs = true; return; }
+      parser = sub;
+    } else if (src === 'agy') parser = new AntigravityLineParser(isManaged, conversationIdFromPath(f), f);
+    else parser = src === 'claude' ? new ClaudeLineParser(isManaged, toolTurns) : new CodexLineParser(isManaged);
+    // ingest başladıktan sonra oluşan dosya baştan okunur; eski dosyada yalnızca yeni eklenenler
+    files.set(f, { offset: opts.backfill || st.birthtimeMs >= startedAt ? 0 : st.size, buf: '', parser, src });
+    log(`izleniyor (${src}): ${path.basename(f)}`);
+  };
+
   const discover = () => {
     pendingSubs = false;
     const cutoff = Date.now() - opts.activeMinutes * 60000;
     for (const [src, root] of roots) {
       const found: string[] = [];
       if (src === 'agy') {
-        // Antigravity konuşmaları doğrudan <root>/<konuşma>/.system_generated/logs/transcript.jsonl konumunda.
         // Özyinelemeli tarama yerine yalnızca birinci seviye klasörler kontrol edilir (7.1 sn -> ~18 ms).
         let entries: fs.Dirent[];
         try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { entries = []; }
-        for (const e of entries) {
-          if (!e.isDirectory()) continue;
-          const tp = path.join(root, e.name, '.system_generated', 'logs', 'transcript.jsonl');
-          if (fs.existsSync(tp)) found.push(tp);
-        }
+        found.push(...agyCandidates(root, entries));
       } else {
         walkJsonl(root, found);
       }
       for (const f of found) {
         if (files.has(f)) continue;
-        if (src === 'agy' && path.basename(f) !== 'transcript.jsonl') continue;
         let st: fs.Stats;
-        try { st = fs.statSync(f); } catch { continue; }
-        if (st.mtimeMs < cutoff) continue;
-        let parser: LineParser;
-        if (src === 'claude' && path.basename(path.dirname(f)) === 'subagents') {
-          // alt ajan dosyası: ebeveyn görev, meta dosyasındaki toolUseId ile bulunur; ana kayıt henüz okunmadıysa sonra yeniden denenir
-          const sub = openSubagent(f, toolTurns);
-          if (!sub) { pendingSubs = true; continue; }
-          parser = sub;
-        } else if (src === 'agy') parser = new AntigravityLineParser(isManaged, conversationIdFromPath(f), f);
-        else parser = src === 'claude' ? new ClaudeLineParser(isManaged, toolTurns) : new CodexLineParser(isManaged);
-        // ingest başladıktan sonra oluşan dosya baştan okunur; eski dosyada yalnızca yeni eklenenler
-        files.set(f, { offset: opts.backfill || st.birthtimeMs >= startedAt ? 0 : st.size, buf: '', parser, src });
-        log(`izleniyor (${src}): ${path.basename(f)}`);
+        try { st = fs.statSync(f); } catch { continue; } // agy adayında transcript yok
+        track(src, f, st, cutoff);
       }
     }
   };
+
+  // Periyodik tarama yüzlerce dosyayı stat'lar (Windows'ta ~150-250 ms): canlı modda event loop'u kilitlememek için
+  // readdir/stat libuv iş parçacıklarında yapılır; yeni dosyalar bir sonraki tick'te okunur.
+  let discovering = false;
+  const discoverAsync = async () => {
+    if (discovering) return;
+    discovering = true;
+    try {
+      pendingSubs = false;
+      const cutoff = Date.now() - opts.activeMinutes * 60000;
+      for (const [src, root] of roots) {
+        const found: string[] = [];
+        if (src === 'agy') {
+          let entries: fs.Dirent[];
+          try { entries = await fs.promises.readdir(root, { withFileTypes: true }); } catch { entries = []; }
+          found.push(...agyCandidates(root, entries));
+        } else {
+          await walkJsonlAsync(root, found);
+        }
+        const fresh = found.filter((f) => !files.has(f));
+        const stats = await Promise.all(fresh.map((f) => fs.promises.stat(f).catch(() => null)));
+        if (stopped) return;
+        fresh.forEach((f, i) => { const st = stats[i]; if (st) track(src, f, st, cutoff); });
+      }
+    } finally {
+      discovering = false;
+    }
+  };
+  const asyncDiscover = opts.asyncDiscover ?? opts.follow;
+  // Canlı modda dosya başına tick'te en fazla 2 MB: büyük geçmişi yetiştirirken tek tick yüzlerce ms kilitlemesin.
+  const chunkLimit = (asyncDiscover ? 2 : 8) * 1024 * 1024;
 
   const readNew = () => {
     for (const [f, s] of files) {
@@ -155,9 +210,14 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
       if (size === s.offset) continue;
       const fd = fs.openSync(f, 'r');
       try {
-        const len = Math.min(size - s.offset, 8 * 1024 * 1024);
-        const chunk = Buffer.alloc(len);
+        let len = Math.min(size - s.offset, chunkLimit);
+        let chunk = Buffer.alloc(len);
         fs.readSync(fd, chunk, 0, len, s.offset);
+        // parça sınırı çok baytlı UTF-8 karakteri bölmesin: dosyada devamı varsa son satır sonunda kes
+        if (s.offset + len < size) {
+          const nl = chunk.lastIndexOf(10);
+          if (nl >= 0) { len = nl + 1; chunk = chunk.subarray(0, len); }
+        }
         // satırın dosyadaki mutlak bayt konumu = olay kimliği tohumu (yeniden okumada aynı kimlik, çift kayıt yok)
         let lineStart = s.offset - Buffer.byteLength(s.buf);
         s.offset += len;
@@ -179,7 +239,11 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
   const tick = () => {
     const before = count;
     // Disk taraması en sık 5 sn'de bir (bekleyen alt ajan varsa), normalde 15 sn'de bir.
-    if (n++ % 15 === 0 || (pendingSubs && n % 5 === 0)) discover();
+    // İlk tarama her zaman senkron (ilk tick dosyaları hemen görsün); sonrakiler canlı modda arka planda.
+    if (n++ % 15 === 0 || (pendingSubs && n % 5 === 0)) {
+      if (asyncDiscover && n > 1) void discoverAsync().catch((e: any) => log(`tarama hatası: ${e.message}`));
+      else discover();
+    }
     readNew();
     if (oc) { try { write(oc.poll()); } catch (e: any) { log(`OpenCode okunamadı: ${e.message}`); } }
     // Shared by background ingest, CLI follow, web and tree. Read new events first.
@@ -190,7 +254,7 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
     return count - before;
   };
   const timer = opts.follow ? setInterval(tick, 1000) : null;
-  return { tick, stop: () => { if (timer) clearInterval(timer); oc?.close(); } };
+  return { tick, stop: () => { stopped = true; if (timer) clearInterval(timer); oc?.close(); } };
 }
 
 export async function runIngest(args: string[]): Promise<void> {
@@ -214,7 +278,7 @@ const INGEST_LOCK = path.join(os.tmpdir(), 'agent_observatory_ingest.lock');
  */
 export function startBackgroundIngest(): (() => void) | null {
   if (process.env.OBSERVATORY_NO_INGEST === '1' || process.env.NODE_ENV === 'test') return null;
-  const handle = startIngest({ sources: ['claude', 'codex', 'opencode', 'agy'], activeMinutes: 30, backfill: false, follow: false });
+  const handle = startIngest({ sources: ['claude', 'codex', 'opencode', 'agy'], activeMinutes: 30, backfill: false, follow: false, asyncDiscover: true });
   const timer = setInterval(() => {
     try {
       const fresh = Date.now() - fs.statSync(INGEST_LOCK).mtimeMs < 6000;

@@ -30,6 +30,7 @@ export function hms(date: Date | number = new Date()): string {
 }
 
 const MAX_PENDING_TOOLS = 500;
+const MAX_SEEN_EVENTS = 20000;
 
 type ToolKind = 'read' | 'edit' | 'write' | 'bash' | 'grep' | 'glob' | 'agent' | 'other';
 
@@ -646,6 +647,13 @@ export class TerminalUI {
   }
 
   private renderEvent(evt: TaskEvent): void {
+    // SQLite tarafını lastSeq zaten süzer; küme yalnızca yakın tekrarlar için gerekir, saatlerce açık kalan izlemede şişmesin
+    if (this.seenEventIds.size > MAX_SEEN_EVENTS) {
+      for (const id of this.seenEventIds) {
+        this.seenEventIds.delete(id);
+        if (this.seenEventIds.size <= MAX_SEEN_EVENTS / 2) break;
+      }
+    }
     printEvent(evt, this.pendingTools);
   }
 }
