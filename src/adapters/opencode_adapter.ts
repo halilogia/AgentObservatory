@@ -75,15 +75,16 @@ export class OpenCodeAdapter extends BaseAdapter {
     // opencode varsayılan sağlayıcısı ("codex") kimlik bilgisiz: açık model şart
     args.push('--model', opts.model || process.env.OPENCODE_DEFAULT_MODEL || 'opencode/big-pickle');
 
+    // Ana süreçten miras alınan izin yapılandırması taşınmasın: read-only çalıştırmada edit izni sızabilir.
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    delete env.OPENCODE_CONFIG_CONTENT;
+    if (!readOnly) env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ permission: { edit: 'allow', bash: 'deny', webfetch: 'deny' } });
+
     return {
       exe: resolveBinary('opencode'),
       args,
       cwd: validatedCwd,
-      env: Object.assign(
-        {},
-        process.env,
-        readOnly ? {} : { OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: { edit: 'allow', bash: 'deny', webfetch: 'deny' } }) }
-      )
+      env
     };
   }
 

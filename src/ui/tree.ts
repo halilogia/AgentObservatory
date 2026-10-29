@@ -4,6 +4,7 @@ import { TranscriptRenderer } from './transcript.ts';
 import { paint, cleanText, truncate, describeTool, hms } from './tui.ts';
 import { openWebPanel } from '../commands/web_opener.ts';
 import { renderOfficeView } from './office_view.ts';
+import { startIngest } from '../ingest/index.ts';
 
 // Ağaç görünümü: aynı anda çalışan birçok ajanı tek akışa karıştırmadan, ajan başına 2 satırla gösterir.
 // Mevcut `watch` / `chat` görünümlerine dokunmaz; yalnızca SQLite'taki görev kayıtlarını okur.
@@ -11,7 +12,6 @@ import { renderOfficeView } from './office_view.ts';
 // Ağaç:   ↑/↓ (veya J/K) seç · Enter ayrıntı · A sadece çalışanlar/hepsi · Q çıkış
 // Ayrıntı: ajanın kendi sohbet görünümü (canlı); ↑/↓ kaydır · Esc/Backspace geri · Q çıkış
 
-const RECENT_WINDOW_MS = 30 * 60 * 1000;
 const STALE_MS = 60 * 60 * 1000;   // bir saatten uzun "çalışıyor" görünen kayıtlar büyük olasılıkla bitmemiş eski oturumlardır
 const TASK_LIMIT = 80;
 
@@ -36,8 +36,43 @@ function isLive(t: TaskSummary, now: number): boolean {
   return (t.status === 'running' || t.status === 'pending') && now - t.startTime < STALE_MS;
 }
 
+const ANSI_RE = /\x1b\[[0-9;?]*[A-Za-z]/g;
+
+/** ANSI kaçış dizilerini saymadan görünür karakter uzunluğu. */
+export function visibleLen(s: string): number {
+  return s.replace(ANSI_RE, '').length;
+}
+
+/** ANSI kodlarını koruyarak satırı görünür genişliğe göre keser; renk taşmasını sıfırlar. */
+function clipAnsi(s: string, max: number): string {
+  if (max <= 0) return '';
+  if (visibleLen(s) <= max) return s;
+  const limit = Math.max(1, max - 1);
+  let out = '';
+  let vis = 0;
+  for (let i = 0; i < s.length;) {
+    const m = /^\x1b\[[0-9;?]*[A-Za-z]/.exec(s.slice(i));
+    if (m) { out += m[0]; i += m[0].length; continue; }
+    if (vis >= limit) break;
+    out += s[i];
+    vis++;
+    i++;
+  }
+  return out + '…' + '\x1b[0m';
+}
+
+/**
+ * Yalnızca bugün etkin olan görevler (bitiş veya başlangıç zamanı bugüne ait) ya da şu an çalışanlar.
+ * Bugün hiç görev yoksa geçmişi tamamen gizlemek yerine listedeki en yeni görevleri (TASK_LIMIT'e kadar) göster.
+ */
+function todayOrLatest(tasks: TaskSummary[], now: number): TaskSummary[] {
+  const startOfToday = new Date(now).setHours(0, 0, 0, 0);
+  const today = tasks.filter((t) => isLive(t, now) || t.startTime >= startOfToday || (t.endTime ?? t.startTime) >= startOfToday);
+  return (today.length > 0 ? today : tasks).slice(0, TASK_LIMIT);
+}
+
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const spinFrame = (now: number): string => SPINNER[Math.floor(now / 100) % SPINNER.length];
+const spinFrame = (now: number): string => SPINNER[Math.floor(now / 200) % SPINNER.length];
 
 /** Ekranda çalışan bir görev var mı: animasyon zamanlayıcısı yalnızca o zaman sık çizer (son çizimden). */
 let hasLive = false;
@@ -97,12 +132,14 @@ function lastActivity(t: TaskSummary, width: number): string {
 }
 
 function nodeLines(t: TaskSummary, prefix: string, childPrefix: string, cols: number, now: number, selected: boolean, label?: string): string[] {
+  const contentWidth = Math.max(30, cols - 3);
   const dur = fmtDuration(isLive(t, now) ? now - t.startTime : t.durationMs);
   const tag = (label ? paint('gray', label + ' ') : '') + (teamBadge(t.agent) ? teamBadge(t.agent) + ' ' : '') + paint(AGENT_COLOR[t.agent] || 'white', paint('bold', modelName(t)));
   const tokens = t.usage?.totalTokens ? paint('gray', ' · ' + fmtTokens(t.usage.totalTokens) + ' tok') : '';
   const mark = selected ? paint('cyan', '▸') : ' ';
   const head = `${mark}${prefix}${statusGlyph(t, now)} ${tag} ${paint('gray', t.taskId.slice(-8))} ${paint('gray', 'başladı ' + hms(t.startTime) + ' · ' + (isLive(t, now) ? 'sürüyor ' : 'sürdü ') + dur)}${tokens}`;
-  return [head, ` ${childPrefix}${lastActivity(t, Math.max(20, cols - childPrefix.length - 5))}`];
+  const act = lastActivity(t, Math.max(20, contentWidth - childPrefix.length - 5));
+  return [clipAnsi(head, contentWidth), clipAnsi(` ${childPrefix}${act}`, contentWidth)];
 }
 
 /** Takım rozeti: renkli nokta + takım adı (emoji değil). Takımlar: turuncu=claude, mavi=agy, kırmızı=codex, siyah=opencode. */
@@ -126,6 +163,7 @@ export const sessionKey = (sessionId: string) => `session:${sessionId}`;
 
 /** Aynı oturumun turları (eskiden yeniye) tek satırda: durum · ajan/model · oturum · mesaj sayısı · süre · token › son etkinlik. */
 function sessionLine(turns: TaskSummary[], cols: number, now: number, selected: boolean, expanded: boolean): string {
+  const contentWidth = Math.max(30, cols - 3);
   const last = turns[turns.length - 1];
   const live = turns.some((t) => isLive(t, now));
   const span = live ? now - turns[0].startTime : turns.reduce((a, t) => a + t.durationMs, 0);
@@ -135,19 +173,26 @@ function sessionLine(turns: TaskSummary[], cols: number, now: number, selected: 
   const glyph = live ? paint('yellow', spinFrame(now)) : statusGlyph(last, now);
   const fold = paint('gray', expanded ? '▾' : '▸');
   const mark = selected ? paint('cyan', '▸') : ' ';
-  const head = `${mark}${fold} ${glyph} ${emoji}${paint(AGENT_COLOR[last.agent] || 'white', paint('bold', name))} ${paint('gray', String(last.sessionId).slice(0, 8) + ' · ' + turns.length + ' mesaj · ' + (live ? 'sürüyor ' : 'sürdü ') + fmtSpan(span) + (tokens ? ' · ' + fmtTokens(tokens) + ' tok' : ''))}`;
-  const room = Math.max(10, cols - 2 - 60);
-  return head + ' ' + lastActivity(last, room);
+  const startStr = turns[0]?.startTime ? `başladı ${hms(turns[0].startTime)} · ` : '';
+  const head = `${mark}${fold} ${glyph} ${emoji}${paint(AGENT_COLOR[last.agent] || 'white', paint('bold', name))} ${paint('gray', String(last.sessionId).slice(0, 8) + ' ' + startStr + turns.length + ' mesaj · ' + (live ? 'sürüyor ' : 'sürdü ') + fmtSpan(span) + (tokens ? ' · ' + fmtTokens(tokens) + ' tok' : ''))}`;
+  const room = Math.max(8, contentWidth - visibleLen(head) - 1);
+  return clipAnsi(head + ' ' + lastActivity(last, room), contentWidth);
 }
 
 export interface TreeFrame { text: string; order: string[] }
+
+/** Son çizilen ağacın gövde satırı -> görev kimliği eşlemesi (fare tıklamasında seçim için). */
+export let treeLineMap: (string | null)[] = [];
+
+/** Son çizilen ağaç gövdesinin dikey kaydırma ofseti (fare tıklamasında satır eşlemesi için). */
+let treeScroll = 0;
 
 /** Ağaç: metin + ekrandaki görev sırası (seçim için). */
 export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; cols: number; rows: number; now: number; selectedId?: string | null; expanded?: Set<string>; statusBanner?: string | null }): TreeFrame {
   const { cols, now } = opts;
   const running = (t: TaskSummary) => isLive(t, now);
-  const recent = tasks.filter((t) => running(t) || now - (t.endTime ?? t.startTime) < RECENT_WINDOW_MS);
-  const shown = opts.onlyRunning ? tasks.filter(running) : recent;
+  // [A]: yalnızca çalışanlar <-> bugünün görevleri (yoksa kayıtlı en yeni görevler, TASK_LIMIT'e kadar)
+  const shown = opts.onlyRunning ? tasks.filter(running).slice(0, TASK_LIMIT) : todayOrLatest(tasks, now);
   const byId = new Map(shown.map((t) => [t.taskId, t]));
   const children = new Map<string, TaskSummary[]>();
   const roots: TaskSummary[] = [];
@@ -172,19 +217,33 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
     else if (t.status === 'completed') counts.ok++;
     else counts.fail++;
   }
-  const out: string[] = [];
-  const ids: string[] = [];
-  out.push(`${paint('bold', 'Observatory · Ağaç')}  ${paint('gray', hms(now))}   ${paint('yellow', '● ' + counts.run + ' çalışıyor')}  ${paint('green', '✔ ' + counts.ok)}  ${paint('red', '✖ ' + counts.fail)}   ${paint('gray', '[↑↓] seç  [Space/→/←] aç/kapat  [Enter] ayrıntı  [A] ' + (opts.onlyRunning ? 'hepsini göster' : 'sadece çalışanları göster') + '  [O] Ofis Yönetimi  [W] Web paneli  [Q] çıkış')}`);
-  out.push(paint('gray', '─'.repeat(Math.max(20, Math.min(cols, 120)))));
+  const header: string[] = [];
+  // Dar terminallerde kısa kısayol metni: başlık ikinci satıra sarılıp kaydırma çubuğunu bozmasın.
+  const shortcuts = cols < 130
+    ? '[↑↓] seç  [Space] aç  [Enter] detay  [A] filtre  [O] Ofis  [W] Web  [Q] çıkış'
+    : '[↑↓] seç  [Space/→/←] aç/kapat  [Enter] ayrıntı  [A] ' + (opts.onlyRunning ? 'hepsini göster' : 'sadece çalışanları göster') + '  [O] Ofis Yönetimi  [W] Web paneli  [Q] çıkış';
+  const headLine = `${paint('bold', 'Observatory · Ağaç')}  ${paint('gray', hms(now))}   ${paint('yellow', '● ' + counts.run + ' çalışıyor')}  ${paint('green', '✔ ' + counts.ok)}  ${paint('red', '✖ ' + counts.fail)}   ${paint('gray', shortcuts)}`;
+  header.push(clipAnsi(headLine, Math.max(20, cols - 1)));
+  header.push(paint('gray', '─'.repeat(Math.max(20, Math.min(cols, 120)))));
   if (opts.statusBanner) {
-    out.push(opts.statusBanner);
-    out.push(paint('gray', '─'.repeat(Math.max(20, Math.min(cols, 120)))));
+    header.push(opts.statusBanner);
+    header.push(paint('gray', '─'.repeat(Math.max(20, Math.min(cols, 120)))));
   }
-  if (roots.length === 0) out.push(paint('gray', '(gösterilecek görev yok)'));
+
+  const body: string[] = [];
+  const ids: string[] = [];
+  const lineToId: (string | null)[] = [];
+  let selectedLine = -1;
+  if (roots.length === 0) {
+    body.push(paint('gray', '(gösterilecek görev yok)'));
+    lineToId.push(null);
+  }
 
   const walk = (t: TaskSummary, prefix: string, childPrefix: string, label?: string, inSession = false) => {
     ids.push(t.taskId);
-    out.push(...nodeLines(t, prefix, childPrefix + (children.has(t.taskId) ? '│ ' : '  '), cols, now, t.taskId === opts.selectedId, label));
+    if (t.taskId === opts.selectedId) selectedLine = body.length;
+    body.push(...nodeLines(t, prefix, childPrefix + (children.has(t.taskId) ? '│ ' : '  '), cols, now, t.taskId === opts.selectedId, label));
+    lineToId.push(t.taskId, t.taskId);
     const kids = (children.get(t.taskId) ?? []).sort(order);
     kids.forEach((k, i) => {
       const last = i === kids.length - 1;
@@ -204,7 +263,8 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
     const turns = r.sessionId ? bySession.get(r.sessionId) : undefined;
     if (!turns || turns.length < 2) {
       walk(r, '', '');
-      out.push('');
+      body.push('');
+      lineToId.push(null);
       continue;
     }
     if (done.has(r.sessionId!)) continue;
@@ -213,23 +273,47 @@ export function renderTree(tasks: TaskSummary[], opts: { onlyRunning: boolean; c
     const key = sessionKey(r.sessionId!);
     const open = !!opts.expanded?.has(r.sessionId!);
     ids.push(key);
-    out.push(sessionLine(turns, cols, now, key === opts.selectedId, open));
+    if (key === opts.selectedId) selectedLine = body.length;
+    body.push(sessionLine(turns, cols, now, key === opts.selectedId, open));
+    lineToId.push(key);
     if (open) {
       turns.forEach((t, i) => {
         const lastTurn = i === turns.length - 1;
         walk(t, lastTurn ? ' └─ ' : ' ├─ ', lastTurn ? '    ' : ' │  ', `Turn ${i + 1}`, true);
       });
     }
-    out.push('');
+    body.push('');
+    lineToId.push(null);
   }
-  // ekrana sığmayan kısmı kes (üstteki çalışanlar kalır; seçili satır görünürse kaydır)
-  const max = Math.max(8, opts.rows - 1);
-  if (out.length > max) {
-    const selLine = out.findIndex((l) => l.includes('▸'));
-    const start = selLine >= max - 1 ? Math.min(selLine - Math.floor(max / 2), out.length - max + 1) : 0;
-    const body = out.slice(Math.max(0, start), Math.max(0, start) + max - 1);
-    const hidden = out.length - body.length;
-    return { text: body.join('\n') + '\n' + paint('gray', `… ${hidden} satır daha`), order: ids };
+
+  // Görünüm penceresi: başlık sabit kalır, yalnızca gövde kayar. Seçili görev pencere içinde ortalanır.
+  // Alt satır (taşma bilgisi) ve terminalin son satırı için pay bırakılır; başlık asla yukarı kaymaz.
+  let overflow = body.length > Math.max(4, opts.rows - header.length - 2);
+  let bodyRoom = Math.max(4, opts.rows - header.length - (overflow ? 1 : 0) - 2);
+  overflow = body.length > bodyRoom;
+  const scrollOffset = overflow && selectedLine >= 0
+    ? Math.min(Math.max(0, selectedLine - Math.floor(bodyRoom / 2)), body.length - bodyRoom)
+    : 0;
+  treeLineMap = lineToId;
+  treeScroll = scrollOffset;
+  treeGeom = { top: header.length, room: bodyRoom, total: body.length };
+  const view = body.slice(scrollOffset, scrollOffset + bodyRoom);
+  // sağ kenarda dikey kaydırma çubuğu: yalnızca gövde ekrana sığmıyorsa (iz: gri, tutamaç: parlak)
+  if (overflow) {
+    const thumb = Math.max(1, Math.round((bodyRoom * bodyRoom) / body.length));
+    const top = Math.round((scrollOffset / (body.length - bodyRoom)) * (bodyRoom - thumb));
+    const barCol = Math.max(2, cols - 1);
+    view.forEach((l, i) => {
+      const on = i >= top && i < top + thumb;
+      // satır cols - 3'ü geçmesin: kaydırma çubuğu sütununa sarılmadan yerleşsin
+      view[i] = clipAnsi(l, Math.max(1, cols - 3)) + '\x1b[0m\x1b[K' + `\x1b[${barCol}G` + (on ? paint('white', '█') : paint('gray', '│'));
+    });
+  }
+  const out = [...header, ...view];
+  if (overflow) {
+    const hiddenAbove = scrollOffset;
+    const hiddenBelow = body.length - scrollOffset - view.length;
+    out.push(paint('gray', `… ${hiddenAbove} yukarıda · ${hiddenBelow} aşağıda (↑↓ ile kaydır)`));
   }
   return { text: out.join('\n'), order: ids };
 }
@@ -255,6 +339,9 @@ function wrapAnsi(line: string, width: number): string[] {
   out.push(cur);
   return out;
 }
+
+/** Son çizilen ağaç görünümünün kaydırma çubuğu geometrisi (fare sürükleme için): üst satır (0 tabanlı), görünür satır, toplam satır. */
+export let treeGeom = { top: 2, room: 0, total: 0 };
 
 /** Son çizilen ayrıntı sayfasının kaydırma çubuğu geometrisi (fare sürükleme için): üst satır (0 tabanlı), görünür satır, toplam satır. */
 let detailGeom = { top: 3, room: 0, total: 0 };
@@ -350,7 +437,18 @@ export function sessionTranscript(sessionId: string): { task: TaskSummary; event
   return { task, events, subs: all.filter((t) => !!t.parentTaskId) };
 }
 
+/** Cursor-addressed updates also erase rows removed from a shorter frame. */
+export function diffTreeLines(previous: string[], next: string[]): string {
+  let output = '';
+  for (let i = 0; i < Math.max(previous.length, next.length); i++) {
+    if (previous[i] === next[i]) continue;
+    output += `\x1b[${i + 1};1H\x1b[2K${next[i] ?? ''}\x1b[0m`;
+  }
+  return output;
+}
+
 export function runTree(args: string[]): void {
+  globalSqlite.reapStaleTasks();
   const once = args.includes('--once');
   const autoWeb = args.includes('--web');
   let onlyRunning = false;
@@ -362,6 +460,28 @@ export function runTree(args: string[]): void {
   let statusBanner: string | null = null;
   let statusTimer: NodeJS.Timeout | null = null;
   let officeActive = false;
+  let ingest: { stop: () => void } | null = null;
+
+  // Animation reads only cached data; poll SQLite revisions every 800 ms.
+  let cachedTasks: TaskSummary[] = [];
+  let cacheAt = 0;
+  let revision = '';
+  let animationOnly = false;
+  let cachedDetail: ReturnType<typeof sessionTranscript> = null;
+  let cachedDetailId: string | null = null;
+  const refreshTasks = (force = false): TaskSummary[] => {
+    const now = Date.now();
+    if (force || (!animationOnly && now - cacheAt >= 800)) {
+      const nextRevision = globalSqlite.getTaskRevision();
+      if (force || revision !== nextRevision) {
+        cachedTasks = globalSqlite.getRecentTasks(TASK_LIMIT);
+        cachedDetailId = null;
+        revision = nextRevision;
+      }
+      cacheAt = now;
+    }
+    return cachedTasks;
+  };
 
   const setStatus = (msg: string) => {
     statusBanner = paint('cyan', '🌐 ' + msg);
@@ -381,20 +501,21 @@ export function runTree(args: string[]): void {
     const cols = process.stdout.columns || 120;
     const rows = process.stdout.rows || 40;
     const now = Date.now();
-    if (officeActive) return renderOfficeView({ cols, rows, now, tasks: globalSqlite.getRecentTasks(TASK_LIMIT), statusBanner });
+    refreshTasks();
+    if (officeActive) return renderOfficeView({ cols, rows, now, tasks: refreshTasks(), statusBanner });
     if (detailId) {
-      if (detailId.startsWith('session:')) {
-        const st = sessionTranscript(detailId.slice(8));
-        if (st) return renderDetail(st.task, st.events, { cols, rows, now, scroll: detailScroll, subs: st.subs });
-        detailId = null;
+      if (cachedDetailId !== detailId) {
+        if (detailId.startsWith('session:')) cachedDetail = sessionTranscript(detailId.slice(8));
+        else {
+          const task = globalSqlite.getTask(detailId);
+          cachedDetail = task ? { task, events: globalSqlite.getEvents(detailId), subs: [] } : null;
+        }
+        cachedDetailId = detailId;
       }
-      if (detailId) {
-        const t = globalSqlite.getTask(detailId);
-        if (t) return renderDetail(t, globalSqlite.getEvents(detailId), { cols, rows, now, scroll: detailScroll });
-        detailId = null;
-      }
+      if (cachedDetail) return renderDetail(cachedDetail.task, cachedDetail.events, { cols, rows, now, scroll: detailScroll, subs: cachedDetail.subs });
+      detailId = null;
     }
-    const tasks = globalSqlite.getRecentTasks(TASK_LIMIT);
+    const tasks = refreshTasks();
     const f = renderTree(tasks, { onlyRunning, cols, rows, now, selectedId, expanded, statusBanner });
     lastOrder = f.order;
     if (!selectedId || !f.order.includes(selectedId)) {
@@ -407,20 +528,43 @@ export function runTree(args: string[]): void {
     console.log(frame());
     process.exit(0);
   }
+  // Canlı TUI açıkken harici oturumlar (Antigravity/agy, Claude, Codex, OpenCode) SQLite'a aksın.
+  if (!once && process.env.NODE_ENV !== 'test') {
+    try {
+      ingest = startIngest({ sources: ['claude', 'codex', 'opencode', 'agy'], activeMinutes: 60, backfill: true, follow: true });
+    } catch (err) {
+      statusBanner = paint('red', 'otomatik ingest başlatılamadı: ' + (err as Error).message);
+    }
+  }
+  process.on('exit', () => ingest?.stop());
   // Kare terminal yüksekliğine kırpılır, sona satır sonu basılmaz: aksi halde her çizimde ekran bir satır kayar ve başlık alta yığılır.
+  // Kirli kontrolü: içerik değişmediyse terminale hiç yazılmaz (kare üretimi ucuz, yazım+flush pahalı).
+  let lastDrawn: string[] = [];
   const draw = () => {
-    const lines = frame().split('\n').slice(0, process.stdout.rows || 40);
-    process.stdout.write('\x1b[H' + lines.map((l) => l + '\x1b[K').join('\n') + '\x1b[J');
+    const content = frame();
+    const lines = content.split('\n').slice(0, Math.max(4, (process.stdout.rows || 40) - 1));
+    const payload = diffTreeLines(lastDrawn, lines);
+    lastDrawn = lines;
+    if (payload) process.stdout.write(payload);
   };
   process.stdout.write('\x1b[?1049h');
   // fare: tekerlek + çubuğu sürükleme (SGR kipi). Bu kipte metin seçmek için Shift+sürükle gerekir.
   process.stdout.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h');
   process.on('exit', () => process.stdout.write('\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l'));
-  const redraw = () => { process.stdout.write('\x1b[2J'); draw(); };
+  const redraw = () => { process.stdout.write('\x1b[2J\x1b[H'); lastDrawn = []; draw(); };
+  // Terminal yeniden boyutlandırıldığında (büyütme/küçültme) çerçeveyi tazele: aksi halde eski boyutla
+  // çizilen satırlar kayar ve başlık ekrandan silinir.
+  const handleResize = () => redraw();
+  process.stdout.on('resize', handleResize);
+  process.on('exit', () => process.stdout.off('resize', handleResize));
   redraw();
   const timer = setInterval(draw, 800);
   // animasyon: çalışan görev varken dönen ikon / ışık çubuğu için daha sık çiz (yoksa 800 ms'lik çizim yeter)
-  const animTimer = setInterval(() => { if (hasLive && !officeActive) draw(); }, 150);
+  const animTimer = setInterval(() => {
+    if (!hasLive || officeActive) return;
+    animationOnly = true;
+    try { draw(); } finally { animationOnly = false; }
+  }, 200);
   process.on('exit', () => clearInterval(animTimer));
   process.stdin.setRawMode(true);
   process.stdin.resume();
@@ -433,22 +577,34 @@ export function runTree(args: string[]): void {
   process.stdin.on('data', (buf) => {
     const k = buf.toString();
     if (k.includes('\x1b[<')) {
+      const cols = process.stdout.columns || 120;
       for (const m of k.matchAll(/\x1b\[<(\d+);(\d+);(\d+)([Mm])/g)) {
         const b = Number(m[1]), x = Number(m[2]), y = Number(m[3]);
         const wheel = b === 64 ? -1 : b === 65 ? 1 : 0; // -1 yukarı, 1 aşağı
         if (wheel) {
           if (detailId) detailScroll = Math.max(0, detailScroll - wheel * 3);
           else if (!officeActive) move(wheel * 3);
-        } else if (detailId && !officeActive && m[4] === 'M' && (b === 0 || b === 32) && x >= (process.stdout.columns || 120) - 2) {
+        } else if (detailId && !officeActive && m[4] === 'M' && (b === 0 || b === 32) && x >= cols - 2) {
           const s = scrollFromBarRow(y);
           if (s !== null) detailScroll = s;
+        } else if (!detailId && !officeActive && m[4] === 'M' && (b === 0 || b === 32) && x >= cols - 2) {
+          // ağaç modunda çubuğa tıklama/sürükleme: imleç satırını gövde indeksine çevir, seçimi taşı
+          const y0 = Math.min(treeGeom.room - 1, Math.max(0, y - 1 - treeGeom.top));
+          const ratio = treeGeom.room <= 1 ? 0 : Math.min(1, Math.max(0, y0 / (treeGeom.room - 1)));
+          const targetIdx = Math.min(lastOrder.length - 1, Math.max(0, Math.round(ratio * (lastOrder.length - 1))));
+          if (lastOrder[targetIdx]) selectedId = lastOrder[targetIdx];
+        } else if (!detailId && !officeActive && m[4] === 'M' && b === 0 && x < cols - 2) {
+          // ağaç gövdesine tıklama: tıklanan satırın görevini seç
+          const clickedId = treeLineMap[treeScroll + (y - 1 - treeGeom.top)];
+          if (clickedId) selectedId = clickedId;
         }
       }
-      if (detailId) draw();
+      draw();
       return;
     }
     if (k === 'q'|| k === 'Q' || k === '\x03') {
       clearInterval(timer);
+      ingest?.stop();
       process.stdout.write('\x1b[2J\x1b[H');
       process.exit(0);
     }
@@ -475,9 +631,12 @@ export function runTree(args: string[]): void {
       else if (k === '\x1b[F' || k === 'G') { detailScroll = 0; draw(); }
       return;
     }
-    if (k === '\x1b') { clearInterval(timer); process.stdout.write('\x1b[2J\x1b[H'); process.exit(0); }
-    if (k === '\x1b[A' || k === 'k' || k === 'K') move(-1);
+    if (k === '\x1b') { clearInterval(timer); ingest?.stop(); process.stdout.write('\x1b[2J\x1b[H'); process.exit(0); }
+    if (k === 'r' || k === 'R') { refreshTasks(true); redraw(); return; }
+    else if (k === '\x1b[A' || k === 'k' || k === 'K') move(-1);
     else if (k === '\x1b[B' || k === 'j' || k === 'J') move(1);
+    else if (k === '\x1b[5~') move(-10);
+    else if (k === '\x1b[6~') move(10);
     else if (k === '\r' || k === '\n') { if (selectedId) { detailId = selectedId; detailScroll = 0; redraw(); } }
     else if (k === ' ' || k === '[C' || k === '[D') {
       const sid = sessionOf(selectedId);

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import { SqliteStore } from '../core/sqlite_store.ts';
 
 const LOCAL_HOST_RE = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/;
 const LOCAL_ORIGIN_RE = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/;
@@ -25,16 +26,42 @@ export type ExtraHandler = (ctx: ExtraCtx) => boolean | Promise<boolean>;
 /** Uzaktan erişim (ör. Tailscale): yerel olmayan Host yalnızca açıkça izin verilenlerse kabul edilir; `gate` her istekte (Host/Origin sonrası) kimlik denetimi yapar. */
 export type GateHandler = (ctx: ExtraCtx & { remote: boolean }) => boolean | Promise<boolean>;
 
-export function startServer(opts: { port?: number; host?: string; dbPath?: string; pollMs?: number; allowedOrigins?: string[] | (() => string[]); extra?: ExtraHandler; allowedHosts?: () => string[]; gate?: GateHandler } = {}): http.Server {
+export function startServer(opts: { port?: number; host?: string; dbPath?: string; pollMs?: number; ingest?: boolean; allowedOrigins?: string[] | (() => string[]); extra?: ExtraHandler; allowedHosts?: () => string[]; gate?: GateHandler } = {}): http.Server {
   const dbPath = opts.dbPath || process.env.OBSERVATORY_DB || path.join(os.homedir(), '.observatory', 'observatory.sqlite');
   if (!fs.existsSync(dbPath)) throw new Error(`Veritabanı yok: ${dbPath} (önce bir görev çalıştır)`);
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA busy_timeout = 5000; PRAGMA query_only = 1;');
   const pollMs = opts.pollMs ?? 300;
 
+  // Harici oturumları (Claude/Codex/OpenCode/Antigravity) sunucu açıkken arka planda SQLite'a akıt.
+  // Dinamik import: ingest modülü varsayılan veritabanını da açar; sunucu kapanmışsa başlatma.
+  let ingestStore: SqliteStore | null = null;
+  let ingest: { stop: () => void } | null = null;
+  let closed = false;
+  if (opts.ingest !== false && process.env.OBSERVATORY_NO_INGEST !== '1') {
+    void import('../ingest/index.ts').then(({ makeManagedCheck, startIngest }) => {
+      if (closed) return;
+      try {
+        ingestStore = new SqliteStore(dbPath);
+        ingest = startIngest({
+          sources: ['claude', 'codex', 'opencode', 'agy'],
+          activeMinutes: 1440,
+          backfill: true,
+          follow: true,
+          store: ingestStore,
+          isManaged: makeManagedCheck(dbPath)
+        });
+      } catch {
+        ingestStore?.close();
+        ingestStore = null;
+        ingest = null;
+      }
+    }).catch(() => { /* ingest başlatılamazsa sunucu çalışmaya devam eder */ });
+  }
+
   const q = {
-    tasks: db.prepare('SELECT * FROM tasks ORDER BY start_time DESC LIMIT ?'),
-    task: db.prepare('SELECT * FROM tasks WHERE task_id = ?'),
+    tasks: db.prepare("SELECT t.*, (SELECT json_extract(e.data, '$.cwd') FROM events e WHERE e.task_id = t.task_id AND e.type = 'task.started' LIMIT 1) AS cwd FROM tasks t ORDER BY t.start_time DESC LIMIT ?"),
+    task: db.prepare("SELECT t.*, (SELECT json_extract(e.data, '$.cwd') FROM events e WHERE e.task_id = t.task_id AND e.type = 'task.started' LIMIT 1) AS cwd FROM tasks t WHERE t.task_id = ?"),
     taskEvents: db.prepare('SELECT rowid AS seq, * FROM events WHERE task_id = ? ORDER BY rowid'),
     since: db.prepare('SELECT rowid AS seq, * FROM events WHERE rowid > ? ORDER BY rowid LIMIT 500'),
     maxSeq: db.prepare('SELECT COALESCE(MAX(rowid), 0) AS m FROM events')
@@ -110,7 +137,13 @@ export function startServer(opts: { port?: number; host?: string; dbPath?: strin
     }
   });
 
-  server.on('close', () => { clearInterval(timer); db.close(); });
+  server.on('close', () => {
+    closed = true;
+    ingest?.stop();
+    ingestStore?.close();
+    clearInterval(timer);
+    db.close();
+  });
   server.listen(opts.port ?? 8787, opts.host ?? '0.0.0.0');
   return server;
 }

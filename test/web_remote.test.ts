@@ -18,7 +18,7 @@ const fakeRunner = { startTask(o: any) { calls.push(o); return { taskId: 'task_r
 const PORT = 18970 + Math.floor(Math.random() * 9), TOKEN = 'b'.repeat(48), HOST = 'pc.tail123.ts.net';
 const cfgPath = path.join(dir, 'web.json');
 fs.writeFileSync(cfgPath, JSON.stringify({ roots: [root] }));
-const { server } = startWeb({ port: PORT, dbPath, roots: [root], configPath: cfgPath, runner: fakeRunner, token: TOKEN, pollMs: 50,
+const { server } = startWeb({ port: PORT, dbPath, roots: [root], configPath: cfgPath, runner: fakeRunner, token: TOKEN, pollMs: 50, ingest: false,
   opencodeListing: async () => 'opencode/big-pickle', detectTailscale: async () => ({ installed: true, state: 'Running', dnsName: HOST, online: true }) });
 await new Promise((r) => server.once('listening', r));
 

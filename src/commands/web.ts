@@ -36,11 +36,14 @@ export const ENGINES: EngineDef[] = [
       { id: 'opus', label: 'Claude Opus 5.5', sub: 'models.opus' },
       { id: 'haiku', label: 'Claude Haiku 5.5', sub: 'models.haiku' }
     ] },
-  { id: 'codex', team: 'kirmizi', label: 'Codex', color: '#10A37F', write: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+  { id: 'codex', team: 'kirmizi', label: 'Codex', color: '#E5484D', write: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
     models: [{ id: 'gpt-6-astra', label: 'GPT-6 Astra', sub: 'models.gpt6astra' }] },
-  { id: 'opencode', team: 'siyah', label: 'OpenCode', color: '#AA82FF', write: true, efforts: [],
+  { id: 'opencode', team: 'siyah', label: 'OpenCode', color: '#3A3A3C', write: true, efforts: [],
     note: 'engines.opencode.note',
-    models: [{ id: 'opencode/big-pickle', label: 'Big Pickle', sub: 'models.free' }] },
+    models: [
+      { id: 'opencode/deepseek-v4.1-flash-free', label: 'DeepSeek V4.1 Flash', sub: 'models.free' },
+      { id: 'opencode/big-pickle', label: 'Big Pickle', sub: 'models.free' }
+    ] },
   { id: 'commandcode', team: 'siyah', label: 'Command Code', color: '#3A3A3C', write: false, efforts: [],
     note: 'engines.commandcode.note', models: [{ id: '', label: 'Command Code', sub: 'models.cliDefault' }] },
   { id: 'agy', team: 'mavi', label: 'Antigravity (agy)', color: '#4285F4', write: false, efforts: ['low', 'high'],
@@ -51,7 +54,15 @@ export const ENGINES: EngineDef[] = [
 /** `opencode models` çıktısından ücretsiz OpenCode (Zen) modelleri: 'opencode/...' satırları, big-pickle önce */
 export function parseOpenCodeModels(text: string): ModelDef[] {
   const ids = Array.from(new Set(String(text).split(/\r?\n/).map((l) => l.trim()).filter((l) => /^opencode\/[\w.-]+$/.test(l))));
-  ids.sort((a, b) => (a === 'opencode/big-pickle' ? -1 : b === 'opencode/big-pickle' ? 1 : a.localeCompare(b)));
+  ids.sort((a, b) => {
+    const aDeep = a.toLowerCase().includes('deepseek');
+    const bDeep = b.toLowerCase().includes('deepseek');
+    if (aDeep && !bDeep) return -1;
+    if (!aDeep && bDeep) return 1;
+    if (a === 'opencode/big-pickle') return -1;
+    if (b === 'opencode/big-pickle') return 1;
+    return a.localeCompare(b);
+  });
   return ids.map((id) => ({ id, label: humanizeModel(id), sub: 'models.free' }));
 }
 
@@ -87,7 +98,7 @@ export interface RunnerLike {
   approveTask?(taskId: string, approved: boolean): boolean;
 }
 
-export interface WebOptions { opencodeListing?: () => Promise<string>; port?: number; dbPath?: string; roots?: string[]; runner?: RunnerLike; token?: string; pollMs?: number; webDir?: string; configPath?: string; home?: string; detectTailscale?: () => Promise<import('./web_remote.ts').TsInfo> }
+export interface WebOptions { opencodeListing?: () => Promise<string>; port?: number; dbPath?: string; roots?: string[]; runner?: RunnerLike; token?: string; pollMs?: number; ingest?: boolean; webDir?: string; configPath?: string; home?: string; detectTailscale?: () => Promise<import('./web_remote.ts').TsInfo> }
 
 // Ayar dosyası: { roots?: string[]; folders?: string[] }. `roots` = altındaki klasörler listelenir; `folders` = tek tek eklenmiş proje klasörleri.
 interface WebConfig { roots?: string[]; folders?: string[] }
@@ -268,7 +279,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
   if (remote.enabled) { void remote.refreshTs(true); }
   const tsTimer = setInterval(() => { if (remote.enabled) void remote.refreshTs(); }, 60000); tsTimer.unref();
   const server = startServer({
-    port, dbPath: opts.dbPath, pollMs: opts.pollMs,
+    port, dbPath: opts.dbPath, pollMs: opts.pollMs, ingest: opts.ingest,
     allowedOrigins: () => [`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...remote.origins()],
     allowedHosts: remote.hosts,
     gate: (ctx) => remote.gate(ctx, () => fs.readFileSync(path.join(webDir, 'pair.html'), 'utf8'), () => fs.readFileSync(path.join(webDir, 'pair.js'), 'utf8')),

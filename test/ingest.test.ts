@@ -1,4 +1,4 @@
-// Tier 3: elle başlatılan Claude / Codex / OpenCode oturumlarının kayıt dosyalarından olay üretimi.
+// Tier 3: elle başlatılan Claude / Codex / OpenCode / Antigravity oturumlarının kayıt dosyalarından olay üretimi.
 // Satır biçimleri gerçek dosyalardan (2026-10-23) alındı; içerikler kısaltıldı.
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { SqliteStore } from '../src/core/sqlite_store.ts';
+import { AntigravityLineParser, conversationIdFromPath, extractAntigravityPrompt } from '../src/ingest/antigravity.ts';
 import { ClaudeLineParser } from '../src/ingest/claude.ts';
 import { CodexLineParser } from '../src/ingest/codex.ts';
 import { OpenCodeDbSource } from '../src/ingest/opencode.ts';
@@ -100,6 +101,87 @@ assert.strictEqual(ocEv[0].taskId, 'ext_opencode_sesabcdef1_1');
 assert.strictEqual(oc.poll().length, 0, 'ikinci yoklamada yeni olay yok');
 oc.close();
 
+// A new user message closes the old turn; multiple text parts are one turn.
+const writer = new DatabaseSync(dbPath);
+writer.prepare('DELETE FROM part').run();
+writer.prepare('DELETE FROM message').run();
+for (const [id, time] of [['u1', 5000], ['u2', 6000]] as const) {
+  writer.prepare('INSERT INTO message VALUES (?, ?, ?, ?, ?)').run(id, 'ses_abcdef123456', time, time, JSON.stringify({ role: 'user' }));
+  writer.prepare('INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)').run(id, id, 'ses_abcdef123456', time, time, JSON.stringify({ type: 'text', text: id }));
+}
+writer.prepare('INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)').run('u2-extra', 'u2', 'ses_abcdef123456', 6001, 6001, JSON.stringify({ type: 'text', text: 'more' }));
+const turns = new OpenCodeDbSource(() => false, 0, dbPath);
+const turnEvents = turns.poll();
+assert.deepStrictEqual(types(turnEvents), ['task.started', 'task.cancelled', 'task.started']);
+assert.strictEqual(turnEvents[0].taskId, turnEvents[1].taskId);
+assert.notStrictEqual(turnEvents[1].taskId, turnEvents[2].taskId);
+turns.close();
+writer.close();
+
+// Missing terminal events use latest activity, not task creation time.
+const staleStore = new SqliteStore(':memory:');
+const reapNow = Date.now();
+const add = (taskId: string, timestamp: number, type: ExtEvent['type'] = 'task.started', pid?: number) =>
+  staleStore.recordEvent(toTaskEvent({ taskId, sessionId: 'synthetic', agent: 'opencode', type, data: {}, ts: timestamp, seed: `${taskId}:${timestamp}:${type}` }), pid);
+add('stale', reapNow - 400000);
+add('active', reapNow - 400000);
+add('active', reapNow, 'message.delta');
+add('alive', reapNow, 'task.started', process.pid);
+add('done', reapNow - 400000);
+add('done', reapNow - 399000, 'task.completed');
+const revisionBefore = staleStore.getTaskRevision();
+assert.strictEqual(staleStore.reapStaleTasks(), 1);
+assert.strictEqual(staleStore.getTask('stale')?.status, 'cancelled');
+assert.strictEqual(staleStore.getTask('stale')?.error, 'Oturum sonlandı / zaman aşımı');
+assert.ok(staleStore.getTask('stale')!.durationMs >= 400000);
+assert.strictEqual(staleStore.getEvents('stale').at(-1)?.type, 'task.cancelled');
+assert.notStrictEqual(staleStore.getTaskRevision(), revisionBefore);
+assert.strictEqual(staleStore.reapStaleTasks(), 0);
+assert.strictEqual(staleStore.getTask('active')?.status, 'running');
+assert.strictEqual(staleStore.getTask('alive')?.status, 'running');
+assert.strictEqual(staleStore.getTask('done')?.status, 'completed');
+assert.throws(() => staleStore.reapStaleTasks(-1), RangeError);
+// ESRCH cancels immediately; EPERM must not be interpreted as process death.
+const originalKill = process.kill;
+try {
+  process.kill = (() => { throw Object.assign(new Error('denied'), { code: 'EPERM' }); }) as typeof process.kill;
+  assert.strictEqual(staleStore.reapStaleTasks(), 0);
+  process.kill = (() => { throw Object.assign(new Error('gone'), { code: 'ESRCH' }); }) as typeof process.kill;
+  assert.strictEqual(staleStore.reapStaleTasks(), 1);
+  assert.strictEqual(staleStore.getTask('alive')?.status, 'cancelled');
+} finally { process.kill = originalKill; }
+
+// ---------- Antigravity (agy) ----------
+const AGY_SID = 'f2594543-f830-4347-be57-5c5aa15a4450';
+const agyLines = [
+  { type: 'USER_INPUT', content: 'Testleri çalıştır', cwd: 'C:\\agy-proje', timestamp: '2026-10-28T10:00:00.000Z' },
+  { type: 'PLANNER_RESPONSE', timestamp: '2026-10-28T10:00:01.000Z', input_tokens: 12, output_tokens: 3,
+    content: 'Testleri başlatıyorum.', tool_calls: [{ id: 't1', name: 'run_command', args: { CommandLine: 'npm test' } }] },
+  { type: 'GENERIC', timestamp: '2026-10-28T10:00:02.000Z', tool_use_id: 't1', content: 'OK 40 tests' },
+  { type: 'PLANNER_RESPONSE', timestamp: '2026-10-28T10:00:03.000Z', input_tokens: 20, output_tokens: 5, content: 'Bitti.' }
+];
+const ag = feed(new AntigravityLineParser(() => false, AGY_SID), agyLines);
+assert.deepStrictEqual(types(ag), ['task.started', 'tool.invoked', 'usage.updated', 'message.delta', 'tool.completed', 'usage.updated', 'message.delta', 'task.completed'], 'agy olay sırası');
+assert.strictEqual(ag[0].data.prompt, 'Testleri çalıştır');
+assert.strictEqual(ag[0].data.cwd, 'C:\\agy-proje');
+assert.strictEqual(ag[0].data.model, 'gemini-3.8-flash');
+assert.deepStrictEqual(ag[1].data.input, { CommandLine: 'npm test' }, 'tool.args aynen aktarılmalı');
+assert.strictEqual(ag[4].data.toolUseId, 't1');
+assert.strictEqual(ag[4].data.output, 'OK 40 tests');
+assert.strictEqual((ag[2].data as any).input_tokens, 12);
+assert.strictEqual(conversationIdFromPath('C:\\brain\\' + AGY_SID + '\\.system_generated\\logs\\transcript.jsonl'), AGY_SID, 'oturum kimliği yoldan çıkarılmalı');
+assert.strictEqual(feed(new AntigravityLineParser(() => true, AGY_SID), agyLines).length, 0, 'agy yönetilen görev atlanmalı');
+assert.strictEqual(
+  extractAntigravityPrompt('<USER_REQUEST>Dosyayı düzelt</USER_REQUEST>\n<ADDITIONAL_METADATA>{"x":1}</ADDITIONAL_METADATA>'),
+  'Dosyayı düzelt',
+  'USER_REQUEST etiketi temizlenmeli'
+);
+const wrapped = feed(new AntigravityLineParser(() => false, AGY_SID), [
+  { type: 'USER_INPUT', content: '<USER_REQUEST>Merhaba</USER_REQUEST>', timestamp: '2026-10-28T11:00:00.000Z' }
+]);
+assert.strictEqual(wrapped.length, 1, 'USER_REQUEST sarmalı kullanıcı istemi atlanmamalı');
+assert.strictEqual(wrapped[0].data.prompt, 'Merhaba');
+
 // ---------- Tekrar yazma güvenliği ve enjekte metin ----------
 const mem = new SqliteStore(':memory:');
 for (let round = 0; round < 2; round++) cl.forEach((e) => mem.recordEvent(toTaskEvent(e)));
@@ -108,4 +190,5 @@ assert.strictEqual(mem.getTask('ext_claude_024d25c1eb_1')?.status, 'completed');
 assert.ok(isInjectedText('<recommended_plugins>\nx\n</recommended_plugins>'), 'etiketli bağlam bloğu enjekte sayılmalı');
 assert.ok(!isInjectedText('Normal bir istem'), 'normal istem enjekte sayılmamalı');
 assert.ok(isInjectedText('[Image: source: C:/Users/x/1.png]'), 'ekran görüntüsü yol satırı yeni istem sayılmamalı');
-console.log('✔ ingest: claude / codex (kota hatası dahil) / opencode ayrıştırma, tekrar yazma güvenliği');
+assert.ok(!isInjectedText('<USER_REQUEST>merhaba</USER_REQUEST>'), 'Antigravity kullanıcı istemi enjekte sayılmamalı');
+console.log('✔ ingest: claude / codex (kota hatası dahil) / opencode / antigravity ayrıştırma, tekrar yazma güvenliği');

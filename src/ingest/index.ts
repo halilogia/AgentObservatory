@@ -1,6 +1,6 @@
-// observatory ingest [--follow] [--sources claude,codex,opencode] [--active-minutes 30] [--backfill]
-// Observatory dışında (terminalde elle) başlatılan Claude Code, Codex ve OpenCode oturumlarını, ajanların kendi
-// kayıt dosyalarını OKUYARAK (salt okunur) olay deposuna ekler. Kimlik bilgisi dosyalarına dokunmaz.
+// observatory ingest [--follow] [--sources claude,codex,opencode,agy] [--active-minutes 30] [--backfill]
+// Observatory dışında (terminalde elle) başlatılan Claude Code, Codex, OpenCode ve Antigravity oturumlarını, ajanların
+// kendi kayıt dosyalarını OKUYARAK (salt okunur) olay deposuna ekler. Kimlik bilgisi dosyalarına dokunmaz.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,11 +8,23 @@ import { DatabaseSync } from 'node:sqlite';
 import { globalSqlite, SqliteStore } from '../core/sqlite_store.ts';
 import { toTaskEvent } from './core.ts';
 import type { ExtEvent, LineParser, ManagedCheck } from './core.ts';
+import { AntigravityLineParser, conversationIdFromPath } from './antigravity.ts';
 import { ClaudeLineParser, ClaudeSubagentParser } from './claude.ts';
 import { CodexLineParser } from './codex.ts';
 import { OpenCodeDbSource } from './opencode.ts';
 
-type Src = 'claude' | 'codex' | 'opencode';
+type Src = 'claude' | 'codex' | 'opencode' | 'agy';
+
+/** Antigravity konuşma kayıtlarının kök klasörü. */
+export function defaultAntigravityDir(): string {
+  return path.join(os.homedir(), '.gemini', 'antigravity', 'brain');
+}
+
+/** Taranmayacak klasörler: node_modules/scratch gibi 40.000+ dosyalık dizinler event loop'u kilitlemesin. */
+const IGNORE_DIRS = new Set([
+  'node_modules', '.git', 'scratch', '.user_uploaded', 'dist', 'build',
+  'temp', 'tmp', 'cache', '.cache', 'Pods', '.gradle', '.idea', '.vscode'
+]);
 
 function walkJsonl(dir: string, out: string[], depth = 0): void {
   if (depth > 5 || !fs.existsSync(dir)) return;
@@ -20,8 +32,10 @@ function walkJsonl(dir: string, out: string[], depth = 0): void {
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
   for (const e of entries) {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) walkJsonl(p, out, depth + 1);
-    else if (e.name.endsWith('.jsonl')) out.push(p);
+    if (e.isDirectory()) {
+      if (IGNORE_DIRS.has(e.name)) continue;
+      walkJsonl(p, out, depth + 1);
+    } else if (e.name.endsWith('.jsonl')) out.push(p);
   }
 }
 
@@ -60,6 +74,7 @@ export interface IngestOptions {
   store?: SqliteStore;
   claudeDir?: string;
   codexDir?: string;
+  antigravityDir?: string;
   isManaged?: ManagedCheck;
   log?: (s: string) => void;
 }
@@ -71,6 +86,7 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
   const roots: Array<[Src, string]> = [];
   if (opts.sources.includes('claude')) roots.push(['claude', opts.claudeDir || path.join(os.homedir(), '.claude', 'projects')]);
   if (opts.sources.includes('codex')) roots.push(['codex', opts.codexDir || path.join(os.homedir(), '.codex', 'sessions')]);
+  if (opts.sources.includes('agy')) roots.push(['agy', opts.antigravityDir || defaultAntigravityDir()]);
   const files = new Map<string, FileState>();
   const toolTurns = new Map<string, string>(); // Task/Agent araç çağrısı kimliği -> ana görev kimliği
   const startedAt = Date.now();
@@ -80,7 +96,15 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
   }
   let count = 0;
   const write = (evs: ExtEvent[]) => {
-    for (const e of evs) { try { store.recordEvent(toTaskEvent(e)); count++; } catch (err: any) { log(`yazılamadı: ${err.message}`); } }
+    if (!evs || evs.length === 0) return;
+    const batch = evs.map(toTaskEvent);
+    try {
+      // Tek işlemde toplu yazım: olay başına BEGIN/COMMIT açmak SQLite'ı kilitlemesin.
+      store.recordEvents(batch);
+      count += batch.length;
+    } catch (err: any) {
+      log(`yazılamadı: ${err.message}`);
+    }
   };
 
   let pendingSubs = false;
@@ -89,9 +113,22 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
     const cutoff = Date.now() - opts.activeMinutes * 60000;
     for (const [src, root] of roots) {
       const found: string[] = [];
-      walkJsonl(root, found);
+      if (src === 'agy') {
+        // Antigravity konuşmaları doğrudan <root>/<konuşma>/.system_generated/logs/transcript.jsonl konumunda.
+        // Özyinelemeli tarama yerine yalnızca birinci seviye klasörler kontrol edilir (7.1 sn -> ~18 ms).
+        let entries: fs.Dirent[];
+        try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { entries = []; }
+        for (const e of entries) {
+          if (!e.isDirectory()) continue;
+          const tp = path.join(root, e.name, '.system_generated', 'logs', 'transcript.jsonl');
+          if (fs.existsSync(tp)) found.push(tp);
+        }
+      } else {
+        walkJsonl(root, found);
+      }
       for (const f of found) {
         if (files.has(f)) continue;
+        if (src === 'agy' && path.basename(f) !== 'transcript.jsonl') continue;
         let st: fs.Stats;
         try { st = fs.statSync(f); } catch { continue; }
         if (st.mtimeMs < cutoff) continue;
@@ -101,7 +138,8 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
           const sub = openSubagent(f, toolTurns);
           if (!sub) { pendingSubs = true; continue; }
           parser = sub;
-        } else parser = src === 'claude' ? new ClaudeLineParser(isManaged, toolTurns) : new CodexLineParser(isManaged);
+        } else if (src === 'agy') parser = new AntigravityLineParser(isManaged, conversationIdFromPath(f), f);
+        else parser = src === 'claude' ? new ClaudeLineParser(isManaged, toolTurns) : new CodexLineParser(isManaged);
         // ingest başladıktan sonra oluşan dosya baştan okunur; eski dosyada yalnızca yeni eklenenler
         files.set(f, { offset: opts.backfill || st.birthtimeMs >= startedAt ? 0 : st.size, buf: '', parser, src });
         log(`izleniyor (${src}): ${path.basename(f)}`);
@@ -126,8 +164,10 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
         const text = s.buf + chunk.toString('utf8');
         const lines = text.split('\n');
         s.buf = lines.pop() || '';
+        // Antigravity'de tüm konuşmaların dosya adı transcript.jsonl: kimlik çakışmasın diye konuşma kimliği eklenir
+        const seedBase = s.src === 'agy' ? `${conversationIdFromPath(f)}/${path.basename(f)}` : path.basename(f);
         for (const line of lines) {
-          if (line.trim()) write(s.parser.push(line, `${path.basename(f)}:${lineStart}`));
+          if (line.trim()) write(s.parser.push(line, `${seedBase}:${lineStart}`));
           lineStart += Buffer.byteLength(line) + 1;
         }
       } finally { fs.closeSync(fd); }
@@ -135,11 +175,18 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
   };
 
   let n = 0;
+  let lastReap = 0;
   const tick = () => {
     const before = count;
-    if (n++ % 5 === 0 || pendingSubs) discover();
+    // Disk taraması en sık 5 sn'de bir (bekleyen alt ajan varsa), normalde 15 sn'de bir.
+    if (n++ % 15 === 0 || (pendingSubs && n % 5 === 0)) discover();
     readNew();
     if (oc) { try { write(oc.poll()); } catch (e: any) { log(`OpenCode okunamadı: ${e.message}`); } }
+    // Shared by background ingest, CLI follow, web and tree. Read new events first.
+    if (Date.now() - lastReap >= 30000) {
+      store.reapStaleTasks();
+      lastReap = Date.now();
+    }
     return count - before;
   };
   const timer = opts.follow ? setInterval(tick, 1000) : null;
@@ -148,7 +195,7 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
 
 export async function runIngest(args: string[]): Promise<void> {
   const val = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
-  const sources = (val('--sources') || 'claude,codex,opencode').split(',').filter((s) => ['claude', 'codex', 'opencode'].includes(s)) as Src[];
+  const sources = (val('--sources') || 'claude,codex,opencode,agy').split(',').filter((s) => ['claude', 'codex', 'opencode', 'agy'].includes(s)) as Src[];
   const activeMinutes = Number(val('--active-minutes')) || 30;
   const follow = args.includes('--follow');
   const backfill = args.includes('--backfill');
@@ -167,7 +214,7 @@ const INGEST_LOCK = path.join(os.tmpdir(), 'agent_observatory_ingest.lock');
  */
 export function startBackgroundIngest(): (() => void) | null {
   if (process.env.OBSERVATORY_NO_INGEST === '1' || process.env.NODE_ENV === 'test') return null;
-  const handle = startIngest({ sources: ['claude', 'codex', 'opencode'], activeMinutes: 30, backfill: false, follow: false });
+  const handle = startIngest({ sources: ['claude', 'codex', 'opencode', 'agy'], activeMinutes: 30, backfill: false, follow: false });
   const timer = setInterval(() => {
     try {
       const fresh = Date.now() - fs.statSync(INGEST_LOCK).mtimeMs < 6000;

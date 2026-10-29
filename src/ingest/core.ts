@@ -55,8 +55,11 @@ export function isInjectedText(t: string): boolean {
   if (/^\s*\[Image(?: #\d+)?(?:: source:|\])/i.test(t)) return true;
   if (/^\s*<(system-reminder|ide_|command-|environment_context|user_instructions|local-command)/i.test(t) || /^\s*# AGENTS\.md instructions/.test(t)) return true;
   // genel kural: <etiket ...> ile başlayıp </etiket> ile biten blok, ajanın eklediği bağlamdır (ör. <recommended_plugins>)
+  // Antigravity kullanıcı istemini <USER_REQUEST>...</USER_REQUEST> ile sarar: bu gerçek istemdir, enjeksiyon değil.
   const m = /^\s*<([a-z][\w-]*)[^>]*>/i.exec(t);
-  return !!m && t.includes(`</${m[1]}>`);
+  if (!m) return false;
+  if (/^user[-_]?request$/i.test(m[1])) return false;
+  return t.includes(`</${m[1]}>`);
 }
 
 export function parseJson(line: string): any | null {

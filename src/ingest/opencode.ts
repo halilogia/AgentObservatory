@@ -37,7 +37,7 @@ export class OpenCodeDbSource {
 
   poll(): ExtEvent[] {
     const rows = this.db.prepare(
-      `SELECT p.rowid AS rid, p.id, p.session_id, p.time_updated, p.data, m.data AS mdata, s.directory
+      `SELECT p.rowid AS rid, p.id, p.message_id, p.session_id, p.time_updated, p.data, m.data AS mdata, s.directory
          FROM part p JOIN message m ON m.id = p.message_id JOIN session s ON s.id = p.session_id
         WHERE p.time_updated > ? OR (p.time_updated = ? AND p.rowid > ?)
         ORDER BY p.time_updated, p.rowid LIMIT 500`
@@ -54,8 +54,8 @@ export class OpenCodeDbSource {
       const mk = (type: ExtEvent['type'], data: Record<string, unknown>, seed: string): ExtEvent =>
         ({ taskId: tid(), sessionId: r.session_id, agent: 'opencode', type, data, ts: Number(r.time_updated), seed: `oc:${r.id}:${seed}` });
 
-      if (md.role === 'user' && pd.type === 'text' && pd.text && !st.seenUser.has(r.id)) {
-        st.seenUser.add(r.id);
+      if (md.role === 'user' && pd.type === 'text' && pd.text && !st.seenUser.has(r.message_id)) {
+        st.seenUser.add(r.message_id);
         if (st.open && !st.skip) out.push(mk('task.cancelled', { reason: 'yeni istem geldi' }, 'cancel'));
         st.turn++;
         st.skip = this.isManaged('opencode', String(pd.text), Number(r.time_updated));
@@ -64,6 +64,11 @@ export class OpenCodeDbSource {
         continue;
       }
       if (md.role !== 'assistant' || !st.open || st.skip) continue;
+      if (md.error) {
+        out.push(mk('task.failed', { error: JSON.stringify(md.error) }, 'error'));
+        st.open = false;
+        continue;
+      }
       if (pd.type === 'text' && pd.text && pd.time?.end) {
         out.push(mk('message.delta', { text: String(pd.text) }, 'text'));
       } else if (pd.type === 'tool' && (pd.state?.status === 'completed' || pd.state?.status === 'error')) {
@@ -77,5 +82,7 @@ export class OpenCodeDbSource {
     return out;
   }
 
+  // Closing the observer does not prove the producer exited. Missing stop events
+  // (including producer crashes) are reconciled by SqliteStore.reapStaleTasks.
   close(): void { this.db.close(); }
 }

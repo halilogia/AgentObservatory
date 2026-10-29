@@ -91,8 +91,16 @@ async function main(): Promise<void> {
     const { startMcpServer } = await import('./mcp/mcp_server.ts');
     await startMcpServer();
   } else if (command === 'web') {
-    const { runWeb } = await import('./commands/web.ts');
-    await runWeb(args.slice(1));
+    try {
+      const { runWeb } = await import('./commands/web.ts');
+      await runWeb(args.slice(1));
+    } catch (err: any) {
+      if (err?.code === 'ERR_MODULE_NOT_FOUND') {
+        console.error(paint('yellow', 'Web modülü bulunamadı. Observatory TUI ve çekirdek CLI bağımsız çalışmaya devam ediyor.'));
+        process.exit(1);
+      }
+      throw err;
+    }
   } else if (command === 'ingest') {
     const { runIngest } = await import('./ingest/index.ts');
     await runIngest(args.slice(1));
@@ -118,7 +126,7 @@ async function main(): Promise<void> {
     console.log('  node --experimental-strip-types src/cli.ts inspect <taskId>        - Tek bir görevin tüm olaylarını gösterir');
     console.log('  node --experimental-strip-types src/cli.ts mcp                     - Antigravity MCP sunucu modu');
     console.log('  node --experimental-strip-types src/cli.ts web [--port 8788]       - Sohbet arayüzü (model seçici: Claude Code, Codex, OpenCode, agy)');
-    console.log('  node --experimental-strip-types src/cli.ts ingest [--follow] [--sources claude,codex,opencode] [--backfill] - Elle başlatılan oturumları (Tier 3) olay deposuna ekler');
+    console.log('  node --experimental-strip-types src/cli.ts ingest [--follow] [--sources claude,codex,opencode,agy] [--backfill] - Elle başlatılan oturumları (Tier 3) olay deposuna ekler');
     console.log('  node --experimental-strip-types src/cli.ts chat [taskId|latest] [--follow] [--skin X] - Oturumu ajanın CLI görünümünde gösterir');
     console.log('  node --experimental-strip-types src/cli.ts doctor [--live]        - Kurulu ajanları ve (--live) gerçek yanıtı denetler');
     console.log('  node --experimental-strip-types src/cli.ts serve [--port 8787]     - Olayları HTTP + SSE ile yayınlar');

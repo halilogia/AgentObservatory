@@ -30,7 +30,8 @@ const { server, token, port } = startWeb({
   port: 0,
   dbPath: testDbPath,
   runner: mockRunner,
-  roots: [process.cwd()]
+  roots: [process.cwd()],
+  ingest: false
 });
 
 await new Promise((r) => server.once('listening', r));

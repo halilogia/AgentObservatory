@@ -32,7 +32,7 @@ const fakeRunner = {
 
 const PORT = 18990 + Math.floor(Math.random() * 9);
 const TOKEN = 'a'.repeat(48);
-const { server } = startWeb({ port: PORT, dbPath, roots: [root], configPath: path.join(dir, 'web.json'), runner: fakeRunner, token: TOKEN, pollMs: 50,
+const { server } = startWeb({ port: PORT, dbPath, roots: [root], configPath: path.join(dir, 'web.json'), runner: fakeRunner, token: TOKEN, pollMs: 50, ingest: false,
   opencodeListing: async () => ['openai/gpt-5', 'opencode/nemotron-3.5-super-vl-free', 'opencode/big-pickle', 'opencode/glm-5.3-flash-free', 'opencode/big-pickle'].join('\n') });
 await new Promise((r) => server.once('listening', r));
 const base = `http://127.0.0.1:${PORT}`;

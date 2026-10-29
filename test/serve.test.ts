@@ -16,7 +16,7 @@ const PORT = 18900 + Math.floor(Math.random() * 90);
 writer.recordEvent(createEvent({ taskId: 'task_t1', agent: 'codex', type: 'task.started', data: { prompt: 'p' } }));
 writer.recordEvent(createEvent({ taskId: 'task_t1', agent: 'codex', type: 'message.delta', data: { text: 'OK' } }));
 
-const server = startServer({ port: PORT, dbPath, pollMs: 50 });
+const server = startServer({ port: PORT, dbPath, pollMs: 50, ingest: false });
 await new Promise((r) => server.once('listening', r));
 const base = `http://127.0.0.1:${PORT}`;
 

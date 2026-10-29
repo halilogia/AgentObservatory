@@ -43,6 +43,48 @@ function boundPayload(data: any): string {
 
 export class SqliteStore {
   private db: DatabaseSync;
+  private stmtInsertEvt: any = null;
+  private stmtGetParent: any = null;
+  private stmtGetTask: any = null;
+  private stmtInsertTask: any = null;
+  private stmtUpdateTask: any = null;
+  private stmtUpdateModel: any = null;
+
+  private getStmtInsertEvt() {
+    return (this.stmtInsertEvt ??= this.db.prepare(`
+      INSERT OR IGNORE INTO events (id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `));
+  }
+  private getStmtGetParent() {
+    return (this.stmtGetParent ??= this.db.prepare('SELECT parent_task_id FROM tasks WHERE task_id = ?'));
+  }
+  private getStmtGetTask() {
+    return (this.stmtGetTask ??= this.db.prepare('SELECT * FROM tasks WHERE task_id = ?'));
+  }
+  private getStmtInsertTask() {
+    return (this.stmtInsertTask ??= this.db.prepare(`
+      INSERT INTO tasks (
+        task_id, session_id, agent, status, prompt, model, pid,
+        start_time, end_time, duration_ms, assistant_text,
+        input_tokens, cached_tokens, output_tokens, reasoning_tokens,
+        tools_json, error, parent_task_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `));
+  }
+  private getStmtUpdateTask() {
+    return (this.stmtUpdateTask ??= this.db.prepare(`
+      UPDATE tasks SET
+        session_id = ?, status = ?, prompt = ?, model = ?, pid = ?,
+        end_time = ?, duration_ms = ?, assistant_text = ?,
+        input_tokens = ?, cached_tokens = ?, output_tokens = ?, reasoning_tokens = ?,
+        tools_json = ?, error = ?, parent_task_id = ?
+      WHERE task_id = ?
+    `));
+  }
+  private getStmtUpdateModel() {
+    return (this.stmtUpdateModel ??= this.db.prepare('UPDATE tasks SET model = ? WHERE task_id = ?'));
+  }
 
   constructor(dbPath?: string) {
     if (dbPath === ':memory:') {
@@ -96,6 +138,8 @@ export class SqliteStore {
         error TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+      CREATE INDEX IF NOT EXISTS idx_tasks_start_time ON tasks(start_time DESC);
+      CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session_id);
 
       CREATE TABLE IF NOT EXISTS missions (
         id TEXT PRIMARY KEY,
@@ -177,161 +221,7 @@ export class SqliteStore {
 
     this.db.exec('BEGIN IMMEDIATE;');
     try {
-      // 1. Event Insert
-      const insertEvt = this.db.prepare(`
-        INSERT OR IGNORE INTO events (id, task_id, session_id, agent, tier, type, data, timestamp, parent_task_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      let parentTaskId: string | null = event.parentTaskId || event.data?.parentTaskId || null;
-      if (!parentTaskId) {
-        const parentRow = this.db.prepare('SELECT parent_task_id FROM tasks WHERE task_id = ?').get(event.taskId) as any;
-        parentTaskId = parentRow?.parent_task_id || null;
-      }
-      const insertResult = insertEvt.run(
-        event.id,
-        event.taskId,
-        event.sessionId,
-        event.agent,
-        event.tier,
-        event.type,
-        boundPayload(event.data),
-        event.timestamp,
-        parentTaskId
-      );
-      const wasInserted = Number(insertResult.changes) > 0;
-
-      // 2. Task Summary Upsert
-      const existing = this.db.prepare('SELECT * FROM tasks WHERE task_id = ?').get(event.taskId) as any;
-
-      if (existing && !wasInserted) {
-        // Aynı olayı eski sürüm modelsiz yazmış olabilir: yeni sürüm modeli getiriyorsa boş alanı doldur (metrikler yine tekrar sayılmaz)
-        if (!existing.model && event.data?.model) this.db.prepare('UPDATE tasks SET model = ? WHERE task_id = ?').run(String(event.data.model), event.taskId);
-        // Duplicate event: do not accumulate metrics a second time
-        this.db.exec('COMMIT;');
-        return;
-      }
-
-      if (!existing) {
-        const insertTask = this.db.prepare(`
-          INSERT INTO tasks (
-            task_id, session_id, agent, status, prompt, model, pid,
-            start_time, end_time, duration_ms, assistant_text,
-            input_tokens, cached_tokens, output_tokens, reasoning_tokens,
-            tools_json, error, parent_task_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-        insertTask.run(
-          event.taskId,
-          event.sessionId || null,
-          event.agent,
-          'running',
-          event.data.prompt || '',
-          event.data.model || '',
-          pid || null,
-          event.timestamp,
-          null,
-          0,
-          '',
-          0, 0, 0, 0,
-          '[]',
-          null,
-          parentTaskId
-        );
-      } else {
-        const isAlreadyTerminal = TERMINAL_STATUSES.has(existing.status);
-        let status = existing.status;
-        let prompt = existing.prompt || event.data.prompt || '';
-        let model = existing.model || event.data.model || '';
-        let sessionId = existing.session_id || event.sessionId || null;
-        let taskPid = existing.pid || pid || null;
-        let endTime = existing.end_time;
-        let durationMs = existing.duration_ms;
-        let assistantText = existing.assistant_text || '';
-        let inputTokens = existing.input_tokens || 0;
-        let cachedTokens = existing.cached_tokens || 0;
-        let outputTokens = existing.output_tokens || 0;
-        let reasoningTokens = existing.reasoning_tokens || 0;
-        let tools: any[] = [];
-        try { tools = JSON.parse(existing.tools_json || '[]'); } catch {}
-        let error = existing.error;
-        const taskParentId = existing.parent_task_id || parentTaskId || null;
-
-        switch (event.type) {
-          case 'task.started':
-            if (!isAlreadyTerminal) status = 'running';
-            if (event.data.prompt) prompt = event.data.prompt;
-            if (event.data.model) model = event.data.model;
-            break;
-
-          case 'tool.invoked':
-            tools.push({
-              name: event.data.name || 'tool',
-              input: boundValue(event.data.input || {}),
-              timestamp: event.timestamp
-            });
-            break;
-
-          case 'message.delta':
-            if (!TRUNC_MARKER_RE.test(assistantText)) {
-              assistantText = truncateText(assistantText + (event.data.text || ''), MAX_ASSISTANT_TEXT_BYTES);
-            }
-            break;
-
-          case 'usage.updated':
-            if (event.data.usage) {
-              const u = event.data.usage;
-              inputTokens = u.inputTokens || inputTokens;
-              cachedTokens = u.cachedTokens || cachedTokens;
-              outputTokens = u.outputTokens || outputTokens;
-              reasoningTokens = u.reasoningTokens || reasoningTokens;
-            }
-            break;
-
-          case 'task.completed':
-            if (!isAlreadyTerminal) {
-              status = 'completed';
-              endTime = event.timestamp;
-              durationMs = endTime - existing.start_time;
-              if (event.data.result && !assistantText) assistantText = truncateText(String(event.data.result), MAX_ASSISTANT_TEXT_BYTES);
-            }
-            break;
-
-          case 'task.failed':
-            if (!isAlreadyTerminal) {
-              status = 'failed';
-              endTime = event.timestamp;
-              durationMs = endTime - existing.start_time;
-              error = event.data.error || 'Bilinmeyen hata';
-            }
-            break;
-
-          case 'task.cancelled':
-            if (!isAlreadyTerminal) {
-              status = 'cancelled';
-              endTime = event.timestamp;
-              durationMs = endTime - existing.start_time;
-              error = event.data.reason || 'İptal edildi';
-            }
-            break;
-        }
-
-        const updateTask = this.db.prepare(`
-          UPDATE tasks SET
-            session_id = ?, status = ?, prompt = ?, model = ?, pid = ?,
-            end_time = ?, duration_ms = ?, assistant_text = ?,
-            input_tokens = ?, cached_tokens = ?, output_tokens = ?, reasoning_tokens = ?,
-            tools_json = ?, error = ?, parent_task_id = ?
-          WHERE task_id = ?
-        `);
-        updateTask.run(
-          sessionId, status, prompt, model, taskPid,
-          endTime, durationMs, assistantText,
-          inputTokens, cachedTokens, outputTokens, reasoningTokens,
-          JSON.stringify(tools), error, taskParentId,
-          event.taskId
-        );
-      }
-
+      this.recordEventTx(event, pid);
       this.db.exec('COMMIT;');
     } catch (err) {
       this.db.exec('ROLLBACK;');
@@ -339,10 +229,209 @@ export class SqliteStore {
     }
   }
 
+  /** Toplu kayıt: tüm olaylar tek bir BEGIN IMMEDIATE ... COMMIT işlemi altında yazılır (kilitlenme ve fsync fırtınası önlenir). */
+  recordEvents(events: TaskEvent[], pid?: number): void {
+    const valid = (events || []).filter((e) => e && e.taskId);
+    if (valid.length === 0) return;
+
+    this.db.exec('BEGIN IMMEDIATE;');
+    try {
+      for (const event of valid) this.recordEventTx(event, pid);
+      this.db.exec('COMMIT;');
+    } catch (err) {
+      this.db.exec('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  /** Tek olayın yazımı; çağıran tarafın açtığı işlem içinde çalışır. */
+  private recordEventTx(event: TaskEvent, pid?: number): void {
+    let parentTaskId: string | null = event.parentTaskId || event.data?.parentTaskId || null;
+    if (!parentTaskId) {
+      const parentRow = this.getStmtGetParent().get(event.taskId) as any;
+      parentTaskId = parentRow?.parent_task_id || null;
+    }
+    const insertResult = this.getStmtInsertEvt().run(
+      event.id,
+      event.taskId,
+      event.sessionId,
+      event.agent,
+      event.tier,
+      event.type,
+      boundPayload(event.data),
+      event.timestamp,
+      parentTaskId
+    );
+    const wasInserted = Number(insertResult.changes) > 0;
+
+    // Tekrarlanan olay ve model güncellemesi yoksa doğrudan dön (SELECT * yapma)
+    if (!wasInserted && !event.data?.model) return;
+
+    // 2. Task Summary Upsert
+    const existing = this.getStmtGetTask().get(event.taskId) as any;
+
+    if (existing && !wasInserted) {
+      if (!existing.model && event.data?.model) this.getStmtUpdateModel().run(String(event.data.model), event.taskId);
+      return;
+    }
+
+    if (!existing) {
+      this.getStmtInsertTask().run(
+        event.taskId,
+        event.sessionId || null,
+        event.agent,
+        'running',
+        event.data.prompt || '',
+        event.data.model || '',
+        pid || null,
+        event.timestamp,
+        null,
+        0,
+        '',
+        0, 0, 0, 0,
+        '[]',
+        null,
+        parentTaskId
+      );
+    } else {
+      const isAlreadyTerminal = TERMINAL_STATUSES.has(existing.status);
+      let status = existing.status;
+      let prompt = existing.prompt || event.data.prompt || '';
+      let model = existing.model || event.data.model || '';
+      let sessionId = existing.session_id || event.sessionId || null;
+      let taskPid = existing.pid || pid || null;
+      let endTime = existing.end_time;
+      let durationMs = existing.duration_ms;
+      let assistantText = existing.assistant_text || '';
+      let inputTokens = existing.input_tokens || 0;
+      let cachedTokens = existing.cached_tokens || 0;
+      let outputTokens = existing.output_tokens || 0;
+      let reasoningTokens = existing.reasoning_tokens || 0;
+      let tools: any[] = [];
+      try { tools = JSON.parse(existing.tools_json || '[]'); } catch {}
+      let error = existing.error;
+      const taskParentId = existing.parent_task_id || parentTaskId || null;
+
+      switch (event.type) {
+        case 'task.started':
+          if (!isAlreadyTerminal) status = 'running';
+          if (event.data.prompt) prompt = event.data.prompt;
+          if (event.data.model) model = event.data.model;
+          break;
+
+        case 'tool.invoked':
+          tools.push({
+            name: event.data.name || 'tool',
+            input: boundValue(event.data.input || {}),
+            timestamp: event.timestamp
+          });
+          break;
+
+        case 'message.delta':
+          if (!TRUNC_MARKER_RE.test(assistantText)) {
+            assistantText = truncateText(assistantText + (event.data.text || ''), MAX_ASSISTANT_TEXT_BYTES);
+          }
+          break;
+
+        case 'usage.updated':
+          if (event.data.usage) {
+            const u = event.data.usage;
+            inputTokens = u.inputTokens || inputTokens;
+            cachedTokens = u.cachedTokens || cachedTokens;
+            outputTokens = u.outputTokens || outputTokens;
+            reasoningTokens = u.reasoningTokens || reasoningTokens;
+          }
+          break;
+
+        case 'task.completed':
+          if (!isAlreadyTerminal) {
+            status = 'completed';
+            endTime = event.timestamp;
+            durationMs = endTime - existing.start_time;
+            if (event.data.result && !assistantText) assistantText = truncateText(String(event.data.result), MAX_ASSISTANT_TEXT_BYTES);
+          }
+          break;
+
+        case 'task.failed':
+          if (!isAlreadyTerminal) {
+            status = 'failed';
+            endTime = event.timestamp;
+            durationMs = endTime - existing.start_time;
+            error = event.data.error || 'Bilinmeyen hata';
+          }
+          break;
+
+        case 'task.cancelled':
+          if (!isAlreadyTerminal) {
+            status = 'cancelled';
+            endTime = event.timestamp;
+            durationMs = endTime - existing.start_time;
+            error = event.data.reason || 'İptal edildi';
+          }
+          break;
+      }
+
+      this.getStmtUpdateTask().run(
+        sessionId, status, prompt, model, taskPid,
+        endTime, durationMs, assistantText,
+        inputTokens, cachedTokens, outputTokens, reasoningTokens,
+        JSON.stringify(tools), error, taskParentId,
+        event.taskId
+      );
+    }
+  }
+
   getTask(taskId: string): TaskSummary | null {
     const row = this.db.prepare('SELECT * FROM tasks WHERE task_id = ?').get(taskId) as any;
     if (!row) return null;
     return this.mapTaskSummary(row);
+  }
+
+  /** Includes writes by this connection and other SQLite connections. */
+  getTaskRevision(): string {
+    const external = this.db.prepare('PRAGMA data_version').get() as any;
+    const local = this.db.prepare('SELECT total_changes() AS n').get() as any;
+    return `${external.data_version}:${local.n}`;
+  }
+
+  /** Reconcile missing terminal events without terminating any OS process. */
+  reapStaleTasks(maxAgeMs = 300000): number {
+    if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0) throw new RangeError('Invalid task age');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const now = Date.now();
+      const rows = this.db.prepare(`
+        SELECT t.task_id, t.session_id, t.agent, t.pid,
+          COALESCE((SELECT MAX(timestamp) FROM events WHERE task_id = t.task_id), t.start_time) AS last_event
+        FROM tasks t WHERE status = 'running'
+      `).all() as any[];
+      let count = 0;
+      for (const row of rows) {
+        // Antigravity / Gemini 3.8 Flash oturumları kullanıcı ile etkileşimli sohbet oturumlarıdır;
+        // kısa zaman aşımıyla otomatik kapatılmamalıdır (kafası karışmasın).
+        if (row.agent === 'agy' || row.agent === 'antigravity' || (row.model && String(row.model).includes('gemini-3.8'))) {
+          continue;
+        }
+        let exited = false;
+        if (Number.isSafeInteger(row.pid) && row.pid > 0) {
+          try { process.kill(row.pid, 0); }
+          catch (err) { exited = (err as NodeJS.ErrnoException).code === 'ESRCH'; }
+        }
+        if (!exited && now - row.last_event <= maxAgeMs) continue;
+        this.recordEventTx({
+          id: `evt_reap_${row.task_id}_${now}`, taskId: row.task_id,
+          sessionId: row.session_id, agent: row.agent, tier: 1,
+          type: 'task.cancelled', timestamp: now,
+          data: { reason: 'Oturum sonlandı / zaman aşımı' }
+        });
+        count++;
+      }
+      this.db.exec('COMMIT');
+      return count;
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
   }
 
   getRecentTasks(limit: number = 10): TaskSummary[] {

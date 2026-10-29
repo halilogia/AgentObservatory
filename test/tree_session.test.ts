@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
-import { renderTree, scrollFromBarRow } from '../src/ui/tree.ts';
+import { renderTree, scrollFromBarRow, diffTreeLines } from '../src/ui/tree.ts';
 import type { TaskSummary } from '../src/core/types.ts';
 
 const now = 1_000_000_000;
+assert.equal(diffTreeLines(['header', 'old', 'tail'], ['header', 'new', 'tail']), '\x1b[2;1H\x1b[2Knew\x1b[0m');
+assert.equal(diffTreeLines(['same'], ['same']), '');
+assert.equal(diffTreeLines(['header', 'removed'], ['header']), '\x1b[2;1H\x1b[2K\x1b[0m');
+assert.equal(diffTreeLines([], ['first']), '\x1b[1;1H\x1b[2Kfirst\x1b[0m');
 const mk = (id: string, sid: string | null, start: number, extra: Partial<TaskSummary> = {}): TaskSummary => ({
   taskId: id, sessionId: sid, agent: 'claude', status: 'completed', prompt: 'p' + id, model: 'sonnet',
   startTime: start, endTime: start + 1000, durationMs: 1000, toolsUsed: [], assistantText: 'son ' + id,
@@ -19,7 +23,7 @@ const base = { onlyRunning: false, cols: 140, rows: 60, now };
 const c = renderTree(tasks, base);
 assert.deepEqual(c.order, ['solo', 'session:c461032a-1'].sort((a, b) => c.order.indexOf(a) - c.order.indexOf(b)));
 assert.equal(c.order.length, 2);
-assert.match(strip(c.text), /c461032a · 3 mesaj · sürdü 3s · 4\.5k|c461032a · 3 mesaj · sürdü 3s · 5k tok/);
+assert.match(strip(c.text), /c461032a (?:başladı \d{2}:\d{2}:\d{2} · )?3 mesaj · sürdü 3s · (?:4\.5k|5k tok)/);
 
 const e = renderTree(tasks, { ...base, expanded: new Set(['c461032a-1']) });
 const txt = strip(e.text);
