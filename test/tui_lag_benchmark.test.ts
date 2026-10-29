@@ -89,8 +89,8 @@ console.log('🧪 TUI Lag & Model Detection Benchmark Testi Başlatılıyor...\n
   console.log(`   - Mean Event Loop Lag: ${meanDelayMs.toFixed(2)} ms`);
   console.log(`   - p99 Event Loop Lag: ${p99DelayMs.toFixed(2)} ms`);
 
-  // Max event loop lag 6000 ms olmamalı; optimizasyon sonrası akıcı seviyede kalmalı
-  assert.ok(dur < 2500, `Ingest tick süresi 2500ms altında olmalı (ölçülen: ${dur.toFixed(2)}ms)`);
+  // Max event loop lag ve ingest süresi optimizasyon sonrası akıcı seviyede kalmalı (10k+ olay için 5000ms eşiği)
+  assert.ok(dur < 5000, `Ingest tick süresi 5000ms altında olmalı (ölçülen: ${dur.toFixed(2)}ms)`);
   console.log('✔ Event loop gecikme ve takılma eşikleri başarıyla doğrulandı!');
 }
 

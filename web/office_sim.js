@@ -109,6 +109,55 @@
     var g = GLYPH[kind];
     for (var r = 0; r < 5; r++) for (var q = 0; q < 5; q++) if (g[r].charAt(q) === '#') rect(c, '#fff', bx + 3 + q, by + 2 + r, 1, 1);
   }
+
+  /** Konuşma balonu türü: waiting -> ask, reading -> read, terminal araçları -> term, diğer yazma -> write, düşünme -> think. */
+  function bubbleKind(a) {
+    if (!a) return '';
+    if (a.mode === 'waiting' || (a.badge && a.badge.kind === 'ask')) return 'ask';
+    if (a.mode === 'reading') return 'read';
+    if (a.mode === 'typing') return /bash|shell|exec|command|terminal|cmd|run/i.test(String(a.tool || '')) ? 'term' : 'write';
+    if (a.mode === 'thinking') return 'think';
+    return '';
+  }
+
+  /** Pixel Agents tarzı minik balon: başın üstünde araç ikonu (terminal, dosya, kalem, onay, düşünme). */
+  function drawSpeechBubble(c, kind, x, y, t) {
+    if (!kind) return;
+    var bx = Math.round(x) - 8, by = Math.round(y) - 41;
+    rect(c, 'rgba(0,0,0,.28)', bx + 1, by + 2, 16, 12);
+    rect(c, '#20262e', bx, by, 16, 12);
+    rect(c, '#f5f2e8', bx + 1, by + 1, 14, 10);
+    rect(c, '#20262e', bx + 9, by + 12, 3, 2);
+    rect(c, '#20262e', bx + 10, by + 14, 2, 1);
+    rect(c, '#f5f2e8', bx + 10, by + 12, 2, 1);
+
+    if (kind === 'term') {
+      rect(c, '#1b2129', bx + 3, by + 2, 10, 7);
+      rect(c, '#3fb950', bx + 4, by + 3, 2, 1);
+      rect(c, '#8b949e', bx + 5, by + 5, 6, 1);
+      rect(c, '#8b949e', bx + 5, by + 7, 3, 1);
+    } else if (kind === 'read') {
+      rect(c, '#2d333b', bx + 4, by + 2, 8, 8);
+      rect(c, '#eef1f4', bx + 5, by + 3, 6, 6);
+      rect(c, '#8b949e', bx + 6, by + 4, 4, 1);
+      rect(c, '#8b949e', bx + 6, by + 6, 4, 1);
+      rect(c, '#8b949e', bx + 6, by + 8, 3, 1);
+    } else if (kind === 'write') {
+      rect(c, '#ffb86c', bx + 4, by + 3, 2, 2);
+      rect(c, '#ffb86c', bx + 5, by + 4, 2, 2);
+      rect(c, '#ff8a3d', bx + 6, by + 5, 2, 2);
+      rect(c, '#ff8a3d', bx + 7, by + 6, 2, 2);
+      rect(c, '#111', bx + 4, by + 7, 2, 1);
+      rect(c, '#9aa0a6', bx + 3, by + 8, 5, 1);
+    } else if (kind === 'ask') {
+      rect(c, '#d29922', bx + 7, by + 2, 2, 5);
+      rect(c, '#d29922', bx + 7, by + 8, 2, 1);
+    } else if (kind === 'think') {
+      var lit = Math.floor(t * 3) % 3;
+      for (var i = 0; i < 3; i++) rect(c, i <= lit ? '#6b7280' : '#c9d1d9', bx + 4 + i * 3, by + 5, 2, 2);
+    }
+  }
+
   function drawAgent(c, a, def, t) {
     var x = Math.round(a.x), y = Math.round(a.y), pose = poseOf(a), f = Math.floor(t * 8) % 2;
     var bob = pose === 'idle' ? Math.round(Math.sin(t * 2 + a.idx)) : 0;
@@ -127,6 +176,8 @@
     } else if (pose === 'thinking') {
       for (var i = 0; i < 3; i++) if (Math.floor(t * 3) % 3 >= i) rect(c, '#8b949e', x - 4 + i * 4, y - 26, 2, 2);
     } else if (pose === 'waiting') { rect(c, '#f2c9a0', x + 3, y - 18, 2, 5); } // el kaldırır
+    var bubble = a.badge ? '' : bubbleKind(a);
+    if (bubble) drawSpeechBubble(c, bubble, x, y, t);
     if (a.badge) drawBadge(c, a.badge.kind, x, y);
   }
   function drawScene(c, s) {
@@ -196,5 +247,5 @@
     };
   }
 
-  root.ObsOffice = { AGENTS: AGENTS, W: W, H: H, classifyTool: classifyTool, createState: createState, feed: feed, step: step, poseOf: poseOf, drawScene: drawScene, mount: mount };
+  root.ObsOffice = { AGENTS: AGENTS, W: W, H: H, classifyTool: classifyTool, createState: createState, feed: feed, step: step, poseOf: poseOf, bubbleKind: bubbleKind, drawSpeechBubble: drawSpeechBubble, drawScene: drawScene, mount: mount };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -407,9 +407,9 @@ export class SqliteStore {
       `).all() as any[];
       let count = 0;
       for (const row of rows) {
-        // Antigravity / Gemini 3.8 Flash oturumları kullanıcı ile etkileşimli sohbet oturumlarıdır;
-        // kısa zaman aşımıyla otomatik kapatılmamalıdır (kafası karışmasın).
-        if (row.agent === 'agy' || row.agent === 'antigravity' || (row.model && String(row.model).includes('gemini-3.8'))) {
+        // Antigravity (agy) oturumları masaüstü IDE üzerinden yürütülen etkileşimli kullanıcı
+        // sohbetleridir; arka planda insan düşünme/bekleme süresi olabileceğinden zaman aşımıyla reaped edilmez.
+        if (row.agent === 'agy' || row.agent === 'antigravity') {
           continue;
         }
         let exited = false;

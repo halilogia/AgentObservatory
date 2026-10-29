@@ -129,10 +129,61 @@
     if (!raw) return '';
     let text = String(raw).replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
     text = text.replace(/^[`#>*_\-\s]+/, '').trim();
+
+    // Görsel etiketlerini (<image ...> veya [Image #1]) tespit et ve temizle
+    const hasImage = /<image[^>]*>|\[Image\s*#?\d*\]/i.test(text);
+    text = text.replace(/<image[^>]*>/gi, ' ').replace(/\[Image\s*#?\d*\]/gi, ' ').replace(/\s+/g, ' ').trim();
+
+    // Web URL formatı: https://avenox.io/slaytlar/...
+    if (/^https?:\/\//i.test(text)) {
+      try {
+        const u = new URL(text.split(/\s+/)[0]);
+        const domain = u.hostname.replace(/^www\./, '');
+        const p = u.pathname.replace(/\/+$/, '');
+        return ('🌐 ' + domain + (p && p !== '/' ? p.slice(0, 24) : '')).slice(0, 48);
+      } catch (_uErr) {
+        return text.slice(0, 48);
+      }
+    }
+
+    // Yerel dosya URL'si: file:///C:/Users/...
+    if (/^file:\/\/\//i.test(text)) {
+      try {
+        const cleanPath = decodeURIComponent(text.replace(/^file:\/\/\/?/i, ''));
+        const parts = cleanPath.split(/[\\/]/).filter(Boolean);
+        const last = parts[parts.length - 1] || 'Dosya';
+        return ('📄 ' + last).slice(0, 48);
+      } catch (_fErr) {
+        return text.slice(0, 48);
+      }
+    }
+
+    // Terminal echo komutu: echo "claude online"
+    if (/^echo\s+["']?([^"']+)["']?/i.test(text)) {
+      text = text.replace(/^echo\s+["']?([^"']+)["']?/i, '$1').trim();
+    }
+
+    // Windows/Unix dizin yolu ile başlıyorsa: C:\Users\...
+    if (/^[A-Za-z]:[\\/]/.test(text)) {
+      const parts = text.split(/\s+/)[0].split(/[\\/]/).filter(Boolean);
+      const last = parts[parts.length - 1] || 'Dizin';
+      return ('📂 ' + last).slice(0, 48);
+    }
+
+    // Kibarlık ve gürültü kelimeleri
     const noise = /^(lütfen\s+|bana\s+|acaba\s+|merhaba[,!\s]*|selam[,!\s]*|hey[,!\s]*|hi[,!\s]*|hello[,!\s]*|please\s+|can you\s+|could you\s+|how to\s+|yardımcı olur musun[,?\s]*)+/i;
     while (noise.test(text)) {
       text = text.replace(noise, '').trim();
     }
+
+    // Eğer istem sadece görselden ibaret idiyse:
+    if (!text && hasImage) {
+      return '🖼️ Görsel İnceleme';
+    }
+    if (hasImage && text) {
+      text = '🖼️ ' + text;
+    }
+
     if (text.length > 0) {
       text = text.charAt(0).toLocaleUpperCase('tr-TR') + text.slice(1);
     }
@@ -458,72 +509,847 @@
     runView = { rec, steps, t0: rec.t0 || Date.now(), done: false, term: true };
     renderRunCard();
   }
-  // ---------- Ajan Operasyon Çekmecesi (hafif; 3D yok) ----------
+  // ---------- Ajan Operasyon Panosu: canlı HUD (olay akışı, detay, dosyalar, görevler) ----------
   const DRAWER_AGENTS = [
-    { id: 'agy', dot: '🔵', name: 'Antigravity', role: 'Sistem Mimarisi & Koordinasyon' },
-    { id: 'claude', dot: '🟠', name: 'Claude Code', role: 'Ağır Kodlama, Test & Refactor' },
-    { id: 'codex', dot: '🔴', name: 'Codex CLI', role: 'Statik Güvenlik & Red-Team Denetimi' },
-    { id: 'opencode', dot: '⚫', name: 'OpenCode', role: 'Toplu Veri Motoru & ETL' },
-    { id: 'commandcode', dot: ObsSkins.BADGES.commandcode.symbol, name: ObsSkins.BADGES.commandcode.name, role: t('team.siyah') }
+    { id: 'agy', dot: '🔵', color: '#4c8dff', name: 'Antigravity', role: 'Sistem Mimarisi & Koordinasyon', aliases: ['agy', 'antigravity'] },
+    { id: 'claude', dot: '🟠', color: '#ff8a3d', name: 'Claude Code', role: 'Ağır Kodlama, Test & Refactor', aliases: ['claude'] },
+    { id: 'codex', dot: '🔴', color: '#ef5350', name: 'Codex CLI', role: 'Statik Güvenlik & Red-Team Denetimi', aliases: ['codex'] },
+    { id: 'opencode', dot: '⚫', color: '#8b949e', name: 'OpenCode', role: 'Toplu Veri Motoru & ETL', aliases: ['opencode'] },
+    { id: 'commandcode', dot: ObsSkins.BADGES.commandcode.symbol, color: '#a371f7', name: ObsSkins.BADGES.commandcode.name, role: t('team.siyah'), aliases: ['commandcode'] }
   ];
+  const HUD_AGENT_IDS = ['claude', 'codex', 'opencode', 'agy'];
+  const HUD_PANELS = { stream: '#hudStream', detail: '#hudDetail', files: '#hudFiles', tasks: '#hudTasks' };
+  const HUD_STATUS_RANK = { running: 0, pending: 1 };
   let officeActive = false;
+  let officeFullscreen = false;
   let office = null;
+  let serverTasks = [];
+  let serverTasksLastFetch = 0;
+  let serverTasksLoading = false;
+  let drawerTimer = 0;
+  let currentHudTab = 'stream';
+  let currentHudAgent = '';
+  let hudEvents = [];
+  let hudHistoryAt = 0;
+  let hudHistoryLoading = false;
+  const hudSeen = new Set();
+  const hudTaskCache = new Map();
+  const hudSigs = { pills: '', stream: '', detail: '', files: '', tasks: '' };
+  const hudDataCache = { at: -1, tasks: [], moves: [] };
+  const taskNormCache = new WeakMap();
+  const taskCwdCache = new WeakMap();
+  let hudChatsAt = 0;
+  let hudChats = [];
+
+  async function syncServerTasks(force) {
+    const now = Date.now();
+    if (serverTasksLoading) return serverTasks;
+    if (!force && now - serverTasksLastFetch < 2000 && serverTasks.length) return serverTasks;
+    serverTasksLoading = true;
+    try {
+      const res = await fetch('/tasks?limit=100');
+      if (res.ok) {
+        const rows = await res.json();
+        serverTasks = Array.isArray(rows) ? rows : [];
+        serverTasksLastFetch = Date.now();
+      }
+    } catch (_err) {
+      // Çevrimdışı ya da bağlantı koptuğunda önceki görev dizisi korunur
+      return serverTasks;
+    } finally {
+      serverTasksLoading = false;
+    }
+    return serverTasks;
+  }
+
   function officeSim() { // tuval yalnızca bir kez bağlanır; olaylar panel kapalıyken de durumu günceller
     if (office || !window.ObsOffice) return office;
     const cv = $('#officeCanvas'); if (!cv) return null;
     office = ObsOffice.mount(cv, (id) => {
-      const idx = DRAWER_AGENTS.findIndex((a) => a.id === id);
-      const cards = $('#agentCards') ? $('#agentCards').children : [];
-      Array.prototype.forEach.call(cards, (c, i) => c.classList.toggle('pick', i === idx));
-      if (cards[idx]) cards[idx].scrollIntoView({ block: 'nearest' });
+      focusHudAgent(id);
+      const pill = Array.prototype.find.call(document.querySelectorAll('#agentPills .agent-pill'), (p) => p.dataset.agent === id);
+      if (pill) pill.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     });
     return office;
   }
-  let drawerTimer = 0;
-  function agentInfo(id, chats) {
-    let last = null; let tin = 0; let tout = 0; let active = false;
-    chats.forEach((c) => c.messages.forEach((m) => {
-      if (m.r !== 'b' || m.engine !== id) return;
-      if (m.meta) { tin += m.meta.tin || 0; tout += m.meta.tout || 0; }
-      if (!last || c.updated >= last.at) last = { at: c.updated, m };
-    }));
-    views.forEach((v) => { if (!v.done && v.rec.engine === id) { active = true; tin += v.tin || 0; tout += v.tout || 0; } });
-    let task = '—'; let cwd = '—'; let status = 'idle';
-    if (last) {
-      const m = last.m;
-      const tools = (m.parts || []).filter((p) => p.k === 'tool');
-      const tl = tools[tools.length - 1];
-      task = tl ? (tl.name + ' ' + (tl.summary || '')).trim() : (m.prompt || '—');
-      cwd = m.cwd || '—';
-      if (m.notice && !m.notice.warn && m.notice.key !== 'notice.cancelled') status = 'failed';
+  function humanizeTool(name, input) {
+    if (!name) return '—';
+    const n = String(name).trim();
+    const inp = input && typeof input === 'object' ? input : {};
+    const lower = n.toLowerCase();
+
+    // Chrome / Browser MCP
+    if (lower.includes('chrome') || lower.includes('browser') || lower.includes('playwright')) {
+      if (lower.includes('batch')) return '🌐 Tarayıcı: Çoklu Sayfa Analizi';
+      if (lower.includes('click')) return '🌐 Tarayıcı: Tıklama / Etkileşim';
+      if (lower.includes('navigate') || lower.includes('open')) return `🌐 Web Gezintisi: ${inp.url || ''}`.trim();
+      if (lower.includes('screenshot') || lower.includes('snapshot')) return '📸 Tarayıcı Ekran Görüntüsü';
+      return '🌐 Tarayıcı Denetimi';
     }
-    if (active) status = 'active';
-    return { task: String(task).slice(0, 120), cwd, status, tin, tout };
+
+    // Dosya okuma / inceleme
+    if (lower === 'read' || lower === 'read_file' || lower === 'cat') {
+      const file = inp.file_path || inp.path || inp.filePath || '';
+      const base = file ? file.split(/[\\/]/).pop() : '';
+      return base ? `📖 Dosya Okunuyor: ${base}` : '📖 Dosya Okunuyor';
+    }
+
+    // Dosya yazma / düzenleme
+    if (lower === 'edit' || lower === 'write' || lower === 'edit_file' || lower === 'write_file' || lower === 'multiedit') {
+      const file = inp.file_path || inp.path || inp.filePath || '';
+      const base = file ? file.split(/[\\/]/).pop() : '';
+      return base ? `✏️ Düzenleniyor: ${base}` : '✏️ Kod Düzenleniyor';
+    }
+
+    // Terminal / Komut çalıştırma
+    if (/bash|powershell|shell|command|exec|run_command/i.test(lower)) {
+      const cmd = inp.command || inp.cmd || inp.CommandLine || '';
+      const cleanCmd = Array.isArray(cmd) ? cmd.join(' ') : String(cmd);
+      if (/git\s+/i.test(cleanCmd)) return `🐙 Git Komutu: ${cleanCmd.slice(0, 36)}`;
+      if (/npm\s+test|pytest|test/i.test(cleanCmd)) return `🧪 Test Koşuluyor: ${cleanCmd.slice(0, 36)}`;
+      if (/npm\s+run|cargo|build/i.test(cleanCmd)) return `🔨 Derleme: ${cleanCmd.slice(0, 36)}`;
+      return cleanCmd ? `💻 Terminal: ${cleanCmd.slice(0, 36)}` : '💻 Terminal Komutu';
+    }
+
+    // Dosya arama (glob)
+    if (lower === 'glob' || lower.includes('find_by_name')) {
+      const pat = inp.pattern || inp.query || '';
+      const base = pat ? pat.split(/[\\/]/).pop() : '';
+      return base ? `📂 Dosya Arama: ${base}` : '📂 Dizin Taraması';
+    }
+
+    // Kod / İçerik arama (grep)
+    if (lower === 'grep' || lower.includes('search')) {
+      const pat = inp.pattern || inp.query || '';
+      return pat ? `🔎 Kod Arama: "${pat.slice(0, 30)}"` : '🔎 Kod Arama';
+    }
+
+    // Alt ajan (subagent)
+    if (lower === 'agent' || lower === 'task' || lower === 'invoke_subagent') {
+      const desc = inp.description || inp.prompt || inp.Role || '';
+      return desc ? `🤖 Alt Ajan: ${desc.slice(0, 35)}` : '🤖 Alt Ajan Başlatıldı';
+    }
+
+    // Temiz fallback
+    const prettyName = n.replace(/^mcp__/, '').replace(/_/g, ' ');
+    return `⚡ Araç: ${prettyName.slice(0, 40)}`;
+  }
+
+  function shortAgentName(def) {
+    return String(def.name || def.id || 'Ajan').replace(/ Code$/, '').replace(/ CLI$/, '');
+  }
+  function agentDefFor(agentId) {
+    const id = String(agentId || '').toLowerCase();
+    return DRAWER_AGENTS.find((d) => d.id === id || (d.aliases || []).includes(id)) ||
+      { id: id || '?', dot: '⚪', color: '#8b949e', name: agentId || 'Ajan', role: '', aliases: [id] };
+  }
+  const agentAliases = (def) => [def.id].concat(def.aliases || []);
+  function agentById(id) { return DRAWER_AGENTS.find((d) => d.id === id) || null; }
+
+  function toMs(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return n < 1e12 ? Math.round(n * 1000) : n;
+  }
+  function toTools(raw) {
+    let rows = raw;
+    if (typeof rows === 'string') { try { rows = JSON.parse(rows); } catch { rows = []; } }
+    if (!Array.isArray(rows)) return [];
+    return rows.map((x, i) => {
+      let input = x && x.input;
+      if (typeof input === 'string') { try { input = JSON.parse(input); } catch { input = { text: input }; } }
+      if (!input || typeof input !== 'object') input = {};
+      return {
+        id: String((x && (x.id ?? x.toolUseId ?? x.tool_use_id)) ?? i),
+        name: String((x && (x.name ?? x.tool)) || 'tool'),
+        input,
+        at: toMs(x && (x.timestamp ?? x.at)),
+        output: String((x && (x.output ?? x.result)) || '')
+      };
+    }).filter((x) => x.name);
+  }
+  function normTask(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const cached = taskNormCache.get(raw);
+    if (cached) return cached;
+    const usage = raw.usage && typeof raw.usage === 'object' ? raw.usage : {};
+    const start = toMs(raw.startTime ?? raw.start_time ?? raw.start);
+    const end = toMs(raw.endTime ?? raw.end_time ?? raw.end);
+    const task = {
+      id: String(raw.taskId ?? raw.task_id ?? raw.id ?? ''),
+      sessionId: String(raw.sessionId ?? raw.session_id ?? ''),
+      agent: String(raw.agent || '').toLowerCase(),
+      status: String(raw.status || 'unknown').toLowerCase(),
+      prompt: String(raw.prompt || ''),
+      model: String(raw.model || ''),
+      cwd: String(raw.cwd ?? raw.workingDir ?? raw.working_dir ?? ''),
+      start,
+      end,
+      duration: Number(raw.durationMs ?? raw.duration_ms ?? 0) || (end && start ? end - start : 0),
+      tools: toTools(raw.toolsUsed ?? raw.tools ?? raw.tools_json ?? raw.toolsJson),
+      assistantText: String(raw.assistantText ?? raw.assistant_text ?? ''),
+      tokensIn: Number(usage.inputTokens ?? usage.input_tokens ?? raw.input_tokens ?? 0) || 0,
+      tokensOut: Number(usage.outputTokens ?? usage.output_tokens ?? raw.output_tokens ?? 0) || 0,
+      error: String(raw.error || '')
+    };
+    taskNormCache.set(raw, task);
+    return task;
+  }
+  function hudTaskList() {
+    return serverTasks.map(normTask).filter(Boolean).sort((a, b) => {
+      const ra = HUD_STATUS_RANK[a.status] ?? 2, rb = HUD_STATUS_RANK[b.status] ?? 2;
+      return ra !== rb ? ra - rb : b.start - a.start;
+    });
+  }
+  /** Sunucu görevleri değişmedikçe pahalı taramaları (görev + dosya hareketi) yeniden yapmaz. */
+  function hudData() {
+    if (hudDataCache.at === serverTasksLastFetch) return hudDataCache;
+    const tasks = hudTaskList();
+    hudDataCache.at = serverTasksLastFetch;
+    hudDataCache.tasks = tasks;
+    hudDataCache.moves = collectFileMoves(tasks);
+    return hudDataCache;
+  }
+
+  function clipText(text, max) {
+    const s = String(text || '');
+    return s.length > max ? s.slice(0, Math.max(0, max - 1)) + '…' : s;
+  }
+  function firstLine(text, max) {
+    return clipText(String(text || '').split(/\r?\n/).find((l) => l.trim()) || '', max || 160);
+  }
+  function splitPath(full) {
+    const parts = String(full || '').replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean);
+    const name = parts.pop() || String(full || '');
+    return { name, dir: parts.join(' / ') };
+  }
+  function dirOf(full) {
+    const s = String(full || '');
+    const i = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'));
+    return i > 2 ? s.slice(0, i) : '';
+  }
+  function hudClock(ts) {
+    const d = new Date(Number(ts) || Date.now());
+    const now = new Date();
+    const same = d.toDateString() === now.toDateString();
+    const time = d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return same ? time : d.toLocaleDateString(locale(), { day: '2-digit', month: 'short' }) + ' ' + time.slice(0, 5);
+  }
+  function hudWhen(ts) {
+    if (!ts) return '—';
+    return when(ts);
+  }
+  function prettyJson(value) {
+    try { return clipText(JSON.stringify(value, null, 2), 2400); } catch { return clipText(String(value), 2400); }
+  }
+
+  function filePathsOf(tool) {
+    const inp = tool && tool.input && typeof tool.input === 'object' ? tool.input : {};
+    const out = [];
+    const push = (v) => {
+      if (typeof v !== 'string') return;
+      const s = v.trim();
+      if (!s || out.includes(s)) return;
+      if (/^(https?|data):/i.test(s)) return;
+      out.push(s);
+    };
+    ['file_path', 'filePath', 'path', 'Path', 'file', 'filename', 'target_file', 'target', 'absolute_path', 'notebook_path', 'uri'].forEach((k) => push(inp[k]));
+    if (inp.file && typeof inp.file === 'object') { push(inp.file.path); push(inp.file.file_path); }
+    ['files', 'edits', 'patches'].forEach((k) => {
+      if (!Array.isArray(inp[k])) return;
+      inp[k].forEach((x) => {
+        if (typeof x === 'string') push(x);
+        else if (x && typeof x === 'object') { push(x.path); push(x.file_path); push(x.filePath); }
+      });
+    });
+    const text = String(inp.patch || inp.diff || '');
+    if (text) {
+      const re = /^\+\+\+\s+(?:b\/)?(.+)$/gm;
+      let m;
+      while ((m = re.exec(text))) {
+        const p = m[1].trim();
+        if (p && p !== '/dev/null') push(p.replace(/^b\//, ''));
+      }
+    }
+    return out;
+  }
+  function fileActionOf(tool) {
+    const n = String((tool && tool.name) || '').toLowerCase();
+    if (/write|edit|patch|apply|create|replace|delete|move|mkdir|notebookedit|multiedit|str_replace/.test(n)) return 'write';
+    if (/read|cat|view|grep|glob|search|find|list|open|lookup|fetch/.test(n)) return 'read';
+    const inp = (tool && tool.input) || {};
+    if ('old_string' in inp || 'new_string' in inp || 'content' in inp || 'edits' in inp) return 'write';
+    return 'read';
+  }
+  function collectFileMoves(tasks) {
+    const map = new Map();
+    (tasks || []).forEach((task) => {
+      const def = agentDefFor(task.agent);
+      task.tools.forEach((tool) => {
+        const at = tool.at || task.start;
+        const action = fileActionOf(tool);
+        filePathsOf(tool).forEach((p) => {
+          const key = action + '\u0000' + p;
+          const prev = map.get(key);
+          if (prev) {
+            prev.count += 1;
+            if (at >= prev.at) { prev.at = at; prev.task = task; prev.agent = def; }
+          } else {
+            map.set(key, { path: p, action, at, task, agent: def, count: 1 });
+          }
+        });
+      });
+    });
+    return [...map.values()].sort((a, b) => b.at - a.at);
+  }
+  function taskCwd(task) {
+    if (!task) return '';
+    const cached = taskCwdCache.get(task);
+    if (cached !== undefined) return cached;
+    let found = task.cwd || '';
+    if (!found) {
+      for (let i = task.tools.length - 1; i >= 0; i--) {
+        const paths = filePathsOf(task.tools[i]);
+        if (paths.length && /[\\/]/.test(paths[0])) { found = dirOf(paths[0]); break; }
+      }
+    }
+    if (!found) {
+      const now = Date.now();
+      if (now - hudChatsAt > 3000) {
+        hudChatsAt = now;
+        try { hudChats = ObsStore.list(); } catch { hudChats = []; }
+      }
+      for (const c of hudChats) {
+        if (task.sessionId && c.session && String(c.session.id) === task.sessionId && c.session.cwd) { found = c.session.cwd; break; }
+        for (const m of (c.messages || [])) {
+          if (!m.cwd) continue;
+          if (m.taskId && String(m.taskId) === task.id) { found = m.cwd; break; }
+        }
+        if (found) break;
+      }
+    }
+    if (!found) {
+      const e = st.cfg && engineById(st.engine);
+      if (e && agentAliases(agentDefFor(e.id)).includes(task.agent) && st.cwd) found = st.cwd;
+    }
+    taskCwdCache.set(task, found);
+    return found;
+  }
+  function agentSnapshot(def) {
+    const aliases = agentAliases(def);
+    const tasks = hudData().tasks.filter((t) => aliases.includes(t.agent));
+    const ordered = [...tasks].sort((a, b) => b.start - a.start);
+    const active = tasks.find((t) => t.status === 'running' || t.status === 'pending') || null;
+    const last = active || ordered[0] || null;
+    const lastTool = last && last.tools.length ? last.tools[last.tools.length - 1] : null;
+    let status = 'idle'; let statusText = 'Boşta';
+    if (active) { status = active.status === 'running' ? 'active' : 'queued'; statusText = active.status === 'running' ? 'Çalışıyor' : 'Sırada'; }
+    else if (last && last.status === 'failed') { status = 'failed'; statusText = 'Hatalı'; }
+    else if (last && last.status === 'cancelled') { status = 'idle'; statusText = 'İptal'; }
+    else if (last && last.status === 'completed') { status = 'idle'; statusText = 'Hazır'; }
+    const action = lastTool ? humanizeTool(lastTool.name, lastTool.input) : (last && last.prompt ? smartTitle(last.prompt) : 'Henüz kayıt yok');
+    return {
+      def, tasks, ordered, active, last, lastTool, status, statusText, action,
+      cwd: taskCwd(last),
+      tin: tasks.reduce((n, t) => n + t.tokensIn, 0),
+      tout: tasks.reduce((n, t) => n + t.tokensOut, 0),
+      updated: active ? Date.now() : last ? (last.end || last.start) : 0
+    };
+  }
+  function ensureHudAgent() {
+    if (currentHudAgent && agentById(currentHudAgent)) return currentHudAgent;
+    const snaps = HUD_AGENT_IDS.map((id) => agentSnapshot(agentDefFor(id)));
+    const live = snaps.find((s) => s.status === 'active' || s.status === 'queued');
+    const recent = snaps.filter((s) => s.last).sort((a, b) => b.updated - a.updated)[0];
+    currentHudAgent = (live || recent || snaps[0]).def.id;
+    return currentHudAgent;
+  }
+  function focusHudAgent(id) {
+    currentHudAgent = agentDefFor(id).id;
+    currentHudTab = 'detail';
+    lsSet('obs-hud-tab', currentHudTab);
+    if (officeActive) renderDrawer();
+  }
+  function switchHudTab(tab) {
+    currentHudTab = HUD_PANELS[tab] ? tab : 'stream';
+    lsSet('obs-hud-tab', currentHudTab);
+    if (officeActive) renderDrawer();
+  }
+  function initHud() {
+    document.querySelectorAll('#hudTabs .hud-tab').forEach((b) => { b.onclick = () => switchHudTab(b.dataset.hudTab); });
+    const saved = lsGet('obs-hud-tab');
+    if (saved && HUD_PANELS[saved]) currentHudTab = saved;
+    syncHudTabs();
+  }
+  function syncHudTabs() {
+    document.querySelectorAll('#hudTabs .hud-tab').forEach((b) => {
+      const on = b.dataset.hudTab === currentHudTab;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', String(on));
+    });
+    Object.keys(HUD_PANELS).forEach((k) => {
+      const p = $(HUD_PANELS[k]);
+      if (!p) return;
+      const on = k === currentHudTab;
+      p.hidden = !on;
+      p.classList.toggle('active', on);
+    });
+  }
+
+  // ---------- olay / kanca akışı ----------
+  function eventHookOf(type) {
+    const map = {
+      'task.started': 'TaskStarted', 'turn.started': 'TurnStarted',
+      'tool.invoked': 'PreToolUse', 'tool.completed': 'PostToolUse',
+      'tool.blocked': 'ToolBlocked', 'permission.requested': 'PermissionRequest',
+      'permission.resolved': 'PermissionResolved', 'task.completed': 'TaskCompleted',
+      'task.failed': 'TaskFailed', 'task.cancelled': 'TaskCancelled'
+    };
+    return map[type] || type || 'Event';
+  }
+  function eventToneOf(type, data) {
+    if (type === 'task.failed' || type === 'tool.blocked') return 'err';
+    if (type === 'tool.completed') return (data && (data.isError || data.error || (data.exitCode !== undefined && Number(data.exitCode) !== 0))) ? 'err' : 'post';
+    if (type === 'permission.requested') return 'ask';
+    if (type === 'permission.resolved') {
+      const denied = data && (data.allowed === false || data.approved === false || /deny|denied|reject|block/i.test(String(data.decision || data.outcome || '')));
+      return denied ? 'warn' : 'ok';
+    }
+    if (type === 'task.completed') return 'ok';
+    if (type === 'task.cancelled') return 'warn';
+    if (type === 'tool.invoked') return 'pre';
+    return 'start';
+  }
+  function normalizeHudEvent(raw) {
+    if (!raw || !raw.type) return null;
+    const type = String(raw.type);
+    if (type === 'message.delta' || type === 'usage.updated') return null;
+    const data = raw.data && typeof raw.data === 'object' ? raw.data : {};
+    const agent = String(raw.agent || '').toLowerCase();
+    const taskId = String(raw.taskId || '');
+    const ts = toMs(raw.timestamp) || Date.now();
+    let summary = ''; let meta = '';
+    if (type === 'tool.invoked') {
+      const name = data.name || data.tool || 'Araç';
+      summary = humanizeTool(name, data.input);
+      meta = [name, filePathsOf({ name, input: data.input || {} }).map((p) => splitPath(p).name)[0] || ''].filter(Boolean).join(' · ');
+    } else if (type === 'tool.completed') {
+      const name = data.name || 'Araç';
+      const bad = data.isError || data.error || (data.exitCode !== undefined && Number(data.exitCode) !== 0);
+      summary = bad ? 'Araç hatası: ' + name : name + ' tamamlandı';
+      meta = firstLine(data.output || data.result || data.error || '', 120);
+    } else if (type === 'tool.blocked') {
+      summary = data.name ? data.name + ' engellendi' : 'Araç engellendi';
+      meta = firstLine(data.reason || data.error || '', 120);
+    } else if (type === 'task.started') {
+      summary = smartTitle(data.prompt || '') || 'Görev başladı';
+      meta = [data.model ? String(data.model) : '', data.cwd ? String(data.cwd) : ''].filter(Boolean).join(' · ');
+    } else if (type === 'task.completed') {
+      summary = 'Görev tamamlandı';
+      meta = firstLine(data.result || '', 140) || (data.exitCode !== undefined ? 'Çıkış kodu: ' + data.exitCode : '');
+    } else if (type === 'task.failed') {
+      summary = 'Görev başarısız';
+      meta = firstLine(data.error || data.reason || '', 160);
+    } else if (type === 'task.cancelled') {
+      summary = 'Görev iptal edildi';
+      meta = firstLine(data.reason || '', 120);
+    } else if (type === 'permission.requested') {
+      summary = humanizeTool(data.tool || 'Onay', data.input) || 'Onay isteniyor';
+      meta = firstLine(data.summary || data.command || data.description || '', 120) || 'Onay bekliyor';
+    } else if (type === 'permission.resolved') {
+      const approved = !(data.allowed === false || data.approved === false || /deny|denied|reject|block/i.test(String(data.decision || data.outcome || '')));
+      summary = approved ? 'Onay verildi' : 'Onay reddedildi';
+      meta = data.tool ? String(data.tool) : '';
+    } else if (type === 'turn.started') {
+      summary = 'Yeni tur başladı'; meta = data.model ? String(data.model) : '';
+    } else {
+      summary = type; meta = '';
+    }
+    const key = raw.id ? String(raw.id) : [taskId, type, ts, agent, summary].join('|');
+    return { key, id: raw.id ? String(raw.id) : '', taskId, agent, type, ts, hook: eventHookOf(type), tone: eventToneOf(type, data), summary, meta, data };
+  }
+  function pushHudEvent(raw) {
+    const ev = normalizeHudEvent(raw);
+    if (!ev || hudSeen.has(ev.key)) return;
+    hudSeen.add(ev.key);
+    hudEvents.unshift(ev);
+    if (hudEvents.length > 260) hudEvents.length = 260;
+  }
+  function synthesizeHudEvents() {
+    const rows = [];
+    hudTaskList().slice(0, 40).forEach((task) => {
+      rows.push({ id: 'syn:start:' + task.id, taskId: task.id, agent: task.agent, type: 'task.started', timestamp: task.start, data: { prompt: task.prompt, model: task.model } });
+      task.tools.forEach((tool, i) => rows.push({ id: 'syn:tool:' + task.id + ':' + i, taskId: task.id, agent: task.agent, type: 'tool.invoked', timestamp: tool.at || task.start, data: { name: tool.name, input: tool.input } }));
+      if (task.status === 'completed') rows.push({ id: 'syn:end:' + task.id, taskId: task.id, agent: task.agent, type: 'task.completed', timestamp: task.end || task.start, data: {} });
+      else if (task.status === 'failed') rows.push({ id: 'syn:err:' + task.id, taskId: task.id, agent: task.agent, type: 'task.failed', timestamp: task.end || task.start, data: { error: task.error } });
+      else if (task.status === 'cancelled') rows.push({ id: 'syn:cancel:' + task.id, taskId: task.id, agent: task.agent, type: 'task.cancelled', timestamp: task.end || task.start, data: {} });
+    });
+    rows.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)).forEach(pushHudEvent);
+  }
+  async function hydrateHudEvents(force) {
+    const now = Date.now();
+    if (hudHistoryLoading || (!force && now - hudHistoryAt < 15000)) return;
+    hudHistoryLoading = true;
+    try {
+      let last = 0;
+      const h = await fetch('/health');
+      if (h.ok) {
+        try { const j = await h.json(); last = Number(j.lastSeq) || 0; } catch { /* gövde yok */ }
+        const since = Math.max(0, last - 700);
+        const res = await fetch('/events?since=' + since);
+        if (res.ok) {
+          const rows = await res.json();
+          if (Array.isArray(rows) && rows.length) {
+            hudEvents = hudEvents.filter((e) => !e.key.startsWith('syn:'));
+            rows.slice(-500).forEach(pushHudEvent);
+          }
+        }
+      }
+      if (!hudEvents.length) synthesizeHudEvents();
+      hudHistoryAt = Date.now();
+    } catch { /* çevrimdışı: canlı SSE akışı yeterli */ }
+    finally { hudHistoryLoading = false; }
+    if (officeActive) renderDrawer();
+  }
+  function ensureTaskDetail(taskId, live) {
+    if (!taskId) return null;
+    const now = Date.now();
+    const cached = hudTaskCache.get(taskId);
+    if (cached && (cached.loading || (!live && !cached.error) || now - cached.at < 4000)) return cached;
+    const entry = { loading: true, at: now, events: cached ? cached.events : [], error: false };
+    hudTaskCache.set(taskId, entry);
+    fetch('/tasks/' + encodeURIComponent(taskId))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!j) throw new Error('task detail');
+        hudTaskCache.set(taskId, { loading: false, at: Date.now(), events: Array.isArray(j.events) ? j.events : [], error: false });
+        if (officeActive) scheduleDrawer();
+      })
+      .catch(() => {
+        hudTaskCache.set(taskId, { loading: false, at: Date.now(), events: cached ? cached.events : [], error: true });
+        if (officeActive) scheduleDrawer();
+      });
+    return entry;
+  }
+  function toolResult(task, tool) {
+    if (!task || !tool) return { output: '', error: false, waiting: false };
+    const detail = hudTaskCache.get(task.id);
+    const raw = (detail && detail.events) ? detail.events : [];
+    const comps = raw.filter((e) => e && e.type === 'tool.completed');
+    let hit = null;
+    if (tool.id) hit = comps.find((e) => e.data && String(e.data.toolUseId ?? e.data.id ?? '') === String(tool.id)) || null;
+    if (!hit && tool.at) hit = comps.find((e) => toMs(e.timestamp) >= tool.at) || null;
+    if (!hit && tool.name) {
+      for (let i = comps.length - 1; i >= 0; i--) {
+        if (String((comps[i].data || {}).name || '').toLowerCase() === tool.name.toLowerCase()) { hit = comps[i]; break; }
+      }
+    }
+    if (!hit && tool.id) {
+      hit = hudEvents.find((e) => e.type === 'tool.completed' && e.taskId === task.id &&
+        String((e.data || {}).toolUseId ?? (e.data || {}).id ?? '') === String(tool.id)) || null;
+    }
+    if (!hit && tool.name) {
+      hit = hudEvents.find((e) => e.type === 'tool.completed' && e.taskId === task.id &&
+        String((e.data || {}).name || '').toLowerCase() === tool.name.toLowerCase()) || null;
+    }
+    const d = (hit && hit.data) ? hit.data : {};
+    const output = String(d.output ?? d.result ?? tool.output ?? '');
+    return {
+      output,
+      error: !!(d.isError || d.error || (d.exitCode !== undefined && Number(d.exitCode) !== 0)),
+      waiting: task.status === 'running' && !hit && !output
+    };
+  }
+
+  // ---------- HUD çizimi ----------
+  function hudEmpty(icon, title, desc) {
+    const box = el('div', 'hud-empty');
+    box.append(el('div', 'hud-empty-ico', icon), el('div', 'hud-empty-title', title), el('div', 'hud-empty-desc', desc));
+    return box;
+  }
+  function statusChip(status) {
+    const map = {
+      running: ['running', 'Çalışıyor'], pending: ['queued', 'Sırada'], completed: ['ok', 'Tamamlandı'],
+      failed: ['err', 'Hatalı'], cancelled: ['warn', 'İptal'], unknown: ['idle', 'Bilinmiyor']
+    };
+    const m = map[status] || map.unknown;
+    return el('span', 'hud-chip ' + m[0], m[1]);
+  }
+  function updateHudTabCounts() {
+    const data = hudData();
+    const running = data.tasks.filter((x) => x.status === 'running' || x.status === 'pending').length;
+    const stream = $('#tabStreamCount'); if (stream) stream.textContent = hudEvents.length ? String(Math.min(hudEvents.length, 999)) : '';
+    const files = $('#tabFilesCount'); if (files) files.textContent = data.moves.length ? String(data.moves.length) : '';
+    const tasks = $('#tabTasksCount'); if (tasks) tasks.textContent = data.tasks.length ? (running ? running + '/' + data.tasks.length : String(data.tasks.length)) : '';
+  }
+  function renderAgentPills() {
+    const box = $('#agentPills'); if (!box) return;
+    const rows = HUD_AGENT_IDS.map((id) => { const def = agentDefFor(id); return { def, snap: agentSnapshot(def) }; });
+    const sig = rows.map((r) => [r.def.id, r.snap.status, r.snap.statusText, r.snap.action, r.snap.cwd].join('~')).join('|') + '#' + currentHudAgent;
+    if (hudSigs.pills === sig && box.childElementCount) return;
+    hudSigs.pills = sig;
+    const frag = document.createDocumentFragment();
+    rows.forEach(({ def, snap }) => {
+      const pill = el('button', 'agent-pill ' + snap.status + (currentHudAgent === def.id ? ' on' : ''));
+      pill.type = 'button'; pill.dataset.agent = def.id; pill.setAttribute('role', 'tab');
+      pill.setAttribute('aria-selected', String(currentHudAgent === def.id));
+      pill.style.setProperty('--c', def.color);
+      pill.title = def.name + ' · ' + snap.action + (snap.cwd ? '\n' + snap.cwd : '');
+      const dot = el('span', 'pill-dot');
+      const body = el('span', 'pill-body');
+      body.append(el('span', 'pill-name', shortAgentName(def)), el('span', 'pill-action', snap.action || '—'));
+      const state = el('span', 'pill-state', snap.status === 'active' ? 'CANLI' : snap.status === 'failed' ? 'HATA' : snap.status === 'queued' ? 'SIRA' : 'BOŞTA');
+      pill.append(dot, body, state);
+      pill.onclick = () => focusHudAgent(def.id);
+      frag.appendChild(pill);
+    });
+    box.replaceChildren(frag);
+  }
+  function hudEventRow(ev) {
+    const def = agentDefFor(ev.agent);
+    const row = el('button', 'hud-event-row tone-' + ev.tone);
+    row.type = 'button';
+    row.dataset.agent = ev.agent;
+    const time = el('span', 'ev-time', hudClock(ev.ts));
+    time.title = new Date(ev.ts).toLocaleString(locale());
+    const who = el('span', 'ev-agent');
+    who.style.setProperty('--c', def.color);
+    who.append(el('span', 'ev-dot'), el('span', 'ev-agent-name', shortAgentName(def)));
+    const hook = el('span', 'ev-hook ' + ev.tone, ev.hook);
+    const body = el('span', 'ev-body');
+    body.append(el('span', 'ev-sum', ev.summary || ev.type));
+    if (ev.meta) body.append(el('span', 'ev-meta', ev.meta));
+    row.append(time, who, hook, body);
+    row.title = [def.name, ev.hook, ev.summary, ev.meta].filter(Boolean).join('\n');
+    row.onclick = () => focusHudAgent(def.id);
+    return row;
+  }
+  function renderHudStream() {
+    const panel = $('#hudStream'); if (!panel) return;
+    if (!hudHistoryAt && !hudHistoryLoading) hydrateHudEvents();
+    if (!hudEvents.length) synthesizeHudEvents();
+    const sig = [hudEvents.length, hudEvents[0] ? hudEvents[0].key : '', currentHudAgent].join('|');
+    if (hudSigs.stream === sig && panel.childElementCount) return;
+    hudSigs.stream = sig;
+    const keep = panel.scrollTop;
+    panel.replaceChildren();
+    const head = el('div', 'hud-section-head');
+    const left = el('div', 'hud-section-title');
+    left.append(el('span', 'hud-live-dot'), document.createTextNode('Canlı kanca akışı'));
+    head.append(left, el('span', 'hud-section-note', hudEvents.length ? hudEvents.length + ' olay · en yeni üstte' : ''));
+    panel.appendChild(head);
+    if (!hudEvents.length) {
+      panel.appendChild(hudEmpty('⚡', 'Henüz kanca olayı yok', 'Bir ajan çalıştığında PreToolUse / PostToolUse olayları burada gerçek zamanlı görünür.'));
+    } else {
+      hudEvents.slice(0, 140).forEach((ev) => panel.appendChild(hudEventRow(ev)));
+    }
+    panel.scrollTop = keep;
+  }
+  function renderHudDetail() {
+    const panel = $('#hudDetail'); if (!panel) return;
+    ensureHudAgent();
+    const def = agentDefFor(currentHudAgent);
+    const snap = agentSnapshot(def);
+    const task = snap.active || snap.last;
+    const detail = task ? ensureTaskDetail(task.id, task.status === 'running' || task.status === 'pending') : null;
+    const sig = [def.id, task ? task.id : '', task ? task.status : '', task ? task.tools.length : 0, task ? task.prompt.length : 0,
+      snap.cwd, snap.lastTool ? snap.lastTool.id + '@' + snap.lastTool.at : '', detail ? detail.at : 0, detail && detail.events ? detail.events.length : 0].join('|');
+    if (hudSigs.detail === sig && panel.childElementCount) return;
+    hudSigs.detail = sig;
+    const openIn = panel.querySelector('details.hud-in') ? panel.querySelector('details.hud-in').open : true;
+    const openOut = panel.querySelector('details.hud-out') ? panel.querySelector('details.hud-out').open : true;
+    const keep = panel.scrollTop;
+    panel.replaceChildren();
+
+    const head = el('div', 'hud-agent-head');
+    const idBox = el('div', 'hud-agent-id');
+    const dot = el('span', 'pill-dot'); dot.style.setProperty('--c', def.color);
+    const titleBox = el('div', '');
+    titleBox.append(el('div', 'hud-agent-name', def.name), el('div', 'hud-agent-role', def.role || ''));
+    idBox.append(dot, titleBox);
+    const state = el('span', 'hud-chip ' + snap.status, snap.statusText);
+    head.append(idBox, state);
+    panel.appendChild(head);
+
+    if (!task) {
+      panel.appendChild(hudEmpty('💻', 'Bu ajan için kayıt yok', 'Ajan bir görev çalıştırdığında istem, dizin ve son araç burada görünür.'));
+      panel.scrollTop = keep;
+      return;
+    }
+
+    const promptBlock = el('div', 'hud-block');
+    const promptHead = el('div', 'hud-block-head');
+    promptHead.append(el('span', 'hud-block-title', task.status === 'running' ? 'Aktif istem' : 'Son istem'), statusChip(task.status));
+    promptBlock.appendChild(promptHead);
+    promptBlock.appendChild(el('div', 'hud-prompt', clipText(task.prompt || '—', 1600)));
+    panel.appendChild(promptBlock);
+
+    const cwdBlock = el('div', 'hud-block');
+    const cwdHead = el('div', 'hud-block-head');
+    cwdHead.append(el('span', 'hud-block-title', 'Çalışma dizini'));
+    cwdBlock.appendChild(cwdHead);
+    if (snap.cwd) {
+      const cwdBtn = el('button', 'hud-cwd');
+      cwdBtn.type = 'button'; cwdBtn.title = snap.cwd + ' · kopyala';
+      const cwdText = el('span', 'hud-cwd-text', snap.cwd);
+      const cwdHint = el('span', 'hud-copy-hint', 'kopyala');
+      cwdBtn.append(el('span', 'hud-cwd-ico', '📂'), cwdText, cwdHint);
+      cwdBtn.onclick = () => copyText(snap.cwd, cwdHint);
+      cwdBlock.appendChild(cwdBtn);
+    } else {
+      cwdBlock.appendChild(el('div', 'hud-muted', 'Dizin bilgisi kayıtlı değil.'));
+    }
+    panel.appendChild(cwdBlock);
+
+    const toolBlock = el('div', 'hud-block');
+    const toolHead = el('div', 'hud-block-head');
+    toolHead.append(el('span', 'hud-block-title', 'Son araç'));
+    if (snap.lastTool) toolHead.append(el('span', 'hud-chip tool', snap.lastTool.name));
+    toolBlock.appendChild(toolHead);
+    if (snap.lastTool) {
+      const tool = snap.lastTool;
+      const res = toolResult(task, tool);
+      toolBlock.appendChild(el('div', 'hud-tool-summary', humanizeTool(tool.name, tool.input)));
+      const inDet = el('details', 'hud-in'); inDet.open = openIn;
+      inDet.appendChild(el('summary', '', 'Girdi'));
+      inDet.appendChild(el('pre', 'hud-pre', prettyJson(tool.input || {})));
+      const outDet = el('details', 'hud-out'); outDet.open = openOut;
+      outDet.appendChild(el('summary', '', res.error ? 'Çıktı · hata' : 'Çıktı'));
+      const outText = res.output ? clipText(res.output, 3000) : (res.waiting ? 'Çıktı bekleniyor…' : 'Bu araç için çıktı kaydı yok.');
+      outDet.appendChild(el('pre', 'hud-pre' + (res.error ? ' err' : ''), outText));
+      toolBlock.append(inDet, outDet);
+      if (detail && detail.loading) toolBlock.appendChild(el('div', 'hud-muted', 'Kanca ayrıntıları yükleniyor…'));
+      else if (detail && detail.error) toolBlock.appendChild(el('div', 'hud-muted', 'Kanca ayrıntıları yüklenemedi; canlı akış kullanılıyor.'));
+    } else {
+      toolBlock.appendChild(el('div', 'hud-muted', 'Bu görevde araç çağrısı yok.'));
+    }
+    panel.appendChild(toolBlock);
+
+    const foot = el('div', 'hud-detail-foot');
+    foot.append(
+      el('span', '', 'Görev ' + clipText(task.id, 14)),
+      el('span', '', task.model || 'model yok'),
+      el('span', '', ObsRunCard.dur(task.duration || (task.end && task.start ? task.end - task.start : 0))),
+      el('span', '', fmtTok(task.tokensIn) + ' giriş · ' + fmtTok(task.tokensOut) + ' çıkış')
+    );
+    panel.appendChild(foot);
+    panel.scrollTop = keep;
+  }
+  function renderHudFiles() {
+    const panel = $('#hudFiles'); if (!panel) return;
+    const moves = hudData().moves;
+    const sig = [moves.length, moves.slice(0, 12).map((m) => m.action + m.path + m.count + m.at).join('|')].join('||');
+    if (hudSigs.files === sig && panel.childElementCount) return;
+    hudSigs.files = sig;
+    const keep = panel.scrollTop;
+    panel.replaceChildren();
+    const reads = moves.filter((m) => m.action === 'read').length;
+    const writes = moves.filter((m) => m.action === 'write').length;
+    const head = el('div', 'hud-section-head');
+    const left = el('div', 'hud-section-title', 'Dosya hareketleri');
+    const stats = el('div', 'hud-file-stats');
+    stats.append(el('span', 'file-tag read', '📖 ' + reads + ' okundu'), el('span', 'file-tag write', '✏️ ' + writes + ' düzenlendi'));
+    head.append(left, stats);
+    panel.appendChild(head);
+    if (!moves.length) {
+      panel.appendChild(hudEmpty('📁', 'Henüz dosya hareketi yok', 'Ajanlar dosya okuduğunda veya düzenlediğinde yolları burada listelenir.'));
+    } else {
+      moves.slice(0, 80).forEach((m) => {
+        const row = el('button', 'hud-file-row');
+        row.type = 'button'; row.title = 'Yolu kopyala: ' + m.path;
+        const parts = splitPath(m.path);
+        const tag = el('span', 'file-tag ' + m.action, m.action === 'write' ? '✏️ Düzenlendi' : '📖 Okundu');
+        const main = el('span', 'file-main');
+        main.append(el('span', 'file-name', parts.name), el('span', 'file-path', parts.dir || m.path));
+        const who = el('span', 'file-agent');
+        const fdot = el('span', 'ev-dot'); fdot.style.setProperty('--c', m.agent.color);
+        who.append(fdot, el('span', '', shortAgentName(m.agent)));
+        if (m.count > 1) who.appendChild(el('span', 'file-count', '×' + m.count));
+        const hint = el('span', 'file-copy', 'kopyala');
+        row.append(tag, main, who, hint);
+        row.onclick = () => copyText(m.path, hint);
+        panel.appendChild(row);
+      });
+    }
+    panel.scrollTop = keep;
+  }
+  function renderHudTasks() {
+    const panel = $('#hudTasks'); if (!panel) return;
+    const tasks = hudData().tasks;
+    const running = tasks.filter((x) => x.status === 'running' || x.status === 'pending').length;
+    const sig = [tasks.length, running, tasks.slice(0, 12).map((t) => t.id + t.status).join('|')].join('||');
+    if (hudSigs.tasks === sig && panel.childElementCount) return;
+    hudSigs.tasks = sig;
+    const keep = panel.scrollTop;
+    panel.replaceChildren();
+    const head = el('div', 'hud-section-head');
+    const left = el('div', 'hud-section-title', 'Görevler ve kararlar');
+    head.append(left, el('span', 'hud-section-note', running ? running + ' etkin · ' + tasks.length + ' toplam' : tasks.length + ' görev'));
+    panel.appendChild(head);
+    if (!tasks.length) {
+      panel.appendChild(hudEmpty('📋', 'Henüz görev yok', 'Çalıştırılan görevler durum, süre ve araç sayısıyla burada listelenir.'));
+    } else {
+      tasks.slice(0, 80).forEach((task) => {
+        const def = agentDefFor(task.agent);
+        const row = el('button', 'hud-task-row status-' + task.status);
+        row.type = 'button';
+        row.title = task.prompt || task.id;
+        const icon = el('span', 'task-ico', task.status === 'running' ? '▶' : task.status === 'completed' ? '✓' : task.status === 'failed' ? '✕' : task.status === 'cancelled' ? '⊘' : '◷');
+        const main = el('span', 'task-main');
+        main.append(el('span', 'task-title', smartTitle(task.prompt) || 'Başlıksız görev'), el('span', 'task-meta',
+          shortAgentName(def) + ' · ' + task.tools.length + ' araç · ' + ObsRunCard.dur(task.duration || (task.end && task.start ? task.end - task.start : 0)) + ' · ' + fmtTok(task.tokensIn + task.tokensOut) + ' token'));
+        const right = el('span', 'task-right');
+        right.append(statusChip(task.status), el('span', 'task-time', hudWhen(task.end || task.start)));
+        row.append(icon, main, right);
+        row.onclick = () => focusHudAgent(def.id);
+        panel.appendChild(row);
+      });
+    }
+    panel.scrollTop = keep;
   }
   function renderDrawer() {
     const box = $('#agentCards'); if (!box) return;
-    const chats = ObsStore.list();
-    box.textContent = '';
-    DRAWER_AGENTS.forEach((a) => {
-      const i = agentInfo(a.id, chats);
-      const label = i.status === 'active' ? '🟢 Aktif' : i.status === 'failed' ? '🔴 Hatalı' : '⚪ Beklemede';
-      const card = el('div', 'agent-card ' + i.status);
-      card.appendChild(el('div', 'agent-head', a.dot + ' ' + a.name));
-      card.appendChild(el('div', 'agent-role', a.role));
-      [['Durum', label], ['Son Görev / Eylem', i.task], ['Hedef Proje / Repo', i.cwd], ['Token', fmtTok(i.tin) + ' giriş · ' + fmtTok(i.tout) + ' çıkış']].forEach(([k, v]) => {
-        const row = el('div', 'agent-row'); row.appendChild(el('span', 'agent-k', k)); row.appendChild(el('span', 'agent-v', v)); card.appendChild(row);
-      });
-      box.appendChild(card);
-    });
+    ensureHudAgent();
+    renderAgentPills();
+    updateHudTabCounts();
+    syncHudTabs();
+    if (currentHudTab === 'stream') renderHudStream();
+    else if (currentHudTab === 'detail') renderHudDetail();
+    else if (currentHudTab === 'files') renderHudFiles();
+    else if (currentHudTab === 'tasks') renderHudTasks();
   }
+
   function scheduleDrawer() { // SSE olaylarında en çok ~4 yenileme/sn
     if (!officeActive || drawerTimer) return;
-    drawerTimer = setTimeout(() => { drawerTimer = 0; if (officeActive) renderDrawer(); }, 250);
+    drawerTimer = setTimeout(() => {
+      drawerTimer = 0;
+      if (officeActive) {
+        syncServerTasks().then(() => { if (officeActive) renderDrawer(); });
+      }
+    }, 250);
+  }
+  function setOfficeFullscreen(full) {
+    officeFullscreen = !!full;
+    const drawer = $('#officeView');
+    const expBtn = $('#officeExpand');
+    if (drawer) drawer.classList.toggle('fullscreen', officeFullscreen);
+    if (expBtn) {
+      expBtn.textContent = officeFullscreen ? '🗗' : '⛶';
+      expBtn.title = officeFullscreen ? 'Çekmeceye Dön' : 'Tam Ekran';
+      expBtn.setAttribute('aria-label', expBtn.title);
+    }
+    const sim = officeSim();
+    if (sim && officeActive) sim.start();
   }
   function setOfficeView(show) {
     officeActive = !!show;
+    if (!officeActive && officeFullscreen) setOfficeFullscreen(false);
     const drawer = $('#officeView'); const scrim = $('#drawerScrim'); const btn = $('#officeBtn');
-    if (officeActive) renderDrawer();
+    if (officeActive) {
+      renderDrawer();
+      hydrateHudEvents();
+      syncServerTasks(true).then(() => { if (officeActive) renderDrawer(); });
+    }
     const sim = officeSim(); if (sim) { if (officeActive) sim.start(); else sim.stop(); }
     if (drawer) { drawer.classList.toggle('open', officeActive); drawer.setAttribute('aria-hidden', officeActive ? 'false' : 'true'); }
     if (scrim) scrim.hidden = !officeActive;
@@ -1007,6 +1833,7 @@
   // ---------- olay akışı ----------
   function onEvent(ev) {
     const sim = officeSim(); if (sim) sim.feed(ev);
+    pushHudEvent(ev);
     scheduleDrawer();
     const v = views.get(ev.taskId);
     if (!v) { followTermSession(ev); early.push(ev); if (early.length > 600) early = early.slice(-300); if (ev.type === 'task.started' || ev.type === 'task.completed') scheduleTermRefresh(); return; }
@@ -1492,6 +2319,7 @@
     $('#officeIco').innerHTML = ICON.office;
     $('#phoneIco').innerHTML = ICON.phone; $('#phoneBtn').onclick = openPhone; $('#phoneBtn').hidden = !!st.cfg.remote;
     $('#newIco').innerHTML = ICON.plus; $('#sideIco').innerHTML = ICON.panel;
+    initHud();
     applyLanguage();
     I18N.on('languageChanged', applyLanguage);
     $('#crumb').onclick = leaveProject; $('#send').onclick = send; $('#newChat').onclick = newChat;
@@ -1504,7 +2332,19 @@
       };
     }
     const dScrim = $('#drawerScrim'); if (dScrim) dScrim.onclick = () => setOfficeView(false);
-    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && officeActive) setOfficeView(false); });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && officeActive) {
+        if (officeFullscreen) setOfficeFullscreen(false);
+        else setOfficeView(false);
+      }
+    });
+    const officeExpand = $('#officeExpand');
+    if (officeExpand) {
+      officeExpand.onclick = (ev) => {
+        ev.stopPropagation();
+        setOfficeFullscreen(!officeFullscreen);
+      };
+    }
     const officeClose = $('#officeClose');
     if (officeClose) {
       officeClose.onclick = (ev) => {

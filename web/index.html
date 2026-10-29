@@ -10,7 +10,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
 <link rel="shortcut icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/icon-192.png">
-<link rel="stylesheet" href="/app.css?v=1.0.3">
+<link rel="stylesheet" href="/app.css?v=1.0.5">
 <link rel="stylesheet" href="/subagents.css?v=1.0.3">
 <script src="/theme.js?v=1.0.3"></script>
 </head>
@@ -48,10 +48,27 @@
     <aside id="officeView" class="agent-drawer" aria-hidden="true" aria-label="Ajan Operasyon Panosu">
       <div class="drawer-bar">
         <span class="drawer-title">Ajan Operasyon Panosu</span>
-        <button class="iconbtn office-close" id="officeClose" type="button" title="Kapat" data-i18n-attr="title:caps.close;aria-label:caps.close">✕</button>
+        <div class="drawer-actions">
+          <button class="iconbtn office-expand" id="officeExpand" type="button" title="Tam Ekran" aria-label="Tam Ekran">⛶</button>
+          <button class="iconbtn office-close" id="officeClose" type="button" title="Kapat" data-i18n-attr="title:caps.close;aria-label:caps.close">✕</button>
+        </div>
       </div>
       <canvas id="officeCanvas" class="office-canvas" role="img" aria-label="Canlı ajan ofisi"></canvas>
-      <div class="drawer-body" id="agentCards"></div>
+      <div class="drawer-body hud hud-container" id="agentCards">
+        <div class="agent-pills hud-pills" id="agentPills" role="tablist" aria-label="Ajanlar"></div>
+        <div class="hud-tabs" id="hudTabs" role="tablist" aria-label="Operasyon sekmeleri">
+          <button class="hud-tab active" id="tabStream" data-hud-tab="stream" type="button" role="tab" aria-selected="true">⚡ Olay &amp; Kanca Akışı <span class="hud-tab-count" id="tabStreamCount"></span></button>
+          <button class="hud-tab" id="tabDetail" data-hud-tab="detail" type="button" role="tab" aria-selected="false">💻 Ajan Konsolu</button>
+          <button class="hud-tab" id="tabFiles" data-hud-tab="files" type="button" role="tab" aria-selected="false">📁 Dosyalar (Mindwalk) <span class="hud-tab-count" id="tabFilesCount"></span></button>
+          <button class="hud-tab" id="tabTasks" data-hud-tab="tasks" type="button" role="tab" aria-selected="false">📋 Görevler &amp; Kararlar <span class="hud-tab-count" id="tabTasksCount"></span></button>
+        </div>
+        <div class="hud-panels hud-content" id="hudContent">
+          <section id="hudStream" class="hud-panel hud-pane active" role="tabpanel" aria-label="Olay ve kanca akışı"></section>
+          <section id="hudDetail" class="hud-panel hud-pane" role="tabpanel" aria-label="Ajan konsolu ve detay" hidden></section>
+          <section id="hudFiles" class="hud-panel hud-pane" role="tabpanel" aria-label="Dosya hareketleri" hidden></section>
+          <section id="hudTasks" class="hud-panel hud-pane" role="tabpanel" aria-label="Görevler ve kararlar" hidden></section>
+        </div>
+      </div>
     </aside>
     <button class="jump" id="jump" type="button" hidden data-i18n="jump">En alta in</button>
     <footer class="dock">
@@ -106,7 +123,7 @@
 <script src="/projects.js?v=1.0.3"></script>
 <script src="/store.js?v=1.0.3"></script>
 <script src="/qr.js?v=1.0.3"></script>
-<script src="/office_sim.js?v=1.0.3"></script>
-<script src="/app.js?v=1.0.3"></script>
+<script src="/office_sim.js?v=1.0.5"></script>
+<script src="/app.js?v=1.0.5"></script>
 </body>
 </html>
