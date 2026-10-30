@@ -502,9 +502,26 @@ export class SqliteStore {
       `).all() as any[];
       let count = 0;
       for (const row of rows) {
-        // Antigravity (agy) oturumları masaüstü IDE üzerinden yürütülen etkileşimli kullanıcı
-        // sohbetleridir; arka planda insan düşünme/bekleme süresi olabileceğinden zaman aşımıyla reaped edilmez.
         if (row.agent === 'agy' || row.agent === 'antigravity') {
+          const newer = row.session_id ? this.prep('SELECT 1 FROM tasks WHERE session_id = ? AND start_time > ? LIMIT 1').get(row.session_id, row.last_event) : null;
+          if (newer) {
+            this.recordEventTx({
+              id: 'evt_reap_' + row.task_id + '_' + now, taskId: row.task_id,
+              sessionId: row.session_id, agent: row.agent, tier: 1,
+              type: 'task.completed', timestamp: row.last_event || now,
+              data: { exitCode: 0, reason: 'Yeni görev başladı' }
+            });
+            count++;
+            continue;
+          }
+          if (now - row.last_event <= Math.max(maxAgeMs, 900000)) continue;
+          this.recordEventTx({
+            id: 'evt_reap_' + row.task_id + '_' + now, taskId: row.task_id,
+            sessionId: row.session_id, agent: row.agent, tier: 1,
+            type: 'task.completed', timestamp: row.last_event || now,
+            data: { exitCode: 0, reason: 'Hareketsizlik zaman aşımı' }
+          });
+          count++;
           continue;
         }
         let exited = false;

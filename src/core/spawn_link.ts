@@ -47,16 +47,31 @@ function firstQuoted(s: string): string {
 
 /** Araç çağrısı başka bir ajanı başlatıyor mu? Başlatıyorsa hedef ajan (bilinmiyorsa null) ve istem. */
 export function detectSpawn(name: unknown, input: any): SpawnIntent | null {
-  const tool = String(name || '');
+  let tool = String(name || '');
+  let inp = input;
+
+  // Antigravity / Gemini lazy-load MCP wrapper veya iç içe argüman yapısı
+  if (inp && typeof inp === 'object') {
+    if (/^call_mcp_tool$/i.test(tool) && (inp.ToolName || inp.tool || inp.name)) {
+      tool = String(inp.ToolName || inp.tool || inp.name);
+    }
+    const rawArgs = inp.Arguments ?? inp.arguments ?? inp.args;
+    if (typeof rawArgs === 'string') {
+      try { inp = JSON.parse(rawArgs); } catch { /* yoksay */ }
+    } else if (rawArgs && typeof rawArgs === 'object') {
+      inp = rawArgs;
+    }
+  }
+
   const mcp = MCP_TOOL_RE.exec(tool);
   if (mcp) {
     const kind = mcp[1].toLowerCase();
-    const prompt = String(input?.prompt ?? '');
+    const prompt = String(inp?.prompt ?? '');
     if (!prompt.trim()) return null;
-    const named = String(input?.agent ?? '').toLowerCase() as AgentType;
+    const named = String(inp?.agent ?? '').toLowerCase() as AgentType;
     return { agent: MCP_AGENT[kind] ?? (AGENTS.has(named) ? named : null), prompt };
   }
-  const cmd = commandOf(input);
+  const cmd = commandOf(inp ?? input);
   if (!cmd) return null;
   for (const m of cmd.matchAll(CLI_RE)) {
     const bin = m[1].toLowerCase() as AgentType;

@@ -66,6 +66,91 @@
     const m = main();
     stick = m.scrollHeight - m.scrollTop - m.clientHeight < 80;
     $('#jump').hidden = stick || !$('#thread').childElementCount;
+    updateActiveWaypoint();
+  }
+
+  // ---------- İstem Durakları (Prompt Waypoints Minimap) ----------
+  function syncPromptWaypoints() {
+    const nav = $('#promptWaypoints');
+    if (!nav) return;
+    if (!chat || !chat.messages) { nav.hidden = true; nav.replaceChildren(); return; }
+
+    const userPrompts = [];
+    chat.messages.forEach((m, i) => {
+      if (m.r === 'u' && m.text) {
+        userPrompts.push({ text: m.text, msgIdx: i });
+      }
+    });
+
+    if (userPrompts.length < 2) {
+      nav.hidden = true;
+      nav.replaceChildren();
+      return;
+    }
+
+    nav.hidden = false;
+    nav.replaceChildren();
+
+    userPrompts.forEach((item, pIdx) => {
+      const btn = el('button', 'p-stop' + (pIdx < 3 ? ' pill' : ''));
+      btn.type = 'button';
+      btn.setAttribute('aria-label', (pIdx + 1) + '. İstem: ' + item.text.slice(0, 30));
+      btn.dataset.pIdx = String(pIdx);
+
+      const mark = el('span', 'p-stop-mark');
+      btn.appendChild(mark);
+
+      const tip = el('span', 'p-stop-tip');
+      const clean = smartTitle(item.text) || item.text.replace(/\s+/g, ' ').trim();
+      const preview = clean.length > 32 ? clean.slice(0, 30) + '…' : clean;
+      tip.textContent = (pIdx + 1) + '. ' + preview;
+      btn.appendChild(tip);
+
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const userElements = $('#thread').querySelectorAll('.msg.user');
+        const targetEl = userElements[pIdx];
+        if (!targetEl) return;
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        targetEl.classList.remove('prompt-highlight');
+        void targetEl.offsetWidth;
+        targetEl.classList.add('prompt-highlight');
+        setTimeout(() => targetEl.classList.remove('prompt-highlight'), 1300);
+
+        nav.querySelectorAll('.p-stop').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+      };
+
+      nav.appendChild(btn);
+    });
+
+    updateActiveWaypoint();
+  }
+
+  function updateActiveWaypoint() {
+    const nav = $('#promptWaypoints');
+    if (!nav || nav.hidden) return;
+    const userElements = $('#thread').querySelectorAll('.msg.user');
+    if (!userElements.length) return;
+
+    const m = main();
+    const viewCenter = m.scrollTop + (m.clientHeight / 2);
+    let bestIdx = 0;
+    let minDiff = Infinity;
+
+    userElements.forEach((el, idx) => {
+      const top = el.offsetTop;
+      const diff = Math.abs(top - viewCenter);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestIdx = idx;
+      }
+    });
+
+    const buttons = nav.querySelectorAll('.p-stop');
+    buttons.forEach((b, idx) => {
+      b.classList.toggle('active', idx === bestIdx);
+    });
   }
   async function copyText(text, btn) {
     try { await navigator.clipboard.writeText(text); } catch {
@@ -457,7 +542,11 @@
       const b = el('button', 'hmain'); b.type = 'button'; b.title = s.title;
       const dot = el('span', 'dot' + (s.running ? ' live' : '')); const e = engineById(s.agent); dot.style.setProperty('--c', e ? e.color : 'var(--faint)');
       b.append(dot, el('span', 't', smartTitle(s.title) || t('history.untitled')));
-      if (s.subs) { const bd = el('span', 'subbadge' + (s.subsRunning ? ' live' : ''), ObsSubagents.text('badge', I18N.language, { n: s.subs })); bd.title = s.subsRunning ? ObsSubagents.text('live', I18N.language, { n: s.subsRunning }) : ''; b.appendChild(bd); }
+      if (s.subsRunning > 0) {
+        const bd = el('span', 'subbadge live', ObsSubagents.text('live', I18N.language, { n: s.subsRunning }));
+        bd.title = ObsSubagents.text('live', I18N.language, { n: s.subsRunning });
+        b.appendChild(bd);
+      }
       b.appendChild(el('span', 'when', s.running ? t('term.live') : when(s.end)));
       b.onclick = () => loadTermSession(s);
       item.appendChild(b); box.appendChild(item);
@@ -501,7 +590,7 @@
       } catch { /* sunucu yok */ }
     }, 1000);
   }
-  function clearThread() { $('#thread').replaceChildren(); views.clear(); }
+  function clearThread() { $('#thread').replaceChildren(); views.clear(); syncPromptWaypoints(); }
   function showThread(has) {
     $('#empty').hidden = has;
     if (!has) {
@@ -524,6 +613,7 @@
     if (!chat || !chat.messages.length) { showThread(false); return; }
     showThread(true);
     chat.messages.forEach((m, i) => { if (m.r === 'u') addUserDom(m.text, i); else createBot(m, false); });
+    syncPromptWaypoints();
   }
   // canlı terminal oturumu: son (bitmemiş) turun araç adımlarından durum kartı kurulur; tur bitince kart kaybolur
   function syncTermCard() {
@@ -1411,7 +1501,7 @@
     const d = el('div', 'msg user', text);
     const b = el('button', 'undo'); b.type = 'button'; b.title = t('rewind.title'); b.setAttribute('aria-label', t('rewind.title')); b.innerHTML = ICON.undo;
     b.onclick = () => rewind(idx);
-    d.appendChild(b); $('#thread').appendChild(d); scrollDown();
+    d.appendChild(b); $('#thread').appendChild(d); scrollDown(); syncPromptWaypoints();
   }
   /** küçük onay penceresi: seçilen düğmenin sırasını döndürür, kapatılırsa -1 */
   function ask(text, labels) {

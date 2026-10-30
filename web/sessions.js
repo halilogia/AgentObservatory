@@ -33,6 +33,7 @@
         var thinking = String(d.thinking || '');
         if (thinking) {
           rec._cur = null;
+          rec.parts = rec.parts.filter(function (p) { return !(p.k === 'text' && p.v && p.v.trim() === thinking.trim()); });
           rec.parts.push({ k: 'thinking', v: thinking });
         }
         var text = String(d.text || '');
@@ -45,11 +46,14 @@
           }
         }
         if (text) {
-          if (!rec._cur || rec._cur.k !== 'text') {
-            rec._cur = { k: 'text', v: '' };
-            rec.parts.push(rec._cur);
+          var isDupe = rec.parts.some(function (p) { return p.k === 'thinking' && p.v && p.v.trim() === text.trim(); });
+          if (!isDupe) {
+            if (!rec._cur || rec._cur.k !== 'text') {
+              rec._cur = { k: 'text', v: '' };
+              rec.parts.push(rec._cur);
+            }
+            rec._cur.v += text;
           }
-          rec._cur.v += text;
         }
       } else if (ev.type === 'tool.invoked') {
         rec._cur = null;

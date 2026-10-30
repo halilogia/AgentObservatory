@@ -50,9 +50,10 @@ export class AntigravityLineParser implements LineParser {
 
   private readonly isManaged: ManagedCheck;
 
-  constructor(isManaged: ManagedCheck = () => false, sessionId = '', filePath?: string) {
+  constructor(isManaged: ManagedCheck = () => false, sessionId = '', filePath?: string, initialTurn = 0) {
     this.isManaged = isManaged;
     this.sessionId = sessionId;
+    this.turn = initialTurn;
     if (filePath) {
       try {
         if (fs.existsSync(filePath)) {

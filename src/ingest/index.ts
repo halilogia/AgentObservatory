@@ -142,7 +142,22 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
       const sub = openSubagent(f, toolTurns);
       if (!sub) { pendingSubs = true; return; }
       parser = sub;
-    } else if (src === 'agy') parser = new AntigravityLineParser(isManaged, conversationIdFromPath(f), f);
+    } else if (src === 'agy') {
+      let initialTurn = 0;
+      const willStartAtEnd = !opts.backfill && st.birthtimeMs < startedAt;
+      if (willStartAtEnd) {
+        try {
+          const fd = fs.openSync(f, 'r');
+          const buf = Buffer.alloc(Math.min(st.size, 10 * 1024 * 1024));
+          const bytesRead = fs.readSync(fd, buf, 0, buf.length, 0);
+          fs.closeSync(fd);
+          const chunk = buf.toString('utf8', 0, bytesRead);
+          const matches = chunk.match(/"type"\s*:\s*"USER_INPUT"/g);
+          if (matches) initialTurn = matches.length;
+        } catch { /* dosya okuma hatasında 0'dan başlar */ }
+      }
+      parser = new AntigravityLineParser(isManaged, conversationIdFromPath(f), f, initialTurn);
+    }
     else parser = src === 'claude' ? new ClaudeLineParser(isManaged, toolTurns) : new CodexLineParser(isManaged);
     // ingest başladıktan sonra oluşan dosya baştan okunur; eski dosyada yalnızca yeni eklenenler
     files.set(f, { offset: opts.backfill || st.birthtimeMs >= startedAt ? 0 : st.size, buf: '', parser, src });

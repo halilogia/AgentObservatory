@@ -25,7 +25,7 @@ export interface LineParser {
 
 export function toTaskEvent(e: ExtEvent): TaskEvent {
   return {
-    id: 'ext_' + crypto.createHash('sha1').update(e.seed).digest('hex').slice(0, 16),
+    id: 'ext_' + crypto.createHash('sha1').update(`${e.taskId}:${e.seed}`).digest('hex').slice(0, 16),
     taskId: e.taskId,
     sessionId: e.sessionId,
     agent: e.agent,

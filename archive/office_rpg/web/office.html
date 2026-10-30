@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="obs-token" content="__OBS_TOKEN__">
+  <title>Ofis RPG Dünyası · Agent Observatory</title>
+  <link rel="stylesheet" href="/office_rpg.css">
+  <script type="module" src="/office_rpg.js"></script>
+</head>
+<body>
+  <header><div><small>AGENT OBSERVATORY / LIVE WORKSPACE</small><h1>Ofis RPG Dünyası <span>01</span></h1></div><a href="/">Sohbete dön ↗</a></header>
+  <main>
+    <div class="world-bar"><span>● ANA OFİS <b>4 ajan alanı</b></span><span id="connection" role="status">Bağlanıyor…</span></div>
+    <div class="viewport"><canvas id="world" width="960" height="560" tabindex="0" aria-label="Piksel ajan ofisi. WASD veya yön tuşlarıyla yürü, E ile konuş."></canvas></div>
+    <footer><span><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> Yürü &nbsp; <kbd>E</kbd> Konuş &nbsp; <kbd>Esc</kbd> Kapat</span><span id="hint">Bir ajanın masasına yaklaş.</span></footer>
+    <nav id="agents" aria-label="Ajanla doğrudan konuş"></nav>
+    <p id="notice" role="status"></p>
+  </main>
+  <dialog id="dialogue" aria-labelledby="agent-name">
+    <div class="dialogue-head"><div><small>AJAN TERMİNALİ</small><h2 id="agent-name"></h2></div><button id="close" aria-label="Diyaloğu kapat">✕</button></div>
+    <label>Görev <select id="task"></select></label>
+    <div class="actions"><button id="inspect">Ne Yapıyorsun?</button><button id="summary">Çıktı Özeti</button><button id="new-task">Görev Ver</button></div>
+    <pre id="report" aria-live="polite"></pre>
+    <div id="approval" hidden><p id="permission"></p><button id="allow">✓ İzin Ver</button><button id="deny">✗ Reddet</button></div>
+    <form id="prompt-form" hidden>
+      <div class="fields"><label>Model<select id="model"></select></label><label>Kip<select id="mode"><option value="read">Salt okunur</option><option value="write">Çalışma alanına yaz</option></select></label></div>
+      <label>Çalışma klasörü<input id="cwd" placeholder="Sunucunun varsayılan klasörü"></label>
+      <label>Görev istemi<textarea id="prompt" maxlength="20000" required rows="4" placeholder="Bu ajanın ne yapmasını istersin?"></textarea></label>
+      <button id="send" type="submit">Görevi Başlat ↗</button>
+    </form>
+    <p id="feedback" role="status"></p>
+  </dialog>
+</body>
+</html>

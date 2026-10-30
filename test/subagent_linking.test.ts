@@ -12,6 +12,9 @@ assert.deepEqual(detectSpawn('mcp__agent-observatory__run_codex', { prompt: 'tes
 assert.deepEqual(detectSpawn('mcp__agent-observatory__run_agent', { agent: 'opencode', prompt: 'özetle' }), { agent: 'opencode', prompt: 'özetle' });
 assert.deepEqual(detectSpawn('agent-observatory.start_task', { agent: 'claude', prompt: 'incele' }), { agent: 'claude', prompt: 'incele' });
 assert.deepEqual(detectSpawn('run_agy', { prompt: 'ekranı çiz' }), { agent: 'agy', prompt: 'ekranı çiz' });
+assert.deepEqual(detectSpawn('call_mcp_tool', { ServerName: 'agent-bridge', ToolName: 'start_task', Arguments: { agent: 'codex', prompt: 'testleri düzelt' } }), { agent: 'codex', prompt: 'testleri düzelt' });
+assert.deepEqual(detectSpawn('call_mcp_tool', { ToolName: 'start_task', Arguments: JSON.stringify({ agent: 'codex', prompt: 'testleri düzelt' }) }), { agent: 'codex', prompt: 'testleri düzelt' });
+assert.deepEqual(detectSpawn('call_mcp_tool', { ToolName: 'run_codex', Arguments: { prompt: 'refactor yap' } }), { agent: 'codex', prompt: 'refactor yap' });
 assert.deepEqual(detectSpawn('Bash', { command: 'cd repo && codex exec --full-auto "README dosyasını güncelle"' }), { agent: 'codex', prompt: 'README dosyasını güncelle' });
 assert.deepEqual(detectSpawn('Bash', { command: "claude -p 'kodu gözden geçir' --output-format json" }), { agent: 'claude', prompt: 'kodu gözden geçir' });
 assert.deepEqual(detectSpawn('run_command', { CommandLine: 'C:\\tools\\agy.exe -p "harita üret"' }), { agent: 'agy', prompt: 'harita üret' });
