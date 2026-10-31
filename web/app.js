@@ -632,7 +632,6 @@
     { id: 'opencode', dot: '⚫', color: '#8b949e', name: 'OpenCode', role: 'Toplu Veri Motoru & ETL', aliases: ['opencode'] },
     { id: 'commandcode', dot: ObsSkins.BADGES.commandcode.symbol, color: '#a371f7', name: ObsSkins.BADGES.commandcode.name, role: t('team.siyah'), aliases: ['commandcode'] }
   ];
-  const HUD_AGENT_IDS = ['claude', 'codex', 'opencode', 'agy'];
   const HUD_PANELS = { stream: '#hudStream', detail: '#hudDetail', files: '#hudFiles', tasks: '#hudTasks' };
   const HUD_STATUS_RANK = { running: 0, pending: 1 };
   let officeActive = false;
@@ -644,6 +643,7 @@
   let drawerTimer = 0;
   let currentHudTab = 'stream';
   let currentHudAgent = '';
+  let currentHudTask = '';
   let hudEvents = [];
   let hudHistoryAt = 0;
   let hudHistoryLoading = false;
@@ -667,6 +667,7 @@
         const rows = await res.json();
         serverTasks = Array.isArray(rows) ? rows : [];
         serverTasksLastFetch = Date.now();
+        const sim = officeSim(); if (sim) sim.reconcile(serverTasks);
       }
     } catch (_err) {
       // Çevrimdışı ya da bağlantı koptuğunda önceki görev dizisi korunur
@@ -680,9 +681,10 @@
   function officeSim() { // tuval yalnızca bir kez bağlanır; olaylar panel kapalıyken de durumu günceller
     if (office || !window.ObsOffice) return office;
     const cv = $('#officeCanvas'); if (!cv) return null;
+    cv.title = t('office.navigation');
     office = ObsOffice.mount(cv, (id) => {
       focusHudAgent(id);
-      const pill = Array.prototype.find.call(document.querySelectorAll('#agentPills .agent-pill'), (p) => p.dataset.agent === id);
+      const pill = Array.prototype.find.call(document.querySelectorAll('#agentPills .agent-pill'), (p) => p.dataset.actor === id);
       if (pill) pill.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     });
     return office;
@@ -754,6 +756,12 @@
     return String(def.name || def.id || 'Ajan').replace(/ Code$/, '').replace(/ CLI$/, '');
   }
   function agentDefFor(agentId) {
+    const actor = office && office.state.actors[agentId];
+    if (actor) {
+      const provider = agentDefFor(actor.providerId);
+      return { ...provider, id: actor.id, actor, name: provider.name + ' #' + actor.id.slice(6),
+        role: (actor.parentTaskId ? t('office.subagent') + ' · ' : '') + (actor.sessionId || t('office.pendingSession')) };
+    }
     const id = String(agentId || '').toLowerCase();
     return DRAWER_AGENTS.find((d) => d.id === id || (d.aliases || []).includes(id)) ||
       { id: id || '?', dot: '⚪', color: '#8b949e', name: agentId || 'Ajan', role: '', aliases: [id] };
@@ -952,7 +960,7 @@
   }
   function agentSnapshot(def) {
     const aliases = agentAliases(def);
-    const tasks = hudData().tasks.filter((t) => aliases.includes(t.agent));
+    const tasks = hudData().tasks.filter((t) => def.actor ? def.actor.taskIds.has(t.id) : aliases.includes(t.agent));
     const ordered = [...tasks].sort((a, b) => b.start - a.start);
     const active = tasks.find((t) => t.status === 'running' || t.status === 'pending') || null;
     const last = active || ordered[0] || null;
@@ -972,18 +980,28 @@
     };
   }
   function ensureHudAgent() {
-    if (currentHudAgent && agentById(currentHudAgent)) return currentHudAgent;
-    const snaps = HUD_AGENT_IDS.map((id) => agentSnapshot(agentDefFor(id)));
-    const live = snaps.find((s) => s.status === 'active' || s.status === 'queued');
-    const recent = snaps.filter((s) => s.last).sort((a, b) => b.updated - a.updated)[0];
-    currentHudAgent = (live || recent || snaps[0]).def.id;
+    const sim = officeSim();
+    if (sim && sim.state.actors[currentHudAgent]) return currentHudAgent;
+    currentHudAgent = sim ? (sim.state.order.find((id) => !['idle', 'done', 'failed'].includes(sim.state.actors[id].mode)) || sim.state.order[0] || '') : '';
+    currentHudTask = '';
     return currentHudAgent;
   }
-  function focusHudAgent(id) {
-    currentHudAgent = agentDefFor(id).id;
+  function focusHudAgent(id, taskId = '') {
+    const sim = officeSim();
+    if (!sim || !sim.state.actors[id]) return;
+    currentHudAgent = id; currentHudTask = taskId;
+    sim.select(id);
     currentHudTab = 'detail';
     lsSet('obs-hud-tab', currentHudTab);
     if (officeActive) renderDrawer();
+  }
+  function focusHudTask(taskId) {
+    const task = office && office.state.registry.tasks.get(taskId);
+    if (task) focusHudAgent(task.actorId, taskId);
+  }
+  function selectedActorEvents() {
+    const actor = office && office.state.actors[currentHudAgent];
+    return actor ? hudEvents.filter((ev) => actor.taskIds.has(ev.taskId)) : hudEvents;
   }
   function switchHudTab(tab) {
     currentHudTab = HUD_PANELS[tab] ? tab : 'stream';
@@ -1117,6 +1135,8 @@
           if (Array.isArray(rows) && rows.length) {
             hudEvents = hudEvents.filter((e) => !e.key.startsWith('syn:'));
             rows.slice(-500).forEach(pushHudEvent);
+            const sim = officeSim();
+            if (sim) rows.forEach((ev) => { if (sim.state.registry.tasks.has(ev.taskId)) sim.feed(ev); });
           }
         }
       }
@@ -1199,14 +1219,15 @@
   }
   function renderAgentPills() {
     const box = $('#agentPills'); if (!box) return;
-    const rows = HUD_AGENT_IDS.map((id) => { const def = agentDefFor(id); return { def, snap: agentSnapshot(def) }; });
+    const sim = officeSim();
+    const rows = (sim ? sim.state.order : []).map((id) => { const def = agentDefFor(id); return { def, snap: agentSnapshot(def) }; });
     const sig = rows.map((r) => [r.def.id, r.snap.status, r.snap.statusText, r.snap.action, r.snap.cwd].join('~')).join('|') + '#' + currentHudAgent;
     if (hudSigs.pills === sig && box.childElementCount) return;
     hudSigs.pills = sig;
     const frag = document.createDocumentFragment();
     rows.forEach(({ def, snap }) => {
       const pill = el('button', 'agent-pill ' + snap.status + (currentHudAgent === def.id ? ' on' : ''));
-      pill.type = 'button'; pill.dataset.agent = def.id; pill.setAttribute('role', 'tab');
+      pill.type = 'button'; pill.dataset.actor = def.id; pill.setAttribute('role', 'tab');
       pill.setAttribute('aria-selected', String(currentHudAgent === def.id));
       pill.style.setProperty('--c', def.color);
       pill.title = def.name + ' · ' + snap.action + (snap.cwd ? '\n' + snap.cwd : '');
@@ -1236,14 +1257,15 @@
     if (ev.meta) body.append(el('span', 'ev-meta', ev.meta));
     row.append(time, who, hook, body);
     row.title = [def.name, ev.hook, ev.summary, ev.meta].filter(Boolean).join('\n');
-    row.onclick = () => focusHudAgent(def.id);
+    row.onclick = () => focusHudTask(ev.taskId);
     return row;
   }
   function renderHudStream() {
     const panel = $('#hudStream'); if (!panel) return;
     if (!hudHistoryAt && !hudHistoryLoading) hydrateHudEvents();
     if (!hudEvents.length) synthesizeHudEvents();
-    const sig = [hudEvents.length, hudEvents[0] ? hudEvents[0].key : '', currentHudAgent].join('|');
+    const events = selectedActorEvents();
+    const sig = [events.length, events[0] ? events[0].key : '', currentHudAgent].join('|');
     if (hudSigs.stream === sig && panel.childElementCount) return;
     hudSigs.stream = sig;
     const keep = panel.scrollTop;
@@ -1251,12 +1273,12 @@
     const head = el('div', 'hud-section-head');
     const left = el('div', 'hud-section-title');
     left.append(el('span', 'hud-live-dot'), document.createTextNode('Canlı kanca akışı'));
-    head.append(left, el('span', 'hud-section-note', hudEvents.length ? hudEvents.length + ' olay · en yeni üstte' : ''));
+    head.append(left, el('span', 'hud-section-note', events.length ? events.length + ' olay · en yeni üstte' : ''));
     panel.appendChild(head);
-    if (!hudEvents.length) {
+    if (!events.length) {
       panel.appendChild(hudEmpty('⚡', 'Henüz kanca olayı yok', 'Bir ajan çalıştığında PreToolUse / PostToolUse olayları burada gerçek zamanlı görünür.'));
     } else {
-      hudEvents.slice(0, 140).forEach((ev) => panel.appendChild(hudEventRow(ev)));
+      events.slice(0, 140).forEach((ev) => panel.appendChild(hudEventRow(ev)));
     }
     panel.scrollTop = keep;
   }
@@ -1265,7 +1287,7 @@
     ensureHudAgent();
     const def = agentDefFor(currentHudAgent);
     const snap = agentSnapshot(def);
-    const task = snap.active || snap.last;
+    const task = snap.tasks.find((task) => task.id === currentHudTask) || snap.active || snap.last;
     const detail = task ? ensureTaskDetail(task.id, task.status === 'running' || task.status === 'pending') : null;
     const sig = [def.id, task ? task.id : '', task ? task.status : '', task ? task.tools.length : 0, task ? task.prompt.length : 0,
       snap.cwd, snap.lastTool ? snap.lastTool.id + '@' + snap.lastTool.at : '', detail ? detail.at : 0, detail && detail.events ? detail.events.length : 0].join('|');
@@ -1348,6 +1370,20 @@
       el('span', '', fmtTok(task.tokensIn) + ' giriş · ' + fmtTok(task.tokensOut) + ' çıkış')
     );
     panel.appendChild(foot);
+    if (def.actor && def.actor.sessionId) {
+      const sessionButton = el('button', 'hud-cwd', t('office.openSession'));
+      sessionButton.type = 'button';
+      sessionButton.onclick = () => loadTermSession({ id: def.actor.sessionId, agent: def.actor.providerId, title: task.prompt, start: task.start, model: task.model });
+      panel.appendChild(sessionButton);
+    }
+    const consoleBlock = el('div', 'hud-block');
+    consoleBlock.appendChild(el('div', 'hud-block-title', t('office.console')));
+    const log = el('pre', 'hud-json');
+    log.textContent = (detail && detail.events || []).slice(-60).map((event) => {
+      const data = event.data || {};
+      return event.type + ' ' + clipText(String(data.text || data.output || data.error || data.name || ''), 500);
+    }).join('\n');
+    consoleBlock.appendChild(log); panel.appendChild(consoleBlock);
     panel.scrollTop = keep;
   }
   function renderHudFiles() {
@@ -1416,7 +1452,7 @@
         const right = el('span', 'task-right');
         right.append(statusChip(task.status), el('span', 'task-time', hudWhen(task.end || task.start)));
         row.append(icon, main, right);
-        row.onclick = () => focusHudAgent(def.id);
+        row.onclick = () => focusHudTask(task.id);
         panel.appendChild(row);
       });
     }
@@ -1463,7 +1499,7 @@
     if (officeActive) {
       renderDrawer();
       hydrateHudEvents();
-      syncServerTasks(true).then(() => { if (officeActive) renderDrawer(); });
+      syncServerTasks(true).then(() => { hydrateHudEvents(true); if (officeActive) renderDrawer(); });
     }
     const sim = officeSim(); if (sim) { if (officeActive) sim.start(); else sim.stop(); }
     if (drawer) { drawer.classList.toggle('open', officeActive); drawer.setAttribute('aria-hidden', officeActive ? 'false' : 'true'); }
@@ -2002,7 +2038,7 @@
   function connect() {
     const es = new EventSource('/stream');
     es.addEventListener('observatory', (m) => { try { onEvent(JSON.parse(m.data)); } catch { /* bozuk olay */ } });
-    es.onopen = () => refreshFoot();
+    es.onopen = () => { refreshFoot(); syncServerTasks(true).then(() => hydrateHudEvents(true)); };
     es.onerror = () => { $('#foot').textContent = t('foot.disconnected'); };
   }
 

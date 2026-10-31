@@ -96,6 +96,7 @@ ObsI18n.addResources('tr', {
     free: 'Ücretsiz model',
     gemini38flash: 'Google, resmî agy.exe'
   },
+  office: { navigation: 'Diğer masalar için kaydırın veya ok tuşlarını kullanın', subagent: 'Alt ajan', pendingSession: 'Oturum bekleniyor', openSession: 'Canlı oturumu aç', console: 'Görev konsolu' },
   lang: { switchTo: 'English', switchTitle: 'Switch to English' },
   theme: { toLight: 'Aydınlık temaya geç', toDark: 'Koyu temaya geç' }
 });

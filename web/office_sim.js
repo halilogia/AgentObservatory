@@ -3,91 +3,186 @@
 (function (root) {
   'use strict';
   var W = 320, H = 180;
-  var AGENTS = [
-    { id: 'agy', name: 'Antigravity', color: '#4c8dff', hair: '#1d3f8f' },
-    { id: 'claude', name: 'Claude Code', color: '#ff8a3d', hair: '#7a3a0b' },
-    { id: 'codex', name: 'Codex CLI', color: '#ef5350', hair: '#6b1b1a' },
-    { id: 'opencode', name: 'OpenCode', color: '#8b949e', hair: '#30363d' }
-  ];
-  var SPEED = 70; // piksel/sn
-  var DESK_Y = 112; // oturan ajanın ayak çizgisi
-  var deskX = function (i) { return 20 + i * 76; };
-  var seat = function (i) { return { x: deskX(i) + 26, y: DESK_Y }; };
-  var shelf = function (i) { return { x: 34 + i * 12, y: 66 + (i % 2) * 5 }; };
-  var rest = function (i) { return { x: 252 + i * 14, y: 66 + (i % 2) * 6 }; };
-
-  var WRITE_RE = /write|edit|patch|apply|create|bash|shell|exec|run|command|terminal|replace|delete|move|mkdir/i;
-  var READ_RE = /read|view|cat|search|grep|glob|find|list|fetch|web|browse|open|ls|lookup|get/i;
-  /** Araç adı -> 'typing' (yazma/komut) | 'reading' (okuma/arama) | 'thinking'. Yazma önceliklidir. */
+  // Provider definitions are visual themes, never actor identities.
+  var THEMES = {
+    agy: { name: 'Antigravity', color: '#4c8dff', hair: '#1d3f8f' },
+    claude: { name: 'Claude', color: '#ff8a3d', hair: '#7a3a0b' },
+    codex: { name: 'Codex', color: '#ef5350', hair: '#6b1b1a' },
+    opencode: { name: 'OpenCode', color: '#8b949e', hair: '#30363d' }
+  };
+  var SPEED = 90, ROW = 88, COLUMNS = 4;
+  var terminal = function (status) { return /^(completed|failed|cancelled)$/.test(status); };
+  var seat = function (i) { return { x: 46 + (i % COLUMNS) * 76, y: 112 + Math.floor(i / COLUMNS) * ROW }; };
+  var theme = function (a) { return THEMES[a.providerId] || { name: a.providerId, color: '#a371f7', hair: '#45305e' }; };
   function classifyTool(name) {
-    var n = String(name || '');
-    if (WRITE_RE.test(n)) return 'typing';
-    if (READ_RE.test(n)) return 'reading';
-    return 'typing';
+    var words = String(name || '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/);
+    if (words.some(function (w) { return /^(write|edit|patch|replace|create|delete|move|mkdir)$/.test(w); })) return 'typing';
+    if (words.some(function (w) { return /^(bash|shell|exec|execute|run|command|terminal)$/.test(w); })) return 'running';
+    if (words.some(function (w) { return /^(read|view|cat|search|grep|glob|find|list|fetch|web|browse|open|lookup|get|ls)$/.test(w); })) return 'reading';
+    if (words.some(function (w) { return /^(reason|reasoning|think|thinking)$/.test(w); })) return 'thinking';
+    return 'working';
+  }
+
+  class StationAllocator {
+    constructor() { this.slots = new Map(); }
+    allocate(id, parentId) {
+      if (this.slots.has(id)) return this.slots.get(id);
+      var used = new Set(this.slots.values()), parent = this.slots.get(parentId), candidates = [];
+      for (var i = 0; i <= (used.size + 1) * COLUMNS; i++) if (!used.has(i)) candidates.push(i);
+      if (parent !== undefined) {
+        var p = seat(parent);
+        candidates.sort(function (a, b) { var x = seat(a), y = seat(b); return Math.hypot(x.x - p.x, x.y - p.y) - Math.hypot(y.x - p.x, y.y - p.y) || a - b; });
+      }
+      this.slots.set(id, candidates[0]); return candidates[0];
+    }
+    release(id) { this.slots.delete(id); }
+  }
+
+  class ActorRegistry {
+    constructor() {
+      this.actors = Object.create(null);
+      this.tasks = new Map(); this.sessions = new Map(); this.stations = new StationAllocator();
+      this.order = []; this.nextId = 1;
+    }
+    resolve(ev) {
+      var id = String(ev.taskId), task = this.tasks.get(id);
+      var provider = String(ev.agent || (task && task.providerId) || 'unknown').toLowerCase();
+      var session = String(ev.sessionId || (task && task.sessionId) || '');
+      var parent = String(ev.parentTaskId || (task && task.parentTaskId) || '');
+      var key = session ? JSON.stringify([provider, session, parent ? id : '']) : '';
+      var a = task && this.actors[task.actorId], existing = key && this.actors[this.sessions.get(key)];
+      if (!a && existing) a = existing;
+      // A late parent link can split a previously shared session actor.
+      if (a && parent && !a.parentTaskId && a.taskIds.size > 1) { a.taskIds.delete(id); a = null; }
+      if (a && existing && a !== existing) {
+        a.taskIds.delete(id); existing.taskIds.add(id);
+        if (!a.taskIds.size) this.remove(a.id);
+        a = existing;
+      }
+      if (!a) {
+        var actorId = 'actor-' + this.nextId++;
+        a = { id: actorId, providerId: provider, sessionId: session, parentTaskId: parent,
+          taskIds: new Set(), idx: this.stations.allocate(actorId, this.tasks.get(parent)?.actorId),
+          x: 8, y: 70, tx: 8, ty: 70, mode: 'idle', badge: null, doneCount: 0, failCount: 0,
+          idleAt: 0, walking: false, tool: '', speechUntil: 0, lastSeenAt: 0 };
+        this.actors[a.id] = a; this.order.push(a.id);
+        a.y = seat(a.idx).y + 24;
+      }
+      if (a.parentTaskId !== parent || a.sessionId !== session) {
+        for (var [oldKey, value] of this.sessions) if (value === a.id) this.sessions.delete(oldKey);
+      }
+      a.sessionId = session; a.parentTaskId = parent; a.taskIds.add(id);
+      if (key) this.sessions.set(key, a.id);
+      if (!task) {
+        task = { id: id, actorId: a.id, providerId: provider, status: 'running', tools: new Map(), closedTools: new Set(),
+          waiting: false, timestamp: 0, sessionId: session, parentTaskId: parent, mode: 'thinking' };
+        this.tasks.set(id, task);
+      }
+      task.actorId = a.id; task.sessionId = session; task.parentTaskId = parent;
+      return { actor: a, task: task };
+    }
+    remove(id) {
+      var a = this.actors[id]; if (!a) return;
+      a.taskIds.forEach((taskId) => this.tasks.delete(taskId));
+      for (var [key, value] of this.sessions) if (value === id) this.sessions.delete(key);
+      this.stations.release(id); delete this.actors[id]; this.order.splice(this.order.indexOf(id), 1);
+    }
   }
 
   function createState() {
-    var s = { t: 0, agents: {}, order: [], ended: {} };
-    AGENTS.forEach(function (a, i) {
-      var r = rest(i);
-      s.agents[a.id] = { id: a.id, idx: i, x: r.x, y: r.y, tx: r.x, ty: r.y, mode: 'idle', tasks: {}, badge: null, doneCount: 0, failCount: 0, idleAt: 0, walking: false, tool: '' };
-      s.order.push(a.id);
-    });
-    return s;
+    var registry = new ActorRegistry();
+    return { t: 0, registry: registry, actors: registry.actors, order: registry.order,
+      seen: new Set(), cameraY: 0, selectedActorId: null };
   }
-
   function badge(a, kind, t, ttl) { a.badge = { kind: kind, until: ttl ? t + ttl : Infinity }; }
-  function goTo(a, p) { a.tx = p.x; a.ty = p.y; }
-  function activeCount(a) { return Object.keys(a.tasks).length; }
-
-  /** Tek bir TaskEvent'i ajan durumuna uygular. Bilinmeyen ajanlar (hermes, ollama ...) yok sayılır. */
-  function feed(s, ev) {
-    if (!ev || !ev.type) return null;
-    var a = s.agents[ev.agent]; if (!a) return null;
-    var d = ev.data || {}; var t = s.t; var id = ev.taskId || '_';
-    var ending = ev.type === 'task.completed' || ev.type === 'task.failed' || ev.type === 'task.cancelled';
-    if (!ending && s.ended[id]) return a; // bitmiş görevin geç gelen olayı
-    if (!ending) a.tasks[id] = true; else s.ended[id] = true;
-    if (ev.type === 'task.started' || ev.type === 'turn.started' || ev.type === 'message.delta' || ev.type === 'usage.updated') {
-      if (a.mode === 'idle' || a.mode === 'done' || a.mode === 'failed') { a.mode = 'thinking'; goTo(a, seat(a.idx)); if (a.badge && a.badge.kind !== 'ask') a.badge = null; }
-    } else if (ev.type === 'tool.invoked') {
-      a.mode = classifyTool(d.name); a.tool = String(d.name || '');
-      goTo(a, a.mode === 'reading' ? shelf(a.idx) : seat(a.idx));
-      if (a.badge && a.badge.kind !== 'ask') a.badge = null;
-    } else if (ev.type === 'tool.completed') {
-      if (d.isError || d.error) badge(a, 'deny', t, 1.5); else badge(a, 'ok', t, 0.9);
-      if (a.mode === 'typing' || a.mode === 'reading') { a.mode = 'thinking'; goTo(a, seat(a.idx)); }
-    } else if (ev.type === 'permission.requested') {
-      a.mode = 'waiting'; goTo(a, seat(a.idx)); badge(a, 'ask', t, 0);
-    } else if (ev.type === 'permission.resolved') {
-      var denied = d.allowed === false || d.approved === false || /deny|denied|reject|block/i.test(String(d.decision || d.outcome || ''));
-      badge(a, denied ? 'deny' : 'ok', t, 1.5); a.mode = 'thinking';
-    } else if (ending) {
-      delete a.tasks[id];
-      if (ev.type === 'task.completed') { a.doneCount++; badge(a, 'ok', t, 2.5); a.mode = 'done'; }
-      else if (ev.type === 'task.failed') { a.failCount++; badge(a, 'deny', t, 3); a.mode = 'failed'; }
-      else { a.badge = null; a.mode = 'done'; }
-      goTo(a, seat(a.idx)); a.idleAt = t + (ev.type === 'task.cancelled' ? 0.4 : 2.5);
+  function activeTasks(s, a) { return Array.from(a.taskIds, function (id) { return s.registry.tasks.get(id); }).filter(function (task) { return task && !terminal(task.status); }); }
+  function refresh(s, a) {
+    var tasks = activeTasks(s, a), waiting = tasks.some(function (task) { return task.waiting; });
+    var tools = tasks.flatMap(function (task) { return Array.from(task.tools.values()); });
+    var tool = tools[tools.length - 1];
+    if (tasks.length) {
+      a.mode = waiting ? 'waiting' : tool ? classifyTool(tool.name) : 'thinking';
+      a.tool = tool ? tool.name : '';
+      if (waiting) badge(a, 'ask', s.t, 0);
+      else if (a.badge && a.badge.kind === 'ask') a.badge = null;
     }
-    if ((d.blocked || d.denied || ev.type === 'tool.blocked') && !ending) { a.mode = 'waiting'; badge(a, 'deny', t, 2.5); }
+    var p = seat(a.idx); a.tx = p.x; a.ty = p.y + (a.mode === 'idle' ? 24 : 0);
+  }
+  function remember(s, id) {
+    if (!id) return true;
+    if (s.seen.has(id)) return false;
+    s.seen.add(id);
+    if (s.seen.size > 10000) s.seen.delete(s.seen.values().next().value);
+    return true;
+  }
+  function feed(s, ev) {
+    if (!ev || !ev.type || !ev.taskId || !remember(s, ev.id)) return null;
+    var resolved = s.registry.resolve(ev), a = resolved.actor, task = resolved.task, d = ev.data || {};
+    a.lastSeenAt = s.t;
+    // Terminal state is absorbing; replay cannot restart a finished task.
+    if (terminal(task.status)) return a;
+    task.timestamp = Math.max(task.timestamp, Number(ev.timestamp) || 0);
+    var toolId = String(d.toolUseId || d.tool_use_id || d.id || '');
+    if (/^task\.(completed|failed|cancelled)$/.test(ev.type)) {
+      task.status = ev.type.slice(5); task.tools.clear(); task.waiting = false;
+      if (task.status === 'completed') a.doneCount++;
+      if (task.status === 'failed') a.failCount++;
+      if (!activeTasks(s, a).length) {
+        a.mode = task.status === 'failed' ? 'failed' : 'done';
+        badge(a, task.status === 'failed' ? 'deny' : 'ok', s.t, 2.5); a.idleAt = s.t + 2.5;
+      }
+    } else if (ev.type === 'tool.invoked') {
+      // Unknown tools remain neutral; anonymous completions only match unambiguous calls.
+      if (!toolId) toolId = 'anonymous:' + (ev.id || task.tools.size + ':' + s.t);
+      if (!task.closedTools.has(toolId)) {
+        task.tools.set(toolId, { name: String(d.name || d.tool || ''), at: Number(ev.timestamp) || 0 });
+        a.speechUntil = s.t + 3; a.badge = null;
+      }
+    } else if (ev.type === 'tool.completed') {
+      if (!toolId && task.tools.size === 1) toolId = task.tools.keys().next().value;
+      if (toolId) { task.tools.delete(toolId); task.closedTools.add(toolId); }
+      if (d.isError || d.error) badge(a, 'deny', s.t, 1.5);
+    } else if (ev.type === 'permission.requested' || ev.type === 'tool.blocked' || d.blocked || d.denied) {
+      task.waiting = true;
+    } else if (ev.type === 'permission.resolved') {
+      task.waiting = false;
+      badge(a, d.allowed === false || d.approved === false || /deny|reject|block/i.test(String(d.decision || d.outcome || '')) ? 'deny' : 'ok', s.t, 1.5);
+    }
+    // A late identity/parent can move one task between actors.
+    s.order.forEach(function (id) { refresh(s, s.actors[id]); });
     return a;
   }
 
-  /** dt saniye ilerletir: yürüme, rozet süresi, boşta -> dinlenme alanı. */
-  function step(s, dt) {
-    s.t += dt;
-    s.order.forEach(function (k) {
-      var a = s.agents[k];
-      if (a.badge && s.t >= a.badge.until) a.badge = null;
-      if ((a.mode === 'done' || a.mode === 'failed') && s.t >= a.idleAt) {
-        if (activeCount(a) === 0) { a.mode = 'idle'; goTo(a, rest(a.idx)); } else { a.mode = 'thinking'; }
-      }
-      if (a.mode === 'thinking' && activeCount(a) === 0) { a.mode = 'idle'; goTo(a, rest(a.idx)); }
-      var dx = a.tx - a.x, dy = a.ty - a.y, dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 0.5) { a.x = a.tx; a.y = a.ty; a.walking = false; return; }
-      var mv = Math.min(dist, SPEED * dt);
-      a.x += dx / dist * mv; a.y += dy / dist * mv; a.walking = true;
+  // Task summaries are authoritative for lifecycle, not for in-flight tools.
+  // A summary's toolsUsed is history and must never be replayed as active calls.
+  function reconcile(s, rows) {
+    (rows || []).forEach(function (row) {
+      if (!row.taskId || !row.agent) return;
+      var old = s.registry.tasks.get(String(row.taskId));
+      if (!old && terminal(row.status)) return;
+      var result = s.registry.resolve(row), task = result.task, a = result.actor;
+      if (terminal(row.status) && !terminal(task.status)) feed(s, { taskId: row.taskId, agent: row.agent, sessionId: row.sessionId, parentTaskId: row.parentTaskId, type: 'task.' + row.status, timestamp: row.endTime });
+      refresh(s, a);
     });
+  }
+  function worldHeight(s) { return Math.max(H, ...s.order.map(function (id) { return seat(s.actors[id].idx).y + 60; })); }
+  function step(s, dt) {
+    dt = Math.max(0, Number(dt) || 0); s.t += dt;
+    s.order.slice().forEach(function (id) {
+      var a = s.actors[id];
+      if (a.badge && s.t >= a.badge.until) a.badge = null;
+      if (!activeTasks(s, a).length && s.t >= a.idleAt) { a.mode = 'idle'; refresh(s, a); }
+      // Retain completed actors briefly; live actors and selected inspectors never expire.
+      if (a.mode === 'idle' && s.t - a.lastSeenAt > 120 && s.selectedActorId !== id && !s.order.some(function (child) { return s.actors[child].parentTaskId && a.taskIds.has(s.actors[child].parentTaskId); })) { s.registry.remove(id); return; }
+      // The archive's aisle idea: enter along the clear row below each desk.
+      var target = { x: a.tx, y: a.ty };
+      if (Math.abs(a.x - a.tx) > 0.5) target.y = seat(a.idx).y + 24;
+      if (Math.abs(a.y - target.y) > 0.5 && Math.abs(a.x - a.tx) > 0.5) target.x = a.x;
+      var dx = target.x - a.x, dy = target.y - a.y, dist = Math.hypot(dx, dy), mv = Math.min(dist, SPEED * dt);
+      a.walking = dist > 0.5;
+      if (dist) { a.x += dx / dist * mv; a.y += dy / dist * mv; }
+    });
+    s.cameraY = Math.max(0, Math.min(s.cameraY, worldHeight(s) - H));
     return s;
   }
 
@@ -115,7 +210,8 @@
     if (!a) return '';
     if (a.mode === 'waiting' || (a.badge && a.badge.kind === 'ask')) return 'ask';
     if (a.mode === 'reading') return 'read';
-    if (a.mode === 'typing') return /bash|shell|exec|command|terminal|cmd|run/i.test(String(a.tool || '')) ? 'term' : 'write';
+    if (a.mode === 'running') return 'term';
+    if (a.mode === 'typing') return 'write';
     if (a.mode === 'thinking') return 'think';
     return '';
   }
@@ -176,7 +272,7 @@
     } else if (pose === 'thinking') {
       for (var i = 0; i < 3; i++) if (Math.floor(t * 3) % 3 >= i) rect(c, '#8b949e', x - 4 + i * 4, y - 26, 2, 2);
     } else if (pose === 'waiting') { rect(c, '#f2c9a0', x + 3, y - 18, 2, 5); } // el kaldırır
-    var bubble = a.badge ? '' : bubbleKind(a);
+    var bubble = a.badge || (a.mode !== 'thinking' && a.mode !== 'waiting' && t > a.speechUntil) ? '' : bubbleKind(a);
     if (bubble) drawSpeechBubble(c, bubble, x, y, t);
     if (a.badge) drawBadge(c, a.badge.kind, x, y);
   }
@@ -190,35 +286,60 @@
     for (i = 0; i < 12; i++) { rect(c, ['#c0392b', '#2980b9', '#27ae60', '#f1c40f', '#8e44ad', '#e67e22'][i % 6], 17 + i * 7, 11 + (i % 3), 5, 17 - (i % 3)); rect(c, ['#2980b9', '#e67e22', '#c0392b', '#27ae60', '#f1c40f', '#8e44ad'][i % 6], 17 + i * 7, 32 + (i % 2), 5, 15 - (i % 2)); }
     // beyaz tahta: tamamlanan / hatalı görev sayaçları
     rect(c, '#8b949e', 120, 8, 84, 40); rect(c, '#eef1f4', 122, 10, 80, 36);
-    s.order.forEach(function (k, n) {
-      var a = s.agents[k], d = AGENTS[n], y = 13 + n * 8;
-      rect(c, d.color, 125, y, 4, 4);
-      for (var q = 0; q < Math.min(a.doneCount, 14); q++) rect(c, '#2ea043', 133 + q * 4, y, 3, 4);
-      for (var z = 0; z < Math.min(a.failCount, 4); z++) rect(c, '#da3633', 190 + z * 3, y, 2, 4);
-    });
+    c.fillStyle = '#26333e'; c.font = '8px monospace'; c.textAlign = 'center';
+    c.fillText(String(s.order.length), 162, 29);
     // su sebili + kahve makinesi (dinlenme alanı)
     rect(c, '#cfd8e3', 244, 14, 16, 36); rect(c, '#7fc4ff', 247, 16, 10, 14); rect(c, '#9aa7b5', 246, 34, 12, 3);
     rect(c, '#3a3f46', 270, 22, 22, 28); rect(c, '#111', 274, 28, 14, 8); rect(c, Math.floor(t * 2) % 2 ? '#2ea043' : '#1f6f31', 276, 40, 3, 3); rect(c, '#f1ede4', 280, 44, 5, 6);
     rect(c, '#3b3228', 238, 62, 70, 1);
-    // masalar
-    AGENTS.forEach(function (d, n) {
-      var a = s.agents[d.id], x = deskX(n), live = activeCount(a) > 0;
-      rect(c, '#3a4048', x + 17, 92, 18, 13); // monitör
-      rect(c, live ? '#0d2a16' : '#0b0e12', x + 19, 94, 14, 9);
-      if (live) for (var l = 0; l < 4; l++) rect(c, a.mode === 'waiting' ? '#d29922' : '#3fb950', x + 20, 95 + ((l * 2 + Math.floor(t * (a.mode === 'typing' ? 6 : 1.5))) % 8), 4 + (l * 3) % 8, 1);
-      rect(c, '#2d333b', x + 24, 105, 4, 3);
+    c.save(); c.beginPath(); c.rect(0, 55, W, H - 55); c.clip(); c.translate(0, -s.cameraY);
+    // Parent links remain visible even when adjacent seats are occupied.
+    s.order.forEach(function (id) {
+      var a = s.actors[id], parent = s.registry.tasks.get(a.parentTaskId);
+      var p = parent && s.actors[parent.actorId];
+      if (!p || p === a) return;
+      var from = seat(p.idx), to = seat(a.idx);
+      c.strokeStyle = '#5a7395'; c.beginPath(); c.moveTo(from.x, from.y + 25); c.lineTo(to.x, to.y + 25); c.stroke();
     });
-    s.order.forEach(function (k) { var a = s.agents[k]; if (a.y < DESK_Y - 1) drawAgent(c, a, AGENTS[a.idx], t); });
-    AGENTS.forEach(function (d, n) { // masa yüzeyi
-      var x = deskX(n);
-      rect(c, '#6b4f33', x, 112, 52, 6); rect(c, '#4a3622', x, 118, 52, 2); rect(c, '#4a3622', x + 2, 120, 3, 10); rect(c, '#4a3622', x + 47, 120, 3, 10);
-      rect(c, '#9aa0a6', x + 20, 113, 12, 3); // klavye
+    s.order.forEach(function (id) {
+      var a = s.actors[id], p = seat(a.idx), x = p.x - 26, y = p.y;
+      if (y - s.cameraY < 40 || y - s.cameraY > H + 40) return;
+      var live = activeTasks(s, a).length > 0, def = theme(a);
+      rect(c, '#6b4f33', x, y - 9, 52, 6); rect(c, '#4a3622', x + 2, y - 3, 3, 10); rect(c, '#4a3622', x + 47, y - 3, 3, 10);
+      rect(c, '#3a4048', x + 17, y - 29, 18, 15);
+      rect(c, live ? '#0d2a16' : '#0b0e12', x + 19, y - 27, 14, 10);
+      if (live) for (var l = 0; l < 4; l++) rect(c, a.mode === 'waiting' ? '#d29922' : '#3fb950', x + 20, y - 26 + ((l * 2 + Math.floor(t * (a.mode === 'typing' ? 6 : 1.5))) % 8), 4 + (l * 3) % 8, 1);
+      rect(c, a.mode === 'typing' && Math.floor(t * 8) % 2 ? '#f5e5a0' : '#9aa0a6', x + 20, y - 8, 12, 3);
+      if (a.mode === 'reading') drawSpeechBubble(c, 'read', x + 46, y + 28, t);
+      if (a.mode === 'running') drawSpeechBubble(c, 'term', x + 46, y + 28, t);
+      if (s.selectedActorId === id) rect(c, '#f5e5a0', x, y + 8, 52, 1);
+      c.fillStyle = def.color; c.font = '7px monospace'; c.textAlign = 'center';
+      c.fillText(def.name.slice(0, 9) + ' #' + id.slice(6), p.x, y + 42);
     });
-    s.order.forEach(function (k) { var a = s.agents[k]; if (a.y >= DESK_Y - 1) drawAgent(c, a, AGENTS[a.idx], t); });
-    s.order.forEach(function (k, n) { // isim etiketleri
-      c.fillStyle = AGENTS[n].color; c.font = '8px monospace'; c.textAlign = 'center';
-      c.fillText(AGENTS[n].name, deskX(n) + 26, 160);
+    s.order.map(function (id) { return s.actors[id]; }).sort(function (a, b) { return a.y - b.y; }).forEach(function (a) {
+      if (a.y - s.cameraY >= 55 && a.y - s.cameraY <= H + 24) drawAgent(c, a, theme(a), t);
     });
+    c.restore();
+    if (worldHeight(s) > H) {
+      rect(c, '#44505f', W - 4, 57, 2, H - 60);
+      rect(c, '#c9d1d9', W - 4, 57 + s.cameraY / (worldHeight(s) - H) * (H - 70), 2, 10);
+    }
+  }
+
+  // AABB hit areas adapted from the archived RPG, with screen/world coordinates separated.
+  function hitTest(s, x, y) {
+    if (y < 55) return null;
+    y += s.cameraY;
+    var ids = s.order.slice().sort(function (a, b) { return s.actors[b].y - s.actors[a].y; });
+    for (var id of ids) {
+      var a = s.actors[id];
+      if (x >= a.x - 9 && x <= a.x + 9 && y >= a.y - 24 && y <= a.y + 3) return id;
+    }
+    for (var id of ids) {
+      var p = seat(s.actors[id].idx);
+      if (x >= p.x - 26 && x <= p.x + 26 && y >= p.y - 30 && y <= p.y + 10) return id;
+    }
+    return null;
   }
 
   /** Tuval + animasyon döngüsü. start/stop ile yalnızca panel açıkken çalışır; feed her zaman durumu günceller. */
@@ -234,18 +355,38 @@
     function pick(ev) {
       if (!onPick) return;
       var r = canvas.getBoundingClientRect(); var x = (ev.clientX - r.left) / r.width * W, y = (ev.clientY - r.top) / r.height * H;
-      var best = null, bd = 1e9;
-      state.order.forEach(function (k) { var a = state.agents[k], dd = Math.abs(a.x - x) + Math.abs(a.y - 10 - y) * 0.8; if (dd < bd) { bd = dd; best = k; } });
-      if (best && (bd < 22 || (y > 100 && Math.abs(deskX(state.agents[best].idx) + 26 - x) < 30))) onPick(best);
+      var id = hitTest(state, x, y);
+      if (id) { state.selectedActorId = id; onPick(id); }
     }
+    function scroll(ev) {
+      if (worldHeight(state) <= H) return;
+      ev.preventDefault();
+      state.cameraY = Math.max(0, Math.min(worldHeight(state) - H, state.cameraY + Math.sign(ev.deltaY) * 40));
+    }
+    function key(ev) {
+      if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
+      scroll({ deltaY: ev.key === 'ArrowDown' ? 1 : -1, preventDefault: function () { ev.preventDefault(); } });
+    }
+    canvas.tabIndex = 0;
+    canvas.addEventListener('wheel', scroll, { passive: false });
+    canvas.addEventListener('keydown', key);
+
     canvas.addEventListener('click', pick);
     return {
       state: state,
       feed: function (ev) { return feed(state, ev); },
+      reconcile: function (rows) { reconcile(state, rows); },
+      select: function (id) {
+        var a = state.actors[id]; if (!a) return;
+        state.selectedActorId = id; state.cameraY = Math.max(0, Math.min(worldHeight(state) - H, seat(a.idx).y - 112));
+      },
+      destroy: function () {
+        this.stop(); canvas.removeEventListener('click', pick); canvas.removeEventListener('wheel', scroll); canvas.removeEventListener('keydown', key);
+      },
       start: function () { if (raf || !root.requestAnimationFrame) return; last = root.performance.now(); raf = root.requestAnimationFrame(frame); },
       stop: function () { if (raf && root.cancelAnimationFrame) root.cancelAnimationFrame(raf); raf = 0; }
     };
   }
 
-  root.ObsOffice = { AGENTS: AGENTS, W: W, H: H, classifyTool: classifyTool, createState: createState, feed: feed, step: step, poseOf: poseOf, bubbleKind: bubbleKind, drawSpeechBubble: drawSpeechBubble, drawScene: drawScene, mount: mount };
+  root.ObsOffice = { ActorRegistry: ActorRegistry, StationAllocator: StationAllocator, reconcile: reconcile, hitTest: hitTest, seat: seat, worldHeight: worldHeight, W: W, H: H, classifyTool: classifyTool, createState: createState, feed: feed, step: step, poseOf: poseOf, bubbleKind: bubbleKind, drawSpeechBubble: drawSpeechBubble, drawScene: drawScene, mount: mount };
 })(typeof window !== 'undefined' ? window : globalThis);
