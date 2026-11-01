@@ -108,4 +108,43 @@ const sessions = groupSessions(rows, NOW);
 assert.strictEqual(sessions.length, 1);
 assert.strictEqual(sessions[0].title, 'Veri Analizi Görevi');
 
+// 7. Ad verilmemiş oturumlar için başlık üretimi (sahte üretici; ağa çıkılmaz). Dosyanın sonunda: kuyruk açılınca kapanmaz.
+{
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { enableTitleGeneration, drainTitleQueue, generatedSessionTitle, titleInputFromPrompts } = await import('../src/core/title_generator.ts');
+
+  assert.strictEqual(
+    titleInputFromPrompts(['<system-reminder>gizli bağlam</system-reminder>harita sınırlarını incelt', '', 'testi çalıştır']),
+    'harita sınırlarını incelt\n---\ntesti çalıştır'
+  );
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'obs-gen-'));
+  const file = path.join(dir, 'session_titles.json');
+  const seen: string[] = [];
+  assert.ok(enableTitleGeneration({ file, gapMs: 0, generate: async (t) => { seen.push(t); return t.startsWith('boş') ? null : '"Başlık: Harita Sınırlarını İnceltme."'; } }));
+
+  // ilk çağrı istemden başlık döner ve üretimi kuyruğa alır; üretim bitince üretilen başlık kullanılır
+  assert.strictEqual(resolveSessionTitle('gen-1', 'custom-agent', ['harita sınırlarını incelt']), 'harita sınırlarını incelt');
+  resolveSessionTitle('gen-1', 'custom-agent', ['harita sınırlarını incelt']); // aynı oturum ikinci kez kuyruğa girmez
+  await drainTitleQueue();
+  assert.strictEqual(seen.length, 1);
+  assert.strictEqual(resolveSessionTitle('gen-1', 'custom-agent', ['harita sınırlarını incelt']), 'Harita Sınırlarını İnceltme');
+  assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8'))['gen-1'].title, 'Harita Sınırlarını İnceltme');
+
+  // üretici başarısız olursa istem başlığı kalır ve hemen yeniden denenmez
+  resolveSessionTitle('gen-2', 'custom-agent', ['boş yanıt']);
+  await drainTitleQueue();
+  resolveSessionTitle('gen-2', 'custom-agent', ['boş yanıt']);
+  await drainTitleQueue();
+  assert.strictEqual(generatedSessionTitle('gen-2'), '');
+  assert.strictEqual(seen.filter((s) => s === 'boş yanıt').length, 1);
+
+  // kaydedilmiş başlıklar yeniden açılışta dosyadan yüklenir
+  assert.ok(enableTitleGeneration({ file, generate: async () => null }));
+  assert.strictEqual(generatedSessionTitle('gen-1'), 'Harita Sınırlarını İnceltme');
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 console.log('title_generator tests PASSED successfully.');

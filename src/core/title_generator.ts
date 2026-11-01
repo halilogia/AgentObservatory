@@ -355,6 +355,106 @@ export function nativeSessionTitle(id: string, agent: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Üretilen başlıklar: programın ad vermediği oturumlar (codex exec, opencode run, claude -p …)
+// Her oturum için bir kez üretilir, ~/.observatory/session_titles.json dosyasında saklanır.
+// Kuyruk yalnızca enableTitleGeneration() çağrıldığında çalışır (web sunucusu); testler ağa çıkmaz.
+// ---------------------------------------------------------------------------
+
+type TitleGenerator = (text: string) => Promise<string | null>;
+const generatedTitles = new Map<string, string>();
+const genQueue: Array<{ id: string; agent: string; text: string }> = [];
+const genQueued = new Set<string>();
+const genFailedAt = new Map<string, number>();
+let genState: { file: string; generate: TitleGenerator; gapMs: number } | null = null;
+let genRunning = false;
+const GEN_RETRY_MS = 10 * 60_000;
+const GEN_QUEUE_MAX = 200;
+
+/** İstemleri başlık modeline gidecek kısa metne çevirir: sistem etiketleri atılır, ilk 3 istem, en fazla 2000 karakter. */
+export function titleInputFromPrompts(prompts: string[]): string {
+  const parts: string[] = [];
+  for (const p of prompts) {
+    const clean = String(p || '')
+      .replace(/<(system-reminder|command-[a-z-]+|local-command-[a-z-]+)>[\s\S]*?<\/\1>/gi, '')
+      .replace(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/i, '$1')
+      .replace(/<[^>]+>/g, '')
+      .trim();
+    if (clean) parts.push(clean.slice(0, 800));
+    if (parts.length >= 3) break;
+  }
+  return parts.join('\n---\n').slice(0, 2000);
+}
+
+/** Web sunucusu açılışında çağrılır; GEMINI_API_KEY yoksa (ve üretici verilmemişse) hiçbir şey yapmaz. */
+export function enableTitleGeneration(opts: { file?: string; generate?: TitleGenerator; gapMs?: number } = {}): boolean {
+  if (process.env.OBS_TITLE_GEN === '0') return false;
+  const generate = opts.generate ?? (process.env.GEMINI_API_KEY ? (t: string) => generateConversationTitleWithGemini(t) : null);
+  if (!generate) return false;
+  const file = opts.file ?? path.join(os.homedir(), '.observatory', 'session_titles.json');
+  try {
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const [id, v] of Object.entries<any>(saved)) if (v?.title) generatedTitles.set(id, String(v.title));
+  } catch { /* ilk çalıştırma */ }
+  genState = { file, generate, gapMs: opts.gapMs ?? 300 };
+  return true;
+}
+
+/** Üretilmiş başlık (yoksa boş metin). */
+export function generatedSessionTitle(id: string): string {
+  return generatedTitles.get(id) ?? '';
+}
+
+/** Kuyruk boşalana kadar bekler (testler ve kapanış için). */
+export async function drainTitleQueue(): Promise<void> {
+  while (genRunning || genQueue.length) await new Promise((r) => setTimeout(r, 20));
+}
+
+function requestGeneratedTitle(id: string, agent: string, prompts: string[]): void {
+  if (!genState || genQueued.has(id) || generatedTitles.has(id) || genQueue.length >= GEN_QUEUE_MAX) return;
+  const failed = genFailedAt.get(id);
+  if (failed && Date.now() - failed < GEN_RETRY_MS) return;
+  const text = titleInputFromPrompts(prompts);
+  if (!text) return;
+  genQueued.add(id);
+  genQueue.push({ id, agent, text });
+  if (!genRunning) void runTitleQueue();
+}
+
+function saveGeneratedTitles(file: string, entry: { id: string; agent: string; title: string }): void {
+  let all: Record<string, any> = {};
+  try { all = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { all = {}; }
+  all[entry.id] = { title: entry.title, agent: entry.agent, model: TITLE_MODEL, at: new Date().toISOString() };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(all, null, 1));
+  fs.renameSync(tmp, file); // yarım yazılmış dosya kalmasın
+}
+
+async function runTitleQueue(): Promise<void> {
+  genRunning = true;
+  try {
+    while (genState && genQueue.length) {
+      const job = genQueue.shift()!;
+      // beklerken program kendi adını vermiş olabilir: o zaman üretmeye gerek yok
+      if (nativeSessionTitle(job.id, job.agent)) { genQueued.delete(job.id); continue; }
+      let title: string | null = null;
+      try { title = await genState.generate(job.text); } catch { title = null; }
+      title = title ? postprocessConversationTitle(title) : '';
+      if (title) {
+        generatedTitles.set(job.id, title);
+        try { saveGeneratedTitles(genState.file, { id: job.id, agent: job.agent, title }); } catch { /* disk hatası: bellekte kalır */ }
+      } else {
+        genFailedAt.set(job.id, Date.now());
+      }
+      genQueued.delete(job.id);
+      if (genQueue.length) await new Promise((r) => setTimeout(r, genState?.gapMs ?? 300));
+    }
+  } finally {
+    genRunning = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Birleşik Başlık Çözümleyici (Resolution Pipeline)
 // ---------------------------------------------------------------------------
 
@@ -402,7 +502,14 @@ export function resolveSessionTitle(
     }
   }
 
-  // 5. Fallback: prompt listesini puanlayarak veya ilk prompt'u temizleyerek başlık üret
+  // 5. Program ad vermemişse: daha önce üretilmiş başlık; yoksa üretim kuyruğuna al (yalnızca web sunucusu açtıysa)
+  if (id) {
+    const gen = generatedTitles.get(id);
+    if (gen) return gen;
+    requestGeneratedTitle(id, agent, prompts);
+  }
+
+  // 6. Fallback: prompt listesini puanlayarak veya ilk prompt'u temizleyerek başlık üret
   if (fallbackPicker) {
     return fallbackPicker(prompts);
   }
@@ -421,6 +528,8 @@ export function resolveSessionTitle(
   return 'Yeni sohbet';
 }
 
+export const TITLE_MODEL = process.env.OBS_TITLE_MODEL || 'gemini-3.5-flash-lite';
+
 /**
  * Gemini API'si varsa Antigravity başlık oluşturma prompt'u ile canlı başlık üretir.
  */
@@ -432,10 +541,10 @@ export async function generateConversationTitleWithGemini(
   if (!key) return null;
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${TITLE_MODEL}:generateContent`;
     const body = {
       systemInstruction: {
-        parts: [{ text: CONVERSATION_TITLE_SYSTEM_PROMPT }]
+        parts: [{ text: CONVERSATION_TITLE_SYSTEM_PROMPT + ' Write the title in the same language the USER writes in.' }]
       },
       contents: [
         {
@@ -445,19 +554,20 @@ export async function generateConversationTitleWithGemini(
       ],
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 25
+        maxOutputTokens: 40
       }
     };
 
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000)
     });
 
     if (!res.ok) return null;
     const data = await res.json() as any;
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const text = (data?.candidates?.[0]?.content?.parts || []).map((p: any) => p?.text || '').join('');
     if (text) {
       return postprocessConversationTitle(text);
     }

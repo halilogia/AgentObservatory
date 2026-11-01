@@ -483,6 +483,9 @@ export async function runWeb(args: string[]): Promise<void> {
   const { server } = startWeb({ port, roots: flagRoots.length ? flagRoots : undefined });
   await new Promise((r) => server.once('listening', r));
   console.log(`Observatory sohbet arayüzü: http://127.0.0.1:${port}`);
+  // programın ad vermediği oturumlara Gemini ile başlık üretilir (yalnızca bu komutla açılan sunucuda; testler ağa çıkmaz)
+  const { enableTitleGeneration, TITLE_MODEL } = await import('../core/title_generator.ts');
+  if (enableTitleGeneration()) console.log(`Oturum başlıkları: adı olmayan oturumlar ${TITLE_MODEL} ile adlandırılır (kapatmak için OBS_TITLE_GEN=0).`);
   const roots = flagRoots.length ? flagRoots : defaultRoots(readConfig(CONFIG_PATH));
   console.log(`Klasör kökleri: ${roots.join('; ') || '(yok)'}. Arayüzden "Klasör ekle" ile başka klasör ekleyebilirsin (ayar: ${CONFIG_PATH}). Varsayılan kip salt okunur.`);
 }
