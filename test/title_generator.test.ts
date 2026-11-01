@@ -75,7 +75,28 @@ assert.strictEqual(resolvedFallback, fallbackPrompt);
   // kaydı olmayan Claude oturumu istemden başlık alır
   assert.strictEqual(resolveSessionTitle('99999999-0000-0000-0000-000000000000', 'claude', ['Veri temizliği yap']), 'Veri temizliği yap');
   delete process.env.CLAUDE_CONFIG_DIR;
-  fs.rmSync(root, { recursive: true, force: true });
+
+  // Codex: session_index.jsonl içindeki thread_name (aynı kimlikte son kayıt kazanır)
+  process.env.CODEX_HOME = path.join(root, 'codex');
+  fs.mkdirSync(process.env.CODEX_HOME);
+  fs.writeFileSync(path.join(process.env.CODEX_HOME, 'session_index.jsonl'),
+    JSON.stringify({ id: 'cx-1', thread_name: 'Eski ad' }) + '\n' + JSON.stringify({ id: 'cx-1', thread_name: 'Game Pass bilgisini ekle' }) + '\n');
+  assert.strictEqual(resolveSessionTitle('cx-1', 'codex', ['istem']), 'Game Pass bilgisini ekle');
+  delete process.env.CODEX_HOME;
+
+  // OpenCode: opencode.db session.title; varsayılan "New session - …" adı başlık sayılmaz
+  process.env.XDG_DATA_HOME = path.join(root, 'xdg');
+  fs.mkdirSync(path.join(process.env.XDG_DATA_HOME, 'opencode'), { recursive: true });
+  const { DatabaseSync } = await import('node:sqlite');
+  const odb = new DatabaseSync(path.join(process.env.XDG_DATA_HOME, 'opencode', 'opencode.db'));
+  odb.exec('CREATE TABLE session (id text PRIMARY KEY, title text NOT NULL)');
+  odb.prepare('INSERT INTO session VALUES (?, ?)').run('ses_named', 'Harita verisini düzelt');
+  odb.prepare('INSERT INTO session VALUES (?, ?)').run('ses_default', 'New session - 2026-10-31T12:40:53.433Z');
+  odb.close();
+  assert.strictEqual(resolveSessionTitle('ses_named', 'opencode', ['istem']), 'Harita verisini düzelt');
+  assert.strictEqual(resolveSessionTitle('ses_default', 'opencode', ['Testleri çalıştır']), 'Testleri çalıştır');
+  delete process.env.XDG_DATA_HOME;
+  try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* açık sqlite bağlantısı Windows'ta silmeyi engelleyebilir */ }
 }
 
 // 6. web_sessions.groupSessions Entegrasyonu

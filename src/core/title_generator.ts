@@ -259,6 +259,102 @@ export function loadChatGptSessionTitles(): Map<string, string> {
 }
 
 // ---------------------------------------------------------------------------
+// Programların kendi başlık depoları (her programın kendi ürettiği ad; kenar çubuklarında görünen)
+// ---------------------------------------------------------------------------
+
+// SQLite depoları WAL kullanır: dosya mtime'ı değişmeden başlık güncellenebilir. Bu yüzden
+// bağlantı açık tutulur, kimlik başına sorgulanır ve sonuç kısa süre önbellekte tutulur.
+const TITLE_TTL_MS = 15_000;
+const dbConns = new Map<string, DatabaseSync | null>();
+const idCache = new Map<string, { at: number; title: string }>();
+
+function cachedLookup(key: string, fn: () => string): string {
+  const hit = idCache.get(key);
+  if (hit && Date.now() - hit.at < TITLE_TTL_MS) return hit.title;
+  let title = '';
+  try { title = fn() || ''; } catch { title = ''; }
+  idCache.set(key, { at: Date.now(), title });
+  return title;
+}
+
+function sqliteTitle(dbPath: string, sql: string, id: string): string {
+  if (!dbConns.has(dbPath)) {
+    let conn: DatabaseSync | null = null;
+    try { if (fs.existsSync(dbPath)) conn = new DatabaseSync(dbPath, { readOnly: true }); } catch { conn = null; }
+    dbConns.set(dbPath, conn);
+  }
+  const conn = dbConns.get(dbPath);
+  if (!conn) return '';
+  const row = conn.prepare(sql).get(id) as any;
+  return row?.title ? String(row.title).trim() : '';
+}
+
+/** Antigravity masaüstü ve CLI: ~/.gemini/antigravity{,-cli}/conversation_summaries.db → title. */
+export function loadAgyConversationTitle(id: string): string {
+  return cachedLookup('agy:' + id, () => {
+    for (const dir of ['antigravity', 'antigravity-cli']) {
+      const t = sqliteTitle(path.join(os.homedir(), '.gemini', dir, 'conversation_summaries.db'),
+        "SELECT title FROM conversation_summaries WHERE conversation_id = ? AND title != ''", id);
+      if (t) return t;
+    }
+    return '';
+  });
+}
+
+/** Codex (CLI ve masaüstü): $CODEX_HOME/session_index.jsonl → {"id","thread_name"}; son kayıt kazanır. */
+let codexIndex: { size: number; mtime: number; map: Map<string, string> } | null = null;
+export function loadCodexThreadTitle(id: string): string {
+  const file = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'session_index.jsonl');
+  try {
+    const st = fs.statSync(file);
+    if (!codexIndex || codexIndex.size !== st.size || codexIndex.mtime !== st.mtimeMs) {
+      const map = new Map<string, string>();
+      for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+        if (!line.trim()) continue;
+        try { const o = JSON.parse(line); if (o.id && o.thread_name) map.set(String(o.id), String(o.thread_name).trim()); } catch { /* bozuk satır */ }
+      }
+      codexIndex = { size: st.size, mtime: st.mtimeMs, map };
+    }
+    return codexIndex.map.get(id) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** OpenCode: $XDG_DATA_HOME/opencode/opencode.db → session.title (henüz adlandırılmamış "New session - …" sayılmaz). */
+export function loadOpenCodeSessionTitle(id: string): string {
+  return cachedLookup('opencode:' + id, () => {
+    const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
+    const t = sqliteTitle(path.join(dataHome, 'opencode', 'opencode.db'), 'SELECT title FROM session WHERE id = ?', id);
+    return /^(New session|Child session) - /.test(t) ? '' : t;
+  });
+}
+
+/** Command Code: ~/.commandcode/projects/<proje>/<oturum>.meta.json → title. */
+export function loadCommandCodeTitle(id: string): string {
+  return cachedLookup('commandcode:' + id, () => {
+    const root = path.join(os.homedir(), '.commandcode', 'projects');
+    for (const dir of fs.readdirSync(root)) {
+      const meta = path.join(root, dir, id + '.meta.json');
+      if (fs.existsSync(meta)) return String(JSON.parse(fs.readFileSync(meta, 'utf8')).title || '').trim();
+    }
+    return '';
+  });
+}
+
+/** Ajanın kendi programının verdiği başlık; yoksa boş metin. */
+export function nativeSessionTitle(id: string, agent: string): string {
+  switch (agent) {
+    case 'claude': return loadClaudeTranscriptTitle(id);
+    case 'agy': case 'antigravity': return loadAgyConversationTitle(id) || loadAgyHubTitles().get(id) || '';
+    case 'codex': return loadCodexThreadTitle(id);
+    case 'opencode': return loadOpenCodeSessionTitle(id);
+    case 'commandcode': case 'cmd': return loadCommandCodeTitle(id);
+    default: return '';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Birleşik Başlık Çözümleyici (Resolution Pipeline)
 // ---------------------------------------------------------------------------
 
@@ -276,23 +372,14 @@ export function resolveSessionTitle(
 ): string {
   const id = String(sessionId || '').trim();
 
-  // 1. Antigravity (agy) oturumları için yerel kütüklerden ara
-  if (id && (agent === 'agy' || agent === 'antigravity')) {
-    const hubMap = loadAgyHubTitles();
-    if (hubMap.has(id)) {
-      return postprocessConversationTitle(hubMap.get(id)!);
-    }
-    const cliMap = loadAgyCliTitles();
-    if (cliMap.has(id)) {
-      return postprocessConversationTitle(cliMap.get(id)!);
-    }
+  // 1. Programın kendi başlığı (Claude / Antigravity / Codex / OpenCode / Command Code kenar çubuğundaki ad)
+  if (id) {
+    const own = nativeSessionTitle(id, agent);
+    if (own) return postprocessConversationTitle(own);
   }
 
-  // 2. Claude Code oturumları için haritayı kontrol et
+  // 2. Claude Code oturumları için Antigravity köprü haritasını kontrol et
   if (id && agent === 'claude') {
-    // önce Claude'un kendi kaydındaki başlık (Claude uygulamasının kenar çubuğunda görünen ad)
-    const own = loadClaudeTranscriptTitle(id);
-    if (own) return postprocessConversationTitle(own);
     const claudeMap = loadClaudeSessionTitles();
     if (claudeMap.has(id)) {
       return postprocessConversationTitle(claudeMap.get(id)!);
