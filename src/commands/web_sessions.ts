@@ -1,5 +1,6 @@
 // Web arayüzünün "Terminal oturumları" listesi: veritabanındaki görev satırlarını oturum başına toplar ve
 // bir oturumun olaylarını TUI'deki aynı kurallarla (alt ajan olayları ve sahte iptaller çıkarılır) süzer.
+import { resolveSessionTitle } from '../core/title_generator.ts';
 
 const LIVE_WINDOW_MS = 60 * 60 * 1000; // bir saatten eski "çalışıyor" kayıtları bitmemiş eski oturum sayılır (TUI ile aynı)
 
@@ -120,7 +121,7 @@ export function groupSessions(rows: any[], now: number, subRows: any[] = []): Se
   // Dinamik başlık seçimi: satırlar yeniden eskiye geldiği için ters çevrilerek kronolojik değerlendirilir
   for (const [id, s] of map.entries()) {
     const plist = (promptsMap.get(id) || []).slice().reverse();
-    s.title = pickSessionTitle(plist);
+    s.title = resolveSessionTitle(id, s.agent, plist, pickSessionTitle);
   }
   // alt ajan görevleri: yalnızca sayılır (oturum listesindeki rozet); kendi başlarına satır olmazlar
   for (const r of subRows) {
