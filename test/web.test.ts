@@ -179,6 +179,19 @@ try {
       assert.strictEqual((await post('/api/run', { engine: 'commandcode', model: '', prompt: 'x', mode: 'write' })).status, 400);
     } finally { if (previous === undefined) delete process.env.COMMANDCODE_BIN; else process.env.COMMANDCODE_BIN = previous; }
   }
+  // kitaplık uçları: /api/library ve /api/library/file
+  {
+    const testSvg = path.join(root, 'proj', 'diagram.svg');
+    fs.writeFileSync(testSvg, '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="5"/></svg>', 'utf8');
+    writer.recordEvent(createEvent({ taskId: 't_lib_1', agent: 'claude', type: 'tool.completed', data: { name: 'write_file', output: testSvg } }));
+    const libRes = await fetch(base + '/api/library');
+    assert.strictEqual(libRes.status, 200);
+    const libItems = await libRes.json() as any[];
+    assert.ok(Array.isArray(libItems));
+    const fileRes = await fetch(base + '/api/library/file?path=' + encodeURIComponent(testSvg));
+    assert.strictEqual(fileRes.status, 200);
+    assert.strictEqual(fileRes.headers.get('content-type'), 'image/svg+xml');
+  }
   console.log('✔ web: arayüz + CSP, yapılandırma, jeton/Origin/Sec-Fetch-Site korumaları, doğrulamalar, gönder -> SSE');
 } finally {
   server.close();

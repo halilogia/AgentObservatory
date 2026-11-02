@@ -40,10 +40,10 @@
   <rect x="399.6629999999998" y="292.3" width="186" height="16.3" rx="2" ry="2" fill="var(--bg)" />
   <text x="402.6629999999998" y="300.45" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">[Parallel Architecture &amp; Engine Design]</text>
 </g>
-<g class="message" data-from="HE" data-to="Blue" data-label="Add 300 historical provinces with 1919 garrison & income data, connect to engine" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="1">
+<g class="message" data-from="HE" data-to="Blue" data-label="Add 300 historical provinces with 1919 garrison &amp; income data, connect to engine" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="1">
   <line x1="84.766" y1="112.45" x2="501.66599999999977" y2="112.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
   <rect x="84.7159999999999" y="94.3" width="417" height="16.3" rx="2" ry="2" fill="var(--bg)" />
-  <text x="293.2159999999999" y="102.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Add 300 historical provinces with 1919 garrison & income data, connect to engine</text>
+  <text x="293.2159999999999" y="102.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Add 300 historical provinces with 1919 garrison &amp; income data, connect to engine</text>
   <circle class="sequence-number" cx="84.766" cy="112.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
   <text x="84.766" y="112.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">1</text>
 </g>

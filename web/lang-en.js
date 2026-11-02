@@ -1,3 +1,4 @@
+// @ts-mandatory: Tarayıcıda sıfır-derleme (zero-build CSP script-src self) ile doğrudan çalışan istemci dil modülüdür.
 ObsI18n.addResources('en', {
   app: { title: 'Agent Observatory' },
   common: { copy: 'Copy', copied: 'Copied', thinking: 'Thinking process' },
@@ -39,6 +40,10 @@ ObsI18n.addResources('en', {
     spawn_failed: 'The program could not be started. Run "observatory doctor" in a terminal.'
   },
   api: {
+    acc_bad_agent: 'Unsupported account provider agent.',
+    acc_name_needed: 'Account name is required.',
+    acc_bad_action: 'Invalid account action.',
+    acc_failed: 'Account action failed.',
     unknown_engine: 'Unknown engine.',
     unknown_model: 'Unknown model for this engine.',
     bad_prompt: 'The prompt is empty or longer than 20000 characters.',
@@ -94,9 +99,13 @@ ObsI18n.addResources('en', {
     haiku: 'Fastest for quick answers',
     gpt6astra: 'OpenAI, with ChatGPT sign-in',
     free: 'Free model',
+    gemini4argon: 'Google, reasoning & multimodal model',
     gemini38flash: 'Google, official agy.exe'
   },
   office: { navigation: 'Scroll or use arrow keys for more desks', subagent: 'Subagent', pendingSession: 'Session pending', openSession: 'Open live session', console: 'Task log' },
+  acc: { btn: 'Accounts', title: 'Account Management' },
+  lib: { loading: 'Loading...', error: 'Failed to load library.', empty: 'No library items yet.', openSource: 'Open Source', openOriginal: 'Open Original', close: 'Close', prev: 'Previous', next: 'Next' },
+  arc: { title: 'Archive', empty: 'No archived chats or sessions.' },
   lang: { switchTo: 'Türkçe', switchTitle: 'Türkçe\'ye geç' },
   theme: { toLight: 'Switch to light theme', toDark: 'Switch to dark theme' }
 });

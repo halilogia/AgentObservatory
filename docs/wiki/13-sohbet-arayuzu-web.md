@@ -47,7 +47,19 @@ node bin/observatory.js web --port 9000
 | Claude Code | Sonnet 5.5, Opus 5.5, Haiku 5.5 | 5 kademe (`--effort`) | yok | Headless modda izin sorulamaz: yalnızca okuma ve yanıt |
 | Codex | GPT-6 Astra | 6 kademe: low, medium, high, xhigh, max, ultra (hepsi doğrudan geçer; xhigh ve ultra 2026-10-24'te canlı denendi) | `workspace-write` | ChatGPT girişi; kotası dolunca rozet "limit ... kadar" gösterir |
 | OpenCode | **Ücretsiz modeller `opencode models` CLI çıktısından canlı okunur** (10 dk önbellek). 2026-10-24 listesi, hepsi tek tek denendi: Big Pickle, Beam, Deepseek V4.1 Flash, Flint 40B, GLM 5.3 Flash, Mimo V2.6 Flash, Nemotron 3 Ultra, Nemotron 3.5 Lightning, Nemotron 3.5 Super VL | yok | düzenleme açık, kabuk kapalı | OpenCode tarafında liste değişince menü kendiliğinden güncellenir; CLI okunamazsa Big Pickle yedek olarak kalır |
-| Antigravity (agy) | Gemini 3.8 Flash | Düşük / Yüksek (modelin `-low` / `-high` sürümü) | yok | Resmî `agy.exe`; Antigravity şartları nedeniyle düşük hacimde kullan |
+| Antigravity (agy) | Gemini 4 Argon, Gemini 3.8 Flash | Düşük / Orta / Yüksek (modelin `-low` / `-medium` / `-high` sürümü) | yok | Resmî `agy.exe`; Antigravity şartları nedeniyle düşük hacimde kullan |
+
+## Uzman Ajanlar (`🎨 Pixel Artist`), Alt Ajan Yan Paneli ve 3'lü Karma Ofis
+
+- **Kitaplık (Library Görsel Galerisi):** Sol menünün en üstündeki `Kitaplık` düğmesine tıklandığında, tüm oturumlarda (Antigravity, Claude, Codex) ve projelerde üretilen tüm görseller (`.png`, `.gif`, `.svg`, `.webp`, `.jpg`) taranarak ChatGPT Library tarzı bir ızgara galerisinde listelenir. Tıklanan görsel doğrudan tam boyutta açılır.
+- **Otomatik (30 Gün) ve Manuel Arşiv:** 30 günden eski veya kullanıcının yanındaki Arşiv ikonuna tıklayarak arşive attığı tüm sohbetler ve terminal oturumları `Arşiv` satırında toplanır. `Arşiv` açılır-kapanır menü değildir; `Kitaplık` gibi tıklandığında ana panelde arşiv görünümü açılır ve kayıtlar liste hâlinde gösterilir; istenildiğinde satırın yanındaki ikonla arşivden çıkarılabilir.
+- **Kitaplık performansı:** `/api/library` taraması `.system_generated/steps` gibi görsel içermeyen ağır klasörleri atlar ve sonucu 60 sn önbelleğe alır; galeri açılırken `Görseller taranıyor…` durumu gösterilir.
+- **Uzman Ajan Seçimi (`AJANLAR -> 🎨 Pixel Artist`):** Sol kenar çubuğunun en üstündeki `AJANLAR` bölümünde yer alan `🎨 Pixel Artist` satırına tıklandığında:
+  1. Alt çubuktaki motor ve model otomatik olarak `Antigravity (agy) · Gemini 4 Argon` olarak ayarlanır.
+  2. Sohbet oturumuna `dmAgent: 'pixel-artist'` ve `pxl.js` (`16x16` / `32x32` piksel sanat, sprite sheet ve animasyonlu GIF üretimi) uzmanlık sistem talimatı (`dmInstructions`) bağlanır.
+  3. Kullanıcı mesaj gönderdiğinde `send()` fonksiyonu bu uzmanlık talimatını `<SPECIALIST_AGENT_INSTRUCTIONS>` bloğuyla isteme enjekte eder ve ajan 2D Ofis sahnesinde kendi masasında canlı olarak çalışır.
+- **Antigravity Tarzı Alt Ajan Yan Paneli (`#subPanel` Split View):** Bir oturumda alt ajan (`subagent`) çalıştığında ekranın sağ tarafında Antigravity masaüstü arayüzündeki gibi sekmeli yan panel açılır (`Message from Parent Agent`, `Worked for ...`, `N files changed +X -Y` ve `[📄 Review]` satır içi diff çekmecesi).
+- **3'lü Özgün Karma 2D/2.5D Ofis (`web/office_sim.js`):** Üst barda sağdaki Ofis düğmesine (`#officeBtn`) tıklandığında açılan `960×540` HiDPI Canvas2D sahnesi; `pixel-agents` (meşe parke + safir lounge + damalı kafe), `claude-code-park` (`NEXUS CAMPUS` + 9'lu Kanca LED'leri + yüzen koyu aksiyon hapları + otomat + 16x16 sunucu kabini) ve `MuratifyAI` (canlı saat + `AKTİF/BİTEN/HOOK` KPI skorbordu + merkezi koridor) mimarilerini %100 telif-temiz prosedürel çizimle birleştirir.
 
 ## Model ve Düşünme Çabası (Thinking Effort) Değişince Bağlam Kopar mı?
 

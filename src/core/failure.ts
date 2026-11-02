@@ -15,8 +15,16 @@ const DEFAULT_COOLDOWN_MS = 30 * 60 * 1000;
 export function classifyFailure(text: string, now: Date = new Date()): { kind: FailureKind; cooldownMs?: number } {
   if (!text) return { kind: 'unknown' };
   if (RATE_LIMIT_RE.test(text)) {
+    const resetsComp = /resets?\s+in\s+(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/i.exec(text);
     const m = /(?:in|after)\s+(\d+)\s*(second|minute|hour|sn|dk|saat)/i.exec(text);
     let cooldownMs = DEFAULT_COOLDOWN_MS;
+    if (resetsComp && (resetsComp[1] || resetsComp[2] || resetsComp[3])) {
+      const h = Number(resetsComp[1] || 0);
+      const min = Number(resetsComp[2] || 0);
+      const sec = Number(resetsComp[3] || 0);
+      cooldownMs = ((h * 3600) + (min * 60) + sec) * 1000;
+      return { kind: 'rate_limit', cooldownMs };
+    }
     // "try again at 2:29 AM" (Codex): yerel saatte bir sonraki o saate kadar
     const at = /try again at\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(text);
     if (at && !m) {

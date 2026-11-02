@@ -44,7 +44,7 @@ export function startServer(opts: { port?: number; host?: string; dbPath?: strin
       try {
         ingestStore = new SqliteStore(dbPath);
         ingest = startIngest({
-          sources: ['claude', 'codex', 'opencode', 'agy'],
+          sources: ['claude', 'codex', 'opencode', 'agy', 'commandcode'],
           activeMinutes: 1440,
           backfill: true,
           follow: true,

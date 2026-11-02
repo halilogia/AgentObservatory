@@ -1,3 +1,4 @@
+// @ts-mandatory: Tarayıcıda sıfır-derleme (zero-build CSP script-src self) ile doğrudan çalışan ana istemci modülüdür.
 (() => {
   'use strict';
   const $ = (s) => document.querySelector(s);
@@ -25,6 +26,9 @@
     x: svg('<path d="M4 4l8 8M12 4l-8 8"/>'),
     sun: svg('<circle cx="8" cy="8" r="2.8"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/>'),
     moon: svg('<path d="M13 9.6A5.4 5.4 0 016.4 3 5.4 5.4 0 108 13.4a5.4 5.4 0 005-3.8z"/>'),
+    archive: svg('<rect x="2" y="3" width="12" height="3" rx="1"/><path d="M3 6v6.5A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V6"/><path d="M6.5 9h3"/>'),
+    unarchive: svg('<rect x="2" y="3" width="12" height="3" rx="1"/><path d="M3 6v6.5A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V6"/><path d="M8 11.5V7.5M6.2 9.2L8 7.5l1.8 1.7"/>'),
+    library: svg('<rect x="2.5" y="2.5" width="11" height="11" rx="2"/><circle cx="6" cy="6" r="1.1"/><path d="M3.2 12l3.3-3.2 2.2 2.1 2-1.9 2.1 3"/>'),
     stop: '<svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg>'
   };
   const st = { cfg: null, engine: 'claude', model: 'sonnet', effort: 'medium', mode: 'write', cwd: '', running: null, project: null, team: '' }; // team: 'auto' = otomatik yönlendirme, '' = elle seçim
@@ -485,15 +489,340 @@
     const ren = el('button', 'ren'); ren.type = 'button'; ren.setAttribute('aria-label', t('history.rename')); ren.title = t('history.rename'); ren.innerHTML = ICON.pen;
     ren.onclick = (ev) => { ev.stopPropagation(); startRename(ev); };
 
-    const del = el('button', 'del'); del.type = 'button'; del.setAttribute('aria-label', t('history.delete')); del.title = t('history.delete'); del.innerHTML = ICON.x;
-    del.onclick = (ev) => { ev.stopPropagation(); ObsStore.remove(c.id); if (chat && chat.id === c.id) newChat(); else renderHistory(); };
+    const isArc = ObsStore.isArchived ? ObsStore.isArchived(c) : false;
+    const arc = el('button', 'arc'); arc.type = 'button';
+    const arcLabel = I18N.language === 'tr' ? (isArc ? 'Arşivden çıkar' : 'Arşivle') : (isArc ? 'Unarchive' : 'Archive');
+    arc.setAttribute('aria-label', arcLabel); arc.title = arcLabel; arc.innerHTML = isArc ? ICON.unarchive : ICON.archive;
+    arc.onclick = (ev) => {
+      ev.stopPropagation();
+      if (ObsStore.setArchived) ObsStore.setArchived(c.id, !isArc);
+      renderHistory();
+      refreshArchiveView();
+    };
 
-    item.append(main1, ren, del);
+    const del = el('button', 'del'); del.type = 'button'; del.setAttribute('aria-label', t('history.delete')); del.title = t('history.delete'); del.innerHTML = ICON.x;
+    del.onclick = (ev) => { ev.stopPropagation(); ObsStore.remove(c.id); if (chat && chat.id === c.id) newChat(); else renderHistory(); refreshArchiveView(); };
+
+    item.append(main1, ren, arc, del);
     return item;
   }
+  let libraryActive = false;
+  let archiveActive = false;
+  let libraryItems = [];
+  function termArcSet() {
+    try { return new Set(JSON.parse(lsGet('obs-term-arc') || '[]')); } catch { return new Set(); }
+  }
+  function saveTermArc(set) {
+    lsSet('obs-term-arc', JSON.stringify([...set]));
+  }
+  function isTermArchived(s, now = Date.now(), manualSet = termArcSet()) {
+    if (manualSet.has(s.id)) return true;
+    if (manualSet.has('!' + s.id)) return false;
+    if (s.running) return false;
+    const ts = Number(s.end || s.start || 0);
+    return ts > 0 && (now - ts > (ObsStore.ARCHIVE_MS || 30 * 86400 * 1000));
+  }
+  function toggleTermArchived(id) {
+    const set = termArcSet();
+    const s = termSessions.find((x) => x.id === id);
+    const cur = s ? isTermArchived(s, Date.now(), set) : set.has(id);
+    set.delete(id); set.delete('!' + id);
+    if (!cur) set.add(id);
+    else set.add('!' + id);
+    saveTermArc(set);
+    renderHistory();
+    refreshArchiveView();
+  }
+  async function openLibraryView() {
+    if (st.running) { $('#foot').textContent = t('foot.busy'); return; }
+    setOfficeView(false);
+    libraryActive = true;
+    archiveActive = false;
+    chat = null;
+    clearThread();
+    $('#empty').hidden = true;
+    const th = $('#thread');
+    const wrap = el('div', 'lib-wrap');
+    const head = el('div', 'lib-head');
+    head.appendChild(el('h2', 'lib-title', I18N.language === 'tr' ? 'Kitaplık' : 'Library'));
+    wrap.appendChild(head);
+    const grid = el('div', 'lib-grid');
+    grid.appendChild(el('div', 'hud-muted', t('lib.loading')));
+    wrap.appendChild(grid);
+    th.appendChild(wrap);
+    renderHistory();
+    closeNavOnMobile();
+    try {
+      const ctl = new AbortController();
+      const to = setTimeout(() => ctl.abort(), 15000);
+      try {
+        const r = await fetch('/api/library', { signal: ctl.signal });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        libraryItems = await r.json();
+      } finally { clearTimeout(to); }
+    } catch { libraryItems = null; }
+    if (!libraryActive) return;
+    grid.replaceChildren();
+    if (!libraryItems) {
+      grid.appendChild(el('div', 'hud-muted', t('lib.error')));
+      return;
+    }
+    if (!libraryItems.length) {
+      grid.appendChild(el('div', 'hud-muted', t('lib.empty')));
+      return;
+    }
+    libraryItems.forEach((it, idx) => {
+      const card = el('div', 'lib-card');
+      const src = libSrc(it);
+      const thumbBox = el('div', 'lib-thumb-box');
+      if (it.ext === 'html') {
+        thumbBox.appendChild(el('span', 'lib-html', 'HTML'));
+      } else {
+        const img = el('img', 'lib-thumb');
+        if (it.name.includes('.px') || it.name.includes('pixel') || it.size < 50000) img.style.imageRendering = 'pixelated';
+        img.src = src; img.alt = it.name; img.loading = 'lazy';
+        thumbBox.appendChild(img);
+      }
+      const meta = el('div', 'lib-meta');
+      meta.appendChild(el('span', 'lib-name', it.name));
+      meta.appendChild(el('span', 'lib-ext', it.ext));
+      card.append(thumbBox, meta);
+      card.title = it.title + (it.path ? '\n' + it.path : '');
+      card.tabIndex = 0;
+      card.onclick = () => openLightbox(idx);
+      card.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openLightbox(idx); } };
+      grid.appendChild(card);
+    });
+  }
+  const libSrc = (it) => it.widgetId ? '/api/library/widget?id=' + encodeURIComponent(it.widgetId) : '/api/library/file?path=' + encodeURIComponent(it.path);
+  // Kitaplık önizleme penceresi (lightbox): kapat (X / Esc / arka plan), ok tuşlarıyla gezin, orijinali aç, kaynak sohbeti aç
+  let lightbox = null;
+  function closeLightbox() {
+    if (!lightbox) return;
+    document.removeEventListener('keydown', lightbox.onKey, true);
+    lightbox.root.remove();
+    lightbox = null;
+  }
+  function openLightbox(start) {
+    closeLightbox();
+    const items = libraryItems || [];
+    if (!items.length) return;
+    let cur = Math.max(0, Math.min(start, items.length - 1));
+    const root = el('div', 'lb-backdrop'); root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true');
+    const box = el('div', 'lb-box');
+    const top = el('div', 'lb-top');
+    const info = el('div', 'lb-info');
+    const nameEl = el('span', 'lb-name'); const extEl = el('span', 'lib-ext');
+    info.append(nameEl, extEl);
+    const actions = el('div', 'lb-actions');
+    const srcBtn = el('button', 'lb-btn', t('lib.openSource')); srcBtn.type = 'button';
+    const origBtn = el('a', 'lb-btn', t('lib.openOriginal')); origBtn.target = '_blank'; origBtn.rel = 'noopener';
+    const closeBtn = el('button', 'lb-btn lb-icon'); closeBtn.type = 'button'; closeBtn.setAttribute('aria-label', t('lib.close')); closeBtn.title = t('lib.close'); closeBtn.innerHTML = ICON.x;
+    actions.append(srcBtn, origBtn, closeBtn);
+    top.append(info, actions);
+    const stage = el('div', 'lb-stage');
+    const prev = el('button', 'lb-nav prev'); prev.type = 'button'; prev.setAttribute('aria-label', t('lib.prev')); prev.innerHTML = ICON.chev;
+    const next = el('button', 'lb-nav next'); next.type = 'button'; next.setAttribute('aria-label', t('lib.next')); next.innerHTML = ICON.chev;
+    const view = el('div', 'lb-view');
+    stage.append(prev, view, next);
+    box.append(top, stage);
+    root.appendChild(box);
+    const show = () => {
+      const it = items[cur];
+      const src = libSrc(it);
+      nameEl.textContent = it.name; extEl.textContent = it.ext + ' · ' + (cur + 1) + '/' + items.length;
+      origBtn.href = src;
+      srcBtn.hidden = !it.sessionId;
+      srcBtn.title = it.sessionId ? (it.agent || '') + ' · ' + it.sessionId : '';
+      view.replaceChildren();
+      if (it.ext === 'html') {
+        const fr = el('iframe', 'lb-frame'); fr.setAttribute('sandbox', 'allow-scripts'); fr.src = src; fr.title = it.name;
+        view.appendChild(fr);
+      } else {
+        const img = el('img', 'lb-img'); img.src = src; img.alt = it.name;
+        view.appendChild(img);
+      }
+      prev.hidden = next.hidden = items.length < 2;
+    };
+    const step = (d) => { cur = (cur + d + items.length) % items.length; show(); };
+    prev.onclick = () => step(-1); next.onclick = () => step(1);
+    closeBtn.onclick = closeLightbox;
+    root.addEventListener('mousedown', (ev) => { if (ev.target === root || ev.target === stage || ev.target === view) closeLightbox(); });
+    srcBtn.onclick = () => { const it = items[cur]; closeLightbox(); openSourceChat(it); };
+    const onKey = (ev) => {
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeLightbox(); }
+      else if (ev.key === 'ArrowLeft') { ev.preventDefault(); step(-1); }
+      else if (ev.key === 'ArrowRight') { ev.preventDefault(); step(1); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(root);
+    lightbox = { root, onKey };
+    show();
+    closeBtn.focus();
+  }
+  // Görselin üretildiği sohbeti kenar çubuğundan seçilmiş gibi açar; mümkünse ilgili mesaja kaydırır
+  async function openSourceChat(it) {
+    if (!it || !it.sessionId) return;
+    const known = termSessions.find((x) => x.id === it.sessionId);
+    const s = known || { id: it.sessionId, agent: it.agent || 'claude', model: '', title: it.title || '', start: it.mtime || 0, end: it.mtime || 0 };
+    await loadTermSession(s);
+    if (!chat || chat.termId !== it.sessionId) return;
+    const ts = Number(it.mtime) || 0;
+    const bots = chat.messages.filter((m) => m.r === 'b');
+    let k = -1;
+    bots.forEach((m, i) => { if (ts && Number(m.t0) <= ts + 1000) k = i; });
+    // Satır içi widget ise ilgili show_widget araç satırına, değilse görselin üretildiği mesaja kaydırılır
+    const widgetTools = it.widgetId ? [...document.querySelectorAll('#thread .tool')].filter((x) => /show_widget/.test(x.textContent)) : [];
+    const target = widgetTools[it.seq || 0] || widgetTools[widgetTools.length - 1] || document.querySelectorAll('#thread .msg.bot')[k >= 0 ? k : 0];
+    if (target && (ts || widgetTools.length)) {
+      setTimeout(() => {
+        target.scrollIntoView({ block: 'center' });
+        target.classList.add('lb-flash');
+        setTimeout(() => target.classList.remove('lb-flash'), 2400);
+      }, 150);
+    }
+  }
+  // Arşiv görünümü: Kitaplık gibi ana panelde açılır (açılır-kapanır menü değil)
+  function openArchiveView() {
+    if (st.running) { $('#foot').textContent = t('foot.busy'); return; }
+    setOfficeView(false);
+    libraryActive = false;
+    archiveActive = true;
+    chat = null;
+    clearThread();
+    $('#empty').hidden = true;
+    const wrap = el('div', 'lib-wrap');
+    const head = el('div', 'lib-head');
+    head.appendChild(el('h2', 'lib-title', t('arc.title')));
+    wrap.appendChild(head);
+    const list = el('div', 'arc-list');
+    wrap.appendChild(list);
+    $('#thread').appendChild(wrap);
+    renderHistory();
+    closeNavOnMobile();
+    renderArchiveList(list);
+  }
+  function renderArchiveList(list) {
+    if (!list) list = $('#thread .arc-list');
+    if (!list) return;
+    list.replaceChildren();
+    const nowTs = Date.now();
+    const chats = ObsStore.list().filter((c) => ObsStore.isArchived(c, nowTs));
+    const terms = termGroups(ObsStore.list()).archived;
+    if (!chats.length && !terms.length) { list.appendChild(el('div', 'hud-muted', t('arc.empty'))); return; }
+    chats.forEach((c) => list.appendChild(chatRow(c, false)));
+    terms.forEach((s) => list.appendChild(termRow(s, true)));
+  }
+  function refreshArchiveView() {
+    if (archiveActive) renderArchiveList($('#thread .arc-list'));
+  }
+  // ---------- WhatsApp Tarzı Direkt Ajan Seçimi (Agent Roster & 1-on-1 DM) ----------
+  const SPECIALIST_ROSTER = [
+    {
+      id: 'pixel-artist',
+      name: 'Pixel Artist',
+      icon: '🎨',
+      badge: 'pxl.js · 16x16',
+      color: '#a855f7',
+      engine: 'agy',
+      model: 'gemini-4-argon',
+      roleTr: '16x16 Piksel Sanat, Sprite & Animasyon Uzmanı',
+      roleEn: '16x16 Pixel Art, Sprite & Animation Specialist',
+      instructions: 'Sen Pixel Artist uzman ajanısın. pxl.js DSL (`C:\\Users\\Halil Emre\\.gemini\\config\\skills\\pxl-pixel-art\\bin\\pxl.js`) kullanarak 16x16 ve 32x32 piksel sanat sprite, animasyonlu GIF ve sprite sheet üretirsin.'
+    },
+    {
+      id: 'sentinel',
+      name: 'Sentinel Güvenlik',
+      icon: '🛡️',
+      badge: 'Red-Team · Audit',
+      color: '#dc2626',
+      engine: 'codex',
+      model: 'gpt-6-astra',
+      roleTr: 'Güvenlik, Statik Analiz & Red-Team Denetim Uzmanı',
+      roleEn: 'Security, Static Analysis & Red-Team Audit Specialist',
+      instructions: 'Sen Sentinel Güvenlik & Red-Team uzman ajanısın. Görevin kod depolarını, bağımlılıkları, API anahtarlarını, girdi doğrulama açıklarını (injection, fail-closed ihlalleri, privilege escalation, prompt leak) adversarial denetim bakış açısıyla incelemek ve sağlamlaştırıcı yamalar sunmaktır.'
+    }
+  ];
+
+  function openAgentDm(spOrId) {
+    const sp = typeof spOrId === 'string' ? SPECIALIST_ROSTER.find((x) => x.id === spOrId) : spOrId;
+    if (!sp) return;
+    if (st.running) { $('#foot').textContent = t('foot.busy'); return; }
+    setOfficeView(false);
+    libraryActive = false;
+    archiveActive = false;
+    const e = st.cfg && st.cfg.engines ? st.cfg.engines.find((x) => x.id === sp.engine && x.installed) : null;
+    if (e) {
+      st.engine = e.id;
+      const m = e.models.find((x) => x.id === sp.model) || e.models[0];
+      if (m) st.model = m.id;
+      if (!e.write) st.mode = 'read';
+      saveSettings();
+      refreshControls();
+    }
+    const existing = ObsStore.list().find((c) => c.dmAgent === sp.id);
+    if (existing) {
+      chat = existing;
+    } else {
+      chat = {
+        id: ObsStore.newId(),
+        dmAgent: sp.id,
+        dmInstructions: sp.instructions,
+        title: sp.icon + ' ' + sp.name,
+        created: Date.now(),
+        updated: Date.now(),
+        session: null,
+        project: st.project || null,
+        messages: []
+      };
+    }
+    const sim = officeSim();
+    if (sim) {
+      sim.feed({ taskId: 'dm_' + sp.id, agent: sp.id === 'pixel-artist' ? 'pixel' : sp.engine, sessionId: 'dm_' + sp.id, type: 'task.started', timestamp: Date.now() });
+    }
+    renderThread();
+    renderHistory();
+    closeNavOnMobile();
+    $('#prompt').focus();
+  }
+
   function renderHistory() {
     const box = $('#history'); box.replaceChildren();
-    const list = ObsStore.list(); const projects = ObsProjects.list(); const collapsed = pcol();
+    const allChats = ObsStore.list(); const projects = ObsProjects.list(); const collapsed = pcol();
+    const nowTs = Date.now();
+    const list = allChats.filter((c) => !ObsStore.isArchived(c, nowTs));
+    const archivedChats = allChats.filter((c) => ObsStore.isArchived(c, nowTs));
+    const groups = termGroups(allChats);
+    const libRow = el('div', 'hitem' + (libraryActive ? ' on' : ''));
+    const libBtn = el('button', 'hmain'); libBtn.type = 'button';
+    const libIco = el('span', 'ico'); libIco.innerHTML = ICON.library;
+    libBtn.append(libIco, el('span', 't', I18N.language === 'tr' ? 'Kitaplık' : 'Library'));
+    libBtn.onclick = openLibraryView;
+    libRow.appendChild(libBtn); box.appendChild(libRow);
+    // Arşiv: Kitaplık gibi üst düzey satır; tıklanınca ana panelde arşiv görünümü açılır
+    const arcCount = archivedChats.length + groups.archived.length;
+    const arcRow = el('div', 'hitem' + (archiveActive ? ' on' : ''));
+    const arcBtn = el('button', 'hmain'); arcBtn.type = 'button';
+    const arcIco = el('span', 'ico'); arcIco.innerHTML = ICON.archive;
+    arcBtn.append(arcIco, el('span', 't', t('arc.title')), el('span', 'when', String(arcCount)));
+    arcBtn.onclick = openArchiveView;
+    arcRow.appendChild(arcBtn); box.appendChild(arcRow);
+    const dmHead = el('div', 'hgroup phead');
+    dmHead.appendChild(el('span', '', I18N.language === 'tr' ? 'Ajanlar' : 'Agents'));
+    box.appendChild(dmHead);
+    SPECIALIST_ROSTER.forEach((sp) => {
+      const isOn = chat && chat.dmAgent === sp.id;
+      const row = el('div', 'hitem dm-item' + (isOn ? ' on' : ''));
+      const b = el('button', 'hmain'); b.type = 'button';
+      b.title = I18N.language === 'tr' ? sp.roleTr : sp.roleEn;
+      const dot = el('span', 'dot'); dot.style.setProperty('--c', sp.color);
+      const av = el('span', 'dm-avatar', sp.icon);
+      const nm = el('span', 't', sp.name);
+      b.append(dot, av, nm);
+      b.onclick = () => openAgentDm(sp);
+      row.appendChild(b);
+      box.appendChild(row);
+    });
     const head = el('div', 'hgroup phead'); head.appendChild(el('span', '', t('proj.title')));
     const add = el('button', 'padd'); add.type = 'button'; add.title = t('proj.add'); add.setAttribute('aria-label', t('proj.add')); add.innerHTML = ICON.plus; add.onclick = () => openProjectDialog(null);
     head.appendChild(add); box.appendChild(head);
@@ -511,14 +840,15 @@
       if (open) mine.forEach((c) => box.appendChild(chatRow(c, true)));
     });
     const free = list.filter((c) => !c.project || !projects.some((p) => p.id === c.project));
-    renderTermSessions(box, list);
-    if (!free.length) return;
-    const day = (ts) => { const d = new Date(ts), n = new Date(); const diff = Math.floor((new Date(n.getFullYear(), n.getMonth(), n.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5); return diff <= 0 ? t('history.today') : diff === 1 ? t('history.yesterday') : t('history.older'); };
-    let last = '';
-    free.forEach((c) => {
-      const g = day(c.updated); if (g !== last) { box.appendChild(el('div', 'hgroup', g)); last = g; }
-      box.appendChild(chatRow(c, false));
-    });
+    renderTermActive(box, groups.active);
+    if (free.length) {
+      const day = (ts) => { const d = new Date(ts), n = new Date(); const diff = Math.floor((new Date(n.getFullYear(), n.getMonth(), n.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5); return diff <= 0 ? t('history.today') : diff === 1 ? t('history.yesterday') : t('history.older'); };
+      let last = '';
+      free.forEach((c) => {
+        const g = day(c.updated); if (g !== last) { box.appendChild(el('div', 'hgroup', g)); last = g; }
+        box.appendChild(chatRow(c, false));
+      });
+    }
   }
   // ---------- terminal (TUI) oturumları: veritabanından okunur; web'in kendi sohbetleri (localStorage) ayıklanır ----------
   let termSessions = [];
@@ -527,30 +857,53 @@
   }
   let termTimer = 0;
   function scheduleTermRefresh() { if (!termTimer) termTimer = setTimeout(() => { termTimer = 0; refreshTermSessions(); }, 3000); }
-  function renderTermSessions(box, localChats) {
+
+  function termRow(s, isArc = false) {
+    const item = el('div', 'hitem' + (chat && chat.termId === s.id ? ' on' : ''));
+    const b = el('button', 'hmain'); b.type = 'button'; b.title = s.title;
+    const dot = el('span', 'dot' + (s.running ? ' live' : '')); const e = engineById(s.agent); dot.style.setProperty('--c', e ? e.color : 'var(--faint)');
+    b.append(dot, el('span', 't', smartTitle(s.title) || t('history.untitled')));
+    if (s.subsRunning > 0) {
+      const bd = el('span', 'subbadge live', ObsSubagents.text('live', I18N.language, { n: s.subsRunning }));
+      bd.title = ObsSubagents.text('live', I18N.language, { n: s.subsRunning });
+      b.appendChild(bd);
+    }
+    b.appendChild(el('span', 'when', s.running ? t('term.live') : when(s.end)));
+    b.onclick = () => loadTermSession(s);
+
+    const arc = el('button', 'arc'); arc.type = 'button';
+    const arcLabel = I18N.language === 'tr' ? (isArc ? 'Arşivden çıkar' : 'Arşivle') : (isArc ? 'Unarchive' : 'Archive');
+    arc.setAttribute('aria-label', arcLabel); arc.title = arcLabel; arc.innerHTML = isArc ? ICON.unarchive : ICON.archive;
+    arc.onclick = (ev) => {
+      ev.stopPropagation();
+      toggleTermArchived(s.id);
+    };
+    item.append(b, arc);
+    return item;
+  }
+
+  function termGroups(localChats) {
     const known = new Set(localChats.map((c) => c.session && c.session.id).filter(Boolean));
     const all = termSessions.filter((s) => !known.has(s.id));
-    if (!all.length) return;
+    const manualSet = termArcSet();
+    const nowTs = Date.now();
+    return {
+      active: all.filter((s) => !isTermArchived(s, nowTs, manualSet)),
+      archived: all.filter((s) => isTermArchived(s, nowTs, manualSet))
+    };
+  }
+
+  function renderTermActive(box, active) {
+    if (!active.length) return;
     const only = lsGet('obs-term-live') === '1';
-    const list = only ? all.filter((s) => s.running) : all;
-    const head = el('div', 'hgroup phead'); head.appendChild(el('span', '', t('term.title')));
-    const flt = el('button', 'tfilter' + (only ? ' on' : ''), t('term.liveOnly')); flt.type = 'button'; flt.setAttribute('aria-pressed', String(only));
-    flt.onclick = () => { lsSet('obs-term-live', only ? '0' : '1'); renderHistory(); };
-    head.appendChild(flt); box.appendChild(head);
-    list.slice(0, 30).forEach((s) => {
-      const item = el('div', 'hitem' + (chat && chat.termId === s.id ? ' on' : ''));
-      const b = el('button', 'hmain'); b.type = 'button'; b.title = s.title;
-      const dot = el('span', 'dot' + (s.running ? ' live' : '')); const e = engineById(s.agent); dot.style.setProperty('--c', e ? e.color : 'var(--faint)');
-      b.append(dot, el('span', 't', smartTitle(s.title) || t('history.untitled')));
-      if (s.subsRunning > 0) {
-        const bd = el('span', 'subbadge live', ObsSubagents.text('live', I18N.language, { n: s.subsRunning }));
-        bd.title = ObsSubagents.text('live', I18N.language, { n: s.subsRunning });
-        b.appendChild(bd);
-      }
-      b.appendChild(el('span', 'when', s.running ? t('term.live') : when(s.end)));
-      b.onclick = () => loadTermSession(s);
-      item.appendChild(b); box.appendChild(item);
-    });
+    const list = only ? active.filter((s) => s.running) : active;
+    if (list.length) {
+      const head = el('div', 'hgroup phead'); head.appendChild(el('span', '', t('term.title')));
+      const flt = el('button', 'tfilter' + (only ? ' on' : ''), t('term.liveOnly')); flt.type = 'button'; flt.setAttribute('aria-pressed', String(only));
+      flt.onclick = () => { lsSet('obs-term-live', only ? '0' : '1'); renderHistory(); };
+      head.appendChild(flt); box.appendChild(head);
+      list.slice(0, 30).forEach((s) => box.appendChild(termRow(s, false)));
+    }
   }
   const termMessages = (data) => {
     const msgs = ObsSessions.toChat(data, { toolKind, toolSummary, color: (a) => { const e = engineById(a); return e ? e.color : '#888'; } });
@@ -560,13 +913,15 @@
   async function loadTermSession(s) {
     if (st.running) { $('#foot').textContent = t('foot.busy'); return; }
     setOfficeView(false);
+    libraryActive = false;
+    archiveActive = false;
     let data;
     try { data = await api('/api/session?id=' + encodeURIComponent(s.id)); } catch (err) { $('#foot').textContent = err.info ? apiMsg(err) : err.message; return; }
     const messages = termMessages(data);
     // devam edebilmek için oturumun motoru, modeli ve klasörü seçili ayarlara taşınır (klasör web köklerinde yoksa özetle yeni oturum açılır)
     const lastBot = [...messages].reverse().find((m) => m.r === 'b');
     const cwd = (lastBot && lastBot.cwd) || '';
-    chat = { id: ObsStore.newId(), termId: s.id, title: smartTitle(s.title), created: s.start, updated: Date.now(), session: { id: s.id, engine: s.agent, cwd }, project: null, messages };
+    chat = { id: ObsStore.newId(), termId: s.id, title: smartTitle(s.title), created: s.start, updated: Date.now(), session: { id: s.id, engine: s.agent, cwd }, project: null, messages, tastes: data.tastes || [] };
     const le = engineById(s.agent);
     if (le && le.installed) {
       st.engine = le.id; st.model = le.models.some((x) => x.id === s.model) ? s.model : le.models[0].id;
@@ -575,7 +930,10 @@
       if (proj) st.cwd = proj.path;
       refreshControls();
     }
-    renderThread(); renderHistory(); closeNavOnMobile(); scrollDown(true); onScroll();
+    renderThread();
+    if (data.subs && data.subs.length && ObsSubagents.openPanel) ObsSubagents.openPanel(null, I18N.language, document);
+    else if (ObsSubagents.closePanel) ObsSubagents.closePanel(document);
+    renderHistory(); closeNavOnMobile(); scrollDown(true); onScroll();
   }
   // açık terminal oturumu çalışırken yeni olaylar geldikçe sohbet kendini yeniler (1 sn'de en çok bir kez)
   let termLive = 0;
@@ -586,7 +944,7 @@
       if (!chat || !chat.termId || st.running) return;
       try {
         const data = await api('/api/session?id=' + encodeURIComponent(chat.termId));
-        const follow = stick; chat.messages = termMessages(data); renderThread(); if (follow) scrollDown(true); onScroll();
+        const follow = stick; chat.messages = termMessages(data); chat.tastes = data.tastes || []; renderThread(); if (follow) scrollDown(true); onScroll();
       } catch { /* sunucu yok */ }
     }, 1000);
   }
@@ -594,10 +952,16 @@
   function showThread(has) {
     $('#empty').hidden = has;
     if (!has) {
+      const dmSp = chat && chat.dmAgent ? SPECIALIST_ROSTER.find((x) => x.id === chat.dmAgent) : null;
       const p = st.project ? ObsProjects.get(st.project) : null;
       const emptyBox = $('#empty');
       if (emptyBox) {
-        if (p) {
+        if (dmSp) {
+          emptyBox.replaceChildren(
+            el('h1', 'empty-project-name', dmSp.icon + ' ' + dmSp.name),
+            el('p', 'empty-project-path', I18N.language === 'tr' ? dmSp.roleTr : dmSp.roleEn)
+          );
+        } else if (p) {
           emptyBox.innerHTML = '<div class="empty-project-pill"><span>' + (I18N.language === 'tr' ? 'Çalışma Alanı' : 'Workspace') + '</span></div>' +
             '<h1 class="empty-project-name">' + p.name + '</h1>' +
             '<p class="empty-project-path">' + p.cwd + '</p>';
@@ -607,11 +971,29 @@
       }
     }
   }
+  
+  function renderTasteBanner(tastes) {
+    if (!tastes || !tastes.length) return;
+    const box = document.createElement('div');
+    box.className = 'taste-session-banner';
+    box.style.margin = '12px 16px';
+    box.style.padding = '10px 14px';
+    box.style.background = 'rgba(168, 85, 247, 0.1)';
+    box.style.border = '1px solid rgba(168, 85, 247, 0.3)';
+    box.style.borderRadius = '8px';
+    box.style.fontSize = '13px';
+    box.style.color = '#e9d5ff';
+    const items = tastes.map(t => '<div style="margin-top: 4px;"><strong>[' + (t.category || 'General') + ']</strong> ' + (t.preference || '') + ' <span style="opacity: 0.7; font-size: 11px;">(' + (t.confidence ? t.confidence.toFixed(2) : '') + ')</span></div>').join('');
+    box.innerHTML = '<div style="font-weight: 600; color: #c084fc;">🧠 Bu Oturumda Öğrenilen Zevkler (' + tastes.length + '):</div>' + items;
+    $('#thread').appendChild(box);
+  }
+
   function renderThread() {
     clearThread();
     syncTermCard();
     if (!chat || !chat.messages.length) { showThread(false); return; }
     showThread(true);
+    if (chat && chat.tastes && chat.tastes.length) renderTasteBanner(chat.tastes);
     chat.messages.forEach((m, i) => { if (m.r === 'u') addUserDom(m.text, i); else createBot(m, false); });
     syncPromptWaypoints();
   }
@@ -629,6 +1011,7 @@
     { id: 'agy', dot: '🔵', color: '#4c8dff', name: 'Antigravity', role: 'Sistem Mimarisi & Koordinasyon', aliases: ['agy', 'antigravity'] },
     { id: 'claude', dot: '🟠', color: '#ff8a3d', name: 'Claude Code', role: 'Ağır Kodlama, Test & Refactor', aliases: ['claude'] },
     { id: 'codex', dot: '🔴', color: '#ef5350', name: 'Codex CLI', role: 'Statik Güvenlik & Red-Team Denetimi', aliases: ['codex'] },
+    { id: 'sentinel', dot: '🛡️', color: '#dc2626', name: 'Sentinel', role: 'Güvenlik & Red-Team Ajanı', aliases: ['sentinel', 'security'] },
     { id: 'opencode', dot: '⚫', color: '#8b949e', name: 'OpenCode', role: 'Toplu Veri Motoru & ETL', aliases: ['opencode'] },
     { id: 'commandcode', dot: ObsSkins.BADGES.commandcode.symbol, color: '#a371f7', name: ObsSkins.BADGES.commandcode.name, role: t('team.siyah'), aliases: ['commandcode'] }
   ];
@@ -1512,11 +1895,15 @@
   function newChat() {
     if (st.running) return;
     setOfficeView(false);
+    libraryActive = false;
+    archiveActive = false;
     chat = null; clearThread(); showThread(false); renderHistory(); $('#prompt').focus(); stick = true; onScroll();
   }
   function loadChat(id) {
     if (st.running) { $('#foot').textContent = t('foot.busy'); return; }
     setOfficeView(false);
+    libraryActive = false;
+    archiveActive = false;
     const c = ObsStore.get(id); if (!c) return;
     chat = c; renderThread();
     st.project = c.project && ObsProjects.get(c.project) ? c.project : null; renderCrumb();
@@ -2057,8 +2444,10 @@
     const termResume = !!(chat.termId && chat.session && chat.session.engine === e.id);
     const resume = termResume || (chat.session && chat.session.engine === e.id && chat.session.cwd === st.cwd) ? chat.session.id : undefined;
     const runCwd = termResume && chat.session.cwd ? chat.session.cwd : st.cwd;
-    const proj = chat.project ? ObsProjects.get(chat.project) : null; // proje talimatları her YENİ CLI oturumunun başında verilir
-    const sendText = resume ? text : ObsCtx.build(chat.messages, text, { instructions: proj && proj.instructions }) || text;
+    const proj = chat.project ? ObsProjects.get(chat.project) : null;
+    const dmSp = chat.dmAgent ? SPECIALIST_ROSTER.find((x) => x.id === chat.dmAgent) : null;
+    const combinedInstructions = [dmSp && dmSp.instructions, proj && proj.instructions].filter(Boolean).join('\n\n');
+    const sendText = resume ? text : ObsCtx.build(chat.messages, text, { instructions: combinedInstructions || undefined }) || text;
     if (o.bubble !== false) { chat.messages.push({ r: 'u', text }); addUserDom(text); }
     const rec = { r: 'b', engine: e.id, model: m.id, label: m.label, color: e.color, parts: [], notice: null, meta: null, prompt: text, cwd: runCwd, taskId: null, effort: runEffort, auto: route && route.routed ? route.reason : '' };
     chat.messages.push(rec);
@@ -2261,7 +2650,7 @@
     const auto = st.team === 'auto';
     $('#modelDot').style.setProperty('--c', auto ? 'var(--accent)' : e.color);
     $('#modelLabel').textContent = auto ? t('team.autoShort') : shortModel(m);
-    refreshCtxBtn(); refreshCup();
+    refreshCup();
     // düşünme çabası kendi düğmesinde; çabası olmayan motorda (OpenCode) düğme gizlenir
     renderThink();
     $('#attachIco').innerHTML = ICON.plus;
@@ -2303,7 +2692,7 @@
     m.hidden = false;
     placeMenu(m);
   }
-  function closeMenus() { $('#ctxPanel').hidden = true; $('#modelMenu').hidden = true; $('#projectMenu').hidden = true; $('#attachMenu').hidden = true; hideSlash(); }
+  function closeMenus() { $('#modelMenu').hidden = true; $('#projectMenu').hidden = true; $('#attachMenu').hidden = true; hideSlash(); }
   function pick(engineId, modelId) {
     const e = engineById(engineId); st.engine = engineId; st.model = modelId;
     if (!e.efforts.includes(st.effort)) st.effort = e.efforts.includes('medium') ? 'medium' : e.efforts[0] || '';
@@ -2451,36 +2840,6 @@
     cv.title = ci.busy || ci.state === 'cold' ? '' : t('cup.tip', { time: ci.time });
   }
 
-  // bağlam paneli: motor, model, klasör, oturum, mesaj ve tahmini token/önbellek bilgisi
-  function refreshCtxBtn() { const b = $('#ctxBtn'); if (!b) return; $('#ctxLabel').textContent = t('ctx.btn'); b.title = t('ctx.title'); b.setAttribute('aria-label', t('ctx.title')); }
-  function ctxRows() {
-    const e = engineById(st.engine), m = e.models.find((x) => x.id === st.model), tm = teamById(e.team);
-    const msgs = chat ? chat.messages : []; let tin = 0, tout = 0;
-    msgs.forEach((x) => { if (x.meta) { tin += x.meta.tin || 0; tout += x.meta.tout || 0; } });
-    const sid = chat && chat.session ? String(chat.session.id) : '';
-    const ci = cacheInfo();
-    const cache = st.engine !== 'claude' ? t('ctx.cacheOff') : !ci ? t('ctx.cacheEmpty') : ci.state === 'cold' ? t('ctx.cacheCold') : t('ctx.cacheHot', { time: ci.time });
-    return [
-      [t('ctx.engine'), e.label + (tm ? ' · ' + t(tm.labelKey) : '') + (st.team === 'auto' ? ' · ' + t('team.autoShort') : ''), tm && tm.color],
-      [t('ctx.model'), m ? m.label : st.model], [t('ctx.effort'), e.efforts.length ? t('effort.' + st.effort) : t('ctx.none')],
-      [t('ctx.cwd'), st.cwd || t('ctx.none')], [t('ctx.session'), sid ? sid.slice(0, 8) + '…' : t('ctx.none'), null, sid],
-      [t('ctx.messages'), String(msgs.length)], [t('ctx.tokens'), t('ctx.tokensVal', { tin: fmtTok(tin), tout: fmtTok(tout) })], [t('ctx.cache'), cache]
-    ];
-  }
-  function openCtxPanel() {
-    const p = $('#ctxPanel');
-    if (!p.hidden) { p.hidden = true; return; }
-    closeMenus(); p.replaceChildren(); p.append(el('div', 'ctx-title', t('ctx.title')));
-    if (st.team === 'auto') p.append(el('div', 'ctx-note', t('ctx.auto')));
-    ctxRows().forEach(([k, v, color, full]) => {
-      const row = el('div', 'ctx-row'); const val = el('span', 'ctx-v', v); val.title = full || v;
-      if (color) { const d = el('span', 'dot'); d.style.setProperty('--c', color); row.append(el('span', 'ctx-k', k), d, val); } else row.append(el('span', 'ctx-k', k), val);
-      if (full) { const cb = el('button', 'ctx-copy', t('common.copy')); cb.type = 'button'; cb.onclick = (ev) => { ev.stopPropagation(); copyText(full); cb.textContent = t('common.copied'); }; row.append(cb); }
-      p.appendChild(row);
-    });
-    p.hidden = false; placeMenu(p);
-  }
-
   async function refreshConfig() { try { st.cfg = await api('/api/config'); renderEngineStatus(); } catch { /* sunucu yok */ } }
 
   async function init() {
@@ -2497,7 +2856,6 @@
     st.cwd = activeProj && activeProj.cwd ? activeProj.cwd : (st.cfg.projects.some((p) => p.path === saved.cwd) ? saved.cwd : '');
     if (!narrow() && lsGet('obs-nav') === 'closed') $('#layout').classList.add('nav-closed');
     $('#capsIco').innerHTML = ICON.caps; $('#capsBtn').onclick = openCaps;
-    $('#ctxBtn').onclick = (ev) => { ev.stopPropagation(); openCtxPanel(); };
     $('#cupIco').innerHTML = ICON.cup; $('#cupBtn').onclick = () => { lsSet('obs-cup', cupOn() ? '0' : '1'); refreshCupBtn(); refreshCup(); };
     refreshCupBtn();
     $('#skinIco').innerHTML = ObsSkins.ICON; $('#skinBtn').onclick = () => { lsSet('obs-skin', skinOn() ? '0' : '1'); refreshSkinBtn(); if (!st.running) renderThread(); };
@@ -2601,6 +2959,31 @@
     document.addEventListener('click', (ev) => { if (!ev.target.closest('.menu')) closeMenus(); });
     document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeMenus(); });
     window.addEventListener('resize', () => { ['#modelMenu', '#projectMenu', '#attachMenu', '#slashMenu'].forEach((s) => { if (!$(s).hidden) placeMenu($(s)); }); });
+    if (typeof ObsSubagents !== 'undefined' && ObsSubagents.initPanelControls) ObsSubagents.initPanelControls(document);
+    try {
+      const qs = new URLSearchParams(location.search);
+      if (qs.get('demo_office') === '1') {
+        setOfficeView(true);
+        if (qs.get('full') === '1') setOfficeFullscreen(true);
+        const sim = officeSim();
+        if (sim) {
+          const now = Date.now();
+          sim.feed({ type: 'task.started', taskId: 't_agy_1', agent: 'agy', timestamp: now - 12000, data: { sessionId: 'ses_agy', prompt: '3-Way Fusion Office mimarisi denetleniyor' } });
+          sim.feed({ type: 'tool.invoked', taskId: 't_agy_1', agent: 'agy', timestamp: now - 8000, data: { toolUseId: 'u1', name: 'edit_file', input: { path: 'web/office_sim.js' } } });
+          sim.feed({ type: 'task.started', taskId: 't_pixel_1', agent: 'agy', timestamp: now - 10000, data: { sessionId: 'ses_pxl', parentTaskId: 't_agy_1', prompt: 'Pixel Artist: 16x16 Chibi Cyber-Engineer sprite üretimi' } });
+          sim.feed({ type: 'tool.invoked', taskId: 't_pixel_1', agent: 'agy', timestamp: now - 6000, data: { toolUseId: 'u2', name: 'run_command', input: { command: 'node pxl.js build character.px.js' } } });
+          sim.feed({ type: 'task.started', taskId: 't_claude_1', agent: 'claude', timestamp: now - 9000, data: { sessionId: 'ses_claude', prompt: 'Subagent Split Panel CSS ve DOM doğrulaması' } });
+          sim.feed({ type: 'tool.invoked', taskId: 't_claude_1', agent: 'claude', timestamp: now - 5000, data: { toolUseId: 'u3', name: 'read_file', input: { path: 'web/subagents.js' } } });
+          sim.feed({ type: 'task.started', taskId: 't_codex_1', agent: 'codex', timestamp: now - 7000, data: { sessionId: 'ses_codex', prompt: 'CSP ve güvenlik sınırları statik analizi' } });
+          sim.feed({ type: 'permission.requested', taskId: 't_codex_1', agent: 'codex', timestamp: now - 3000, data: { tool: 'bash' } });
+          sim.select(sim.state.order[0]);
+        }
+      } else if (qs.get('demo_lib') === '1') {
+        openLibraryView();
+      } else if (qs.get('demo_dm')) {
+        openAgentDm(qs.get('demo_dm'));
+      }
+    } catch { /* ignore */ }
     setInterval(refreshConfig, 60000);
     refreshTermSessions(); setInterval(refreshTermSessions, 30000);
     setInterval(refreshCup, 250);

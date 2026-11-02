@@ -79,6 +79,9 @@ export class OpenCodeAdapter extends BaseAdapter {
     const env: NodeJS.ProcessEnv = { ...process.env };
     delete env.OPENCODE_CONFIG_CONTENT;
     if (!readOnly) env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ permission: { edit: 'allow', bash: 'deny', webfetch: 'deny' } });
+    if (process.env.GEMINI_API_KEY && !env.GOOGLE_GENERATIVE_AI_API_KEY) {
+      env.GOOGLE_GENERATIVE_AI_API_KEY = process.env.GEMINI_API_KEY;
+    }
 
     return {
       exe: resolveBinary('opencode'),

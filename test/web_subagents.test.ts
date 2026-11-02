@@ -45,4 +45,25 @@ assert.strictEqual(S.statusOf({ status: 'running', start_time: NOW - 2 * 3600_00
 assert.strictEqual(S.text('live', 'tr', { n: 2 }), '2 alt ajan çalışıyor');
 assert.strictEqual(S.text('badge', 'tr', { n: 3 }), '3 alt ajan');
 assert.strictEqual(S.attach([{ r: 'u', text: 'a' }], [], NOW), 0, 'alt ajan yoksa sıfır');
+
+// Antigravity tarzı Sağ Yan Panel (Split View) ve dosya farkı özeti testi
+const pixelSub = S.summarize({
+  task_id: 'sub_pxl_1',
+  parent_task_id: 'T1',
+  agent: 'agy',
+  model: 'gemini-4-argon-medium',
+  status: 'completed',
+  prompt: 'Create a 16x16 pixel art server rack animation with pxl.js',
+  start_time: NOW - 420_000,
+  end_time: NOW,
+  events: [
+    ev('tool.invoked', { name: 'write_file', input: { Path: 'office_props.px.js', Content: 'a\n'.repeat(126) + 'b' } }, NOW - 300_000),
+    ev('message.delta', { text: 'Tasarım ve derleme işlemi tamamlandı; detaylı asset yolları ana ajana ( ea6de370-2461-403f-81a4-080391a4e1aa ) mesaj olarak iletildi.' }, NOW - 10_000)
+  ]
+}, NOW);
+assert.strictEqual(pixelSub.roleName, 'Pixel Artist', 'piksel sanat isteminden Pixel Artist rolü çıkarılmalı');
+assert.strictEqual(pixelSub.files.length, 1, 'değişen dosya sayısı 1 olmalı');
+assert.strictEqual(pixelSub.files[0].path, 'office_props.px.js');
+assert.strictEqual(pixelSub.totalAdd, 127, '+127 satır ekleme hesaplanmalı');
+assert.strictEqual(pixelSub.totalDel, 0, '-0 satır silme hesaplanmalı');
 console.log('web_subagents OK');

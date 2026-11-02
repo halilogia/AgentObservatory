@@ -1,3 +1,4 @@
+// @ts-mandatory: Tarayıcıda sıfır-derleme (zero-build CSP script-src self) ile doğrudan çalışan istemci dil modülüdür.
 ObsI18n.addResources('tr', {
   app: { title: 'Agent Observatory' },
   common: { copy: 'Kopyala', copied: 'Kopyalandı', thinking: 'Düşünme süreci' },
@@ -39,6 +40,10 @@ ObsI18n.addResources('tr', {
     spawn_failed: 'Program başlatılamadı. Terminalde "observatory doctor" çalıştır.'
   },
   api: {
+    acc_bad_agent: 'Desteklenmeyen hesap sağlayıcı ajanı.',
+    acc_name_needed: 'Hesap adı gereklidir.',
+    acc_bad_action: 'Geçersiz hesap işlemi.',
+    acc_failed: 'Hesap işlemi başarısız oldu.',
     unknown_engine: 'Bilinmeyen motor.',
     unknown_model: 'Bu motor için bilinmeyen model.',
     bad_prompt: 'İstem boş ya da 20000 karakterden uzun.',
@@ -94,9 +99,13 @@ ObsI18n.addResources('tr', {
     haiku: 'Hızlı yanıtlar',
     gpt6astra: 'OpenAI, ChatGPT girişiyle',
     free: 'Ücretsiz model',
+    gemini4argon: 'Google, akıl yürütme ve çok modlu model',
     gemini38flash: 'Google, resmî agy.exe'
   },
   office: { navigation: 'Diğer masalar için kaydırın veya ok tuşlarını kullanın', subagent: 'Alt ajan', pendingSession: 'Oturum bekleniyor', openSession: 'Canlı oturumu aç', console: 'Görev konsolu' },
+  acc: { btn: 'Hesaplar', title: 'Hesap Yönetimi' },
+  lib: { loading: 'Yükleniyor...', error: 'Kitaplık yüklenirken bir hata oluştu.', empty: 'Henüz bir kitaplık öğesi yok.', openSource: 'Kaynağı Aç', openOriginal: 'Orijinali Aç', close: 'Kapat', prev: 'Önceki', next: 'Sonraki' },
+  arc: { title: 'Arşiv', empty: 'Arşivlenmiş sohbet veya oturum yok.' },
   lang: { switchTo: 'English', switchTitle: 'Switch to English' },
   theme: { toLight: 'Aydınlık temaya geç', toDark: 'Koyu temaya geç' }
 });

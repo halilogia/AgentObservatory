@@ -3,7 +3,7 @@
 // Güvenlik: yalnızca 127.0.0.1; Host + tam Origin denetimi; yazma uçları rastgele jeton ister (sayfaya meta etiketiyle verilir);
 // çalışma klasörü izinli köklerle sınırlı; varsayılan salt okunur; dangerously_skip_permissions ve danger-full-access yok.
 import crypto from 'node:crypto';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -12,10 +12,14 @@ import { fileURLToPath } from 'node:url';
 import { startServer } from './serve.ts';
 import type { ExtraCtx } from './serve.ts';
 import { resolveBinary } from '../core/paths.ts';
+import { AccountPoolManager, globalAccountPool } from '../core/account_pool.ts';
+import type { PooledAgent } from '../core/account_pool.ts';
 import { restoreTree, snapshotTree } from './web_snapshot.ts';
 import { readCapabilities } from './web_capabilities.ts';
 import { Remote } from './web_remote.ts';
 import { groupSessions, sessionEvents, subagentsOf } from './web_sessions.ts';
+import { scanWidgets, renderWidgetSvg } from '../core/library_widgets.ts';
+import { globalTasteStore } from '../core/taste_store.ts';
 
 export interface ModelDef { id: string; label: string; sub: string }
 export type TeamId = 'turuncu' | 'mavi' | 'kirmizi' | 'siyah';
@@ -46,9 +50,12 @@ export const ENGINES: EngineDef[] = [
     ] },
   { id: 'commandcode', team: 'siyah', label: 'Command Code', color: '#3A3A3C', write: false, efforts: [],
     note: 'engines.commandcode.note', models: [{ id: '', label: 'Command Code', sub: 'models.cliDefault' }] },
-  { id: 'agy', team: 'mavi', label: 'Antigravity (agy)', color: '#4285F4', write: false, efforts: ['low', 'high'],
+  { id: 'agy', team: 'mavi', label: 'Antigravity (agy)', color: '#4285F4', write: false, efforts: ['low', 'medium', 'high'],
     note: 'engines.agy.note',
-    models: [{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', sub: 'models.gemini38flash' }] }
+    models: [
+      { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', sub: 'models.gemini38flash' },
+      { id: 'gemini-4-argon', label: 'Gemini 4 Argon', sub: 'models.gemini4argon' }
+    ] }
 ];
 
 /** `opencode models` çıktısından ücretsiz OpenCode (Zen) modelleri: 'opencode/...' satırları, big-pickle önce */
@@ -88,6 +95,9 @@ const MIME: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
   '.ico': 'image/x-icon',
   '.webp': 'image/webp'
 };
@@ -98,7 +108,7 @@ export interface RunnerLike {
   approveTask?(taskId: string, approved: boolean): boolean;
 }
 
-export interface WebOptions { opencodeListing?: () => Promise<string>; port?: number; dbPath?: string; roots?: string[]; runner?: RunnerLike; token?: string; pollMs?: number; ingest?: boolean; webDir?: string; configPath?: string; home?: string; detectTailscale?: () => Promise<import('./web_remote.ts').TsInfo> }
+export interface WebOptions { opencodeListing?: () => Promise<string>; port?: number; dbPath?: string; roots?: string[]; runner?: RunnerLike; token?: string; pollMs?: number; ingest?: boolean; webDir?: string; configPath?: string; home?: string; detectTailscale?: () => Promise<import('./web_remote.ts').TsInfo>; accountPool?: AccountPoolManager }
 
 // Ayar dosyası: { roots?: string[]; folders?: string[] }. `roots` = altındaki klasörler listelenir; `folders` = tek tek eklenmiş proje klasörleri.
 interface WebConfig { roots?: string[]; folders?: string[] }
@@ -259,6 +269,8 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
     return ENGINES.map((e) => (e.id === 'opencode' && ocModels ? { ...e, models: ocModels } : e));
   }
 
+  const pool = opts.accountPool || (opts.configPath ? new AccountPoolManager({ baseDir: path.dirname(opts.configPath) }) : globalAccountPool);
+
   function engineStatus(db: ExtraCtx['db'], e: EngineDef): { installed: boolean; limitedUntil: number | null } {
     const installed = fs.existsSync(resolveBinary(e.id));
     let limitedUntil: number | null = null;
@@ -272,12 +284,26 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
           if (until > Date.now() && !ok) limitedUntil = until;
         }
       }
-    } catch { /* durum bilinmiyor: sınırlı sayma */ }
+      if (e.id === 'agy' || e.id === 'claude') {
+        const pooled = pool.listAccounts(e.id);
+        if (pooled.length > 0) {
+          if (pooled.some((a) => a.isAvailable)) {
+            limitedUntil = null;
+          } else {
+            const minUntil = Math.min(...pooled.map((a) => a.cooldownUntil || 0).filter((u) => u > Date.now()));
+            if (Number.isFinite(minUntil) && minUntil > Date.now()) limitedUntil = minUntil;
+          }
+        }
+      }
+    } catch (err) {
+      if (process.env.DEBUG_ACCOUNTS) console.error('[web] engineStatus error:', err);
+    }
     return { installed, limitedUntil };
   }
 
   if (remote.enabled) { void remote.refreshTs(true); }
   const tsTimer = setInterval(() => { if (remote.enabled) void remote.refreshTs(); }, 60000); tsTimer.unref();
+  let libraryCache: { at: number; items: Array<{ path: string; name: string; ext: string; mtime: number; size: number; agent: string; sessionId: string; title: string; widgetId?: string; kind?: string; seq?: number }> } | null = null;
   const server = startServer({
     port, dbPath: opts.dbPath, pollMs: opts.pollMs, ingest: opts.ingest,
     allowedOrigins: () => [`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...remote.origins()],
@@ -295,7 +321,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         let body: string | Buffer = isBinary ? fs.readFileSync(path.join(webDir, file)) : fs.readFileSync(path.join(webDir, file), 'utf8');
         if (typeof body === 'string' && file === 'index.html') body = body.replace('__OBS_TOKEN__', token);
         const xFrameOptions = 'DENY';
-        const csp = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+        const csp = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
         res.writeHead(200, {
           'Content-Type': MIME[ext] || 'text/plain',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -308,7 +334,142 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         return true;
       }
 
+      // ---- Kitaplık (Library): tüm oturumlardaki üretilen görseller ve SVG'ler ----
+      if (method === 'GET' && url.pathname === '/api/library') {
+        if (libraryCache && Date.now() - libraryCache.at < 60000) { json(200, libraryCache.items); return true; }
+        const rows = db.prepare("SELECT e.task_id, e.session_id, e.agent, e.data, e.timestamp, t.prompt FROM events e LEFT JOIN tasks t ON t.task_id = e.task_id WHERE e.type IN ('tool.invoked', 'tool.completed', 'message.delta') AND (e.data LIKE '%.png%' OR e.data LIKE '%.gif%' OR e.data LIKE '%.svg%' OR e.data LIKE '%.webp%' OR e.data LIKE '%.jpg%') ORDER BY e.timestamp DESC LIMIT 600").all() as any[];
+        const seen = new Set<string>();
+        const items: Array<{ path: string; name: string; ext: string; mtime: number; size: number; agent: string; sessionId: string; title: string; widgetId?: string; kind?: string; seq?: number }> = [];
+        const pathRe = /(?:[A-Za-z]:[\\/][^\s"'`<>|*?]+?\.(?:png|gif|svg|webp|jpg|jpeg)|(?:docs|assets|web|scratch)[\\/][^\s"'`<>|*?]+?\.(?:png|gif|svg|webp|jpg|jpeg))/gi;
+        const addFile = (rawPath: string, meta: { agent: string; sessionId: string; title: string; ts: number }) => {
+          try {
+            const clean = rawPath.replace(/\\+/g, path.sep).replace(/\/+/g, path.sep);
+            const abs = path.isAbsolute(clean) ? path.resolve(clean) : path.resolve(process.cwd(), clean);
+            const key = abs.toLowerCase();
+            if (seen.has(key)) return;
+            const base = path.basename(abs).toLowerCase();
+            if (base.startsWith('favicon') || base.startsWith('icon-') || base.includes('node_modules')) return;
+            if (!fs.existsSync(abs)) return;
+            const st = fs.statSync(abs);
+            if (!st.isFile() || st.size <= 0 || st.size > 15 * 1024 * 1024) return;
+            seen.add(key);
+            items.push({
+              path: abs,
+              name: path.basename(abs),
+              ext: path.extname(abs).slice(1).toLowerCase(),
+              mtime: meta.ts || st.mtimeMs,
+              size: st.size,
+              agent: meta.agent || 'agy',
+              sessionId: meta.sessionId || '',
+              title: (meta.title || path.basename(abs)).slice(0, 80)
+            });
+          } catch { /* ignore */ }
+        };
+        for (const r of rows) {
+          const text = String(r.data || '');
+          let m: RegExpExecArray | null;
+          pathRe.lastIndex = 0;
+          while ((m = pathRe.exec(text)) !== null) {
+            addFile(m[0], { agent: r.agent, sessionId: r.session_id || '', title: r.prompt || '', ts: Number(r.timestamp) || 0 });
+            if (items.length >= 60) break;
+          }
+          if (items.length >= 60) break;
+        }
+        // Ayrıca Antigravity brain dizinini ve çalışma dizinindeki görselleri RECURSIVE tara
+        const extraDirs = [
+          path.join(os.homedir(), '.gemini', 'antigravity', 'brain'),
+          path.resolve(process.cwd())
+        ];
+        const IMG_RE = /\.(png|gif|svg|webp|jpg|jpeg)$/i;
+        const walk = (dir: string, depth: number, cwdTop: boolean) => {
+          if (depth > (cwdTop ? 1 : 4)) return;
+          let entries: fs.Dirent[] = [];
+          try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+          for (const ent of entries) {
+            const p = path.join(dir, ent.name);
+            if (ent.isFile()) {
+              if (IMG_RE.test(ent.name)) addFile(p, { agent: 'agy', sessionId: '', title: ent.name, ts: 0 });
+            } else if (ent.isDirectory() && !['node_modules', '.git', '.godot', '.venv', '__pycache__'].includes(ent.name)) {
+              if (cwdTop && ent.name !== 'scratch') continue; // proje kökünde yalnızca scratch alt klasörüne in (diğerleri zaten tüm ağaçta taranır)
+              // Antigravity brain: .system_generated/steps tek başına 34 bin dizin tutar ve neredeyse hiç görsel içermez
+              if (path.basename(dir) === '.system_generated' && ['steps', 'messages', 'tasks', 'subagents'].includes(ent.name)) continue;
+              walk(p, depth + 1, cwdTop);
+            }
+          }
+        };
+        for (const d of extraDirs) {
+          if (!fs.existsSync(d)) continue;
+          walk(d, 0, d === extraDirs[1]);
+        }
+        // Claude Code'un satır içi çizdiği SVG/HTML parçacıkları (oturum JSONL'larından)
+        try {
+          const perSession = new Map<string, number>();
+          for (const w of scanWidgets(path.join(opts.home || os.homedir(), '.claude')).sort((a, b) => a.ts - b.ts)) {
+            const seq = perSession.get(w.sessionId) || 0; perSession.set(w.sessionId, seq + 1);
+            items.push({ path: '', widgetId: w.id, kind: 'widget', seq, name: w.title + '.' + w.kind, ext: w.kind, mtime: w.ts, size: w.size, agent: 'claude', sessionId: w.sessionId, title: w.title });
+          }
+        } catch { /* widget taraması kitaplığı bozmaz */ }
+        items.sort((a, b) => b.mtime - a.mtime);
+        libraryCache = { at: Date.now(), items: items.slice(0, 60) };
+        json(200, libraryCache.items);
+        return true;
+      }
+
+      if (method === 'GET' && url.pathname === '/api/library/widget') {
+        const wid = url.searchParams.get('id') || '';
+        const w = /^[\w.:\-]{1,200}$/.test(wid) ? scanWidgets(path.join(opts.home || os.homedir(), '.claude')).find((x) => x.id === wid) : undefined;
+        if (!w) { res.writeHead(404); res.end(); return true; }
+        if (w.kind === 'svg') {
+          res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:" });
+          res.end(renderWidgetSvg(w.code));
+        } else {
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; frame-ancestors 'self'" });
+          res.end(w.code);
+        }
+        return true;
+      }
+
+      if (method === 'GET' && url.pathname === '/api/library/file') {
+        const raw = url.searchParams.get('path') || '';
+        if (!raw) { res.writeHead(400); res.end(); return true; }
+        let abs = '';
+        try { abs = fs.realpathSync(path.resolve(raw)); } catch { res.writeHead(404); res.end(); return true; }
+        const ext = path.extname(abs).toLowerCase();
+        if (!['.png', '.gif', '.svg', '.webp', '.jpg', '.jpeg'].includes(ext)) { res.writeHead(403); res.end(); return true; }
+        const brainDir = path.join(os.homedir(), '.gemini', 'antigravity', 'brain');
+        const tempDir = path.resolve(os.tmpdir());
+        const safe = allowedDir(abs) || insideRoots(abs, [brainDir, tempDir, path.resolve(process.cwd()), ...roots]);
+        if (!safe || !fs.existsSync(abs)) { res.writeHead(404); res.end(); return true; }
+        if (ext === '.svg') {
+          let svgText = fs.readFileSync(abs, 'utf8');
+          svgText = svgText.replace(/@import\s+url\([^)]+\);?/gi, '');
+          res.writeHead(200, {
+            'Content-Type': 'image/svg+xml',
+            'Cache-Control': 'public, max-age=300',
+            'X-Content-Type-Options': 'nosniff'
+          });
+          res.end(svgText);
+          return true;
+        }
+        const buf = fs.readFileSync(abs);
+        res.writeHead(200, {
+          'Content-Type': MIME[ext] || 'application/octet-stream',
+          'Cache-Control': 'public, max-age=300',
+          'X-Content-Type-Options': 'nosniff'
+        });
+        res.end(buf);
+        return true;
+      }
+
       // her CLI'nin skill / ajan / komut / MCP / eklenti adları (yalnızca ad ve kısa açıklama; gizli değer okunmaz)
+            if (method === 'GET' && url.pathname === '/api/taste') {
+        json(200, {
+          rules: globalTasteStore.getRules(),
+          categories: globalTasteStore.getCategories()
+        });
+        return true;
+      }
+
       if (method === 'GET' && url.pathname === '/api/capabilities') {
         const q = url.searchParams.get('cwd') || '';
         json(200, readCapabilities(opts.home || os.homedir(), q && fs.existsSync(q) && allowedDir(q) ? path.resolve(q) : undefined));
@@ -331,12 +492,26 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         // alt ajanlar ana akıştan ayrı döner (ana akış süzmesi aynı kalır)
         const subTasks = db.prepare('SELECT task_id, parent_task_id, agent, model, status, prompt, start_time, end_time FROM tasks WHERE parent_task_id IS NOT NULL AND (session_id = ? OR parent_task_id IN (SELECT task_id FROM tasks WHERE session_id = ?)) ORDER BY start_time ASC, rowid ASC').all(id, id) as any[];
         const subRaw = subTasks.length ? db.prepare(`SELECT task_id, type, data, timestamp FROM events WHERE task_id IN (${subTasks.map(() => '?').join(',')}) ORDER BY rowid ASC`).all(...subTasks.map((t) => t.task_id)) as any[] : [];
-        json(200, { id, tasks, events: sessionEvents(tasks, rawEvents), subs: subagentsOf(subTasks, subRaw) });
+        const tastes = globalTasteStore.getSessionTastes(id);
+        json(200, { id, tasks, events: sessionEvents(tasks, rawEvents), subs: subagentsOf(subTasks, subRaw), tastes });
         return true;
       }
 
       // telefon eşleştirme durumu (yalnızca yerel sayfa; kapı uzak istekleri zaten reddeder)
       if (method === 'GET' && url.pathname === '/api/remote') { await remote.manage(url.pathname, method, {}, json); return true; }
+
+      const safeAccounts = () => pool.listAccounts().map(({ credentialBase64: _secret, ...rest }) => rest);
+
+      if (method === 'GET' && url.pathname === '/api/accounts') {
+        json(200, {
+          accounts: safeAccounts(),
+          active: {
+            agy: pool.getActiveAccount('agy')?.name || null,
+            claude: pool.getActiveAccount('claude')?.name || null
+          }
+        });
+        return true;
+      }
 
       if (method === 'GET' && url.pathname === '/api/config') {
         const same = (a: string, b: string) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
@@ -345,6 +520,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         json(200, {
           engines: (await enginesNow()).map((e) => ({ ...e, ...engineStatus(db, e) })),
           teams: TEAMS, roots, projects, defaultCwd: projects[0]?.path || roots[0] || '', maxActive: MAX_ACTIVE,
+          accounts: safeAccounts(),
           // uzak (telefon) oturumu: yerel yönetim düğmeleri gizlenir, yazma izni cihaza bağlıdır
           remote: !!remote.deviceOf(req), writeAllowed: remote.deviceOf(req)?.write ?? true
         });
@@ -352,7 +528,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
       }
 
       // ---- yazan uçlar: jeton + aynı köken ----
-      if (method === 'POST' && ['/api/run', '/api/cancel', '/api/approve', '/api/folders', '/api/folders/browse', '/api/folders/remove', '/api/snapshot', '/api/restore', '/api/remote', '/api/pair/new', '/api/devices/write', '/api/devices/remove'].includes(url.pathname)) {
+      if (method === 'POST' && ['/api/run', '/api/cancel', '/api/approve', '/api/accounts', '/api/folders', '/api/folders/browse', '/api/folders/remove', '/api/snapshot', '/api/restore', '/api/remote', '/api/pair/new', '/api/devices/write', '/api/devices/remove'].includes(url.pathname)) {
         // hata yanıtları `code` taşır: arayüz bunu seçili dile çevirir; `error` Türkçe yedek metindir
         const fail = (status: number, code: string, error: string, params: Record<string, unknown> = {}) => { json(status, { code, error, params }); return true; };
         const site = req.headers['sec-fetch-site'];
@@ -365,6 +541,67 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         if (url.pathname === '/api/remote' || url.pathname === '/api/pair/new' || url.pathname.startsWith('/api/devices/')) {
           await remote.manage(url.pathname, method, b, json);
           return true;
+        }
+
+        if (url.pathname === '/api/accounts') {
+          if (remote.deviceOf(req)) return fail(403, 'local_only', 'bu işlem yalnızca bilgisayardaki sayfadan yapılır');
+          const agent = b.agent === 'agy' || b.agent === 'claude' ? (b.agent as PooledAgent) : null;
+          if (!agent) return fail(400, 'acc_bad_agent', 'geçersiz motor (agy veya claude olmalı)');
+          const action = String(b.action || '');
+          const name = typeof b.name === 'string' ? b.name.trim().replace(/[^a-zA-Z0-9_-]/g, '_') : '';
+          try {
+            if (action === 'save') {
+              if (!name) return fail(400, 'acc_name_needed', 'hesap adı gerekli');
+              const label = typeof b.label === 'string' && b.label.trim() ? b.label.trim().slice(0, 60) : undefined;
+              const { credentialBase64: _s, ...entry } = pool.saveAccount(agent, name, label);
+              json(200, { ok: true, entry, accounts: safeAccounts() });
+              return true;
+            }
+            if (action === 'switch') {
+              if (!name) return fail(400, 'acc_name_needed', 'hesap adı gerekli');
+              const { credentialBase64: _s, ...entry } = pool.switchAccount(agent, name);
+              json(200, { ok: true, entry, accounts: safeAccounts() });
+              return true;
+            }
+            if (action === 'clear') {
+              if (!name) return fail(400, 'acc_name_needed', 'hesap adı gerekli');
+              const ok = pool.clearCooldown(agent, name);
+              json(200, { ok, accounts: safeAccounts() });
+              return true;
+            }
+            if (action === 'remove') {
+              if (!name) return fail(400, 'acc_name_needed', 'hesap adı gerekli');
+              const ok = pool.removeAccount(agent, name);
+              json(200, { ok, accounts: safeAccounts() });
+              return true;
+            }
+            if (action === 'login') {
+              const bin = resolveBinary(agent);
+              const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+              if (agent === 'claude' && name) {
+                const entry = pool.saveAccount('claude', name, typeof b.label === 'string' && b.label.trim() ? b.label.trim().slice(0, 60) : undefined);
+                if (entry.configDir) env.CLAUDE_CONFIG_DIR = entry.configDir;
+              }
+              if (process.platform === 'win32' && process.env.NODE_ENV !== 'test') {
+                const title = agent === 'agy' ? 'Antigravity (agy) Hesap Girisi' : `Claude Code Hesap Girisi (${name || 'varsayilan'})`;
+                const hint = agent === 'agy'
+                  ? '1) Acilan agy ekraninda /logout ve ardindan /login yazip diger Google Pro hesabinizla giris yapin. 2) Giris bitince Web arayuzunde Hesap Adi yazip [Mevcut Oturumu Kaydet] dugmesine basin.'
+                  : `1) Acilan claude ekraninda /login yazip hesabinizla giris yapin (${name || 'claude'}).`;
+                const child = spawn('cmd.exe', ['/c', 'start', title, 'cmd.exe', '/k', `echo ${hint} & echo. & "${bin}"`], {
+                  env,
+                  stdio: 'ignore',
+                  windowsHide: false,
+                  detached: true
+                });
+                child.unref();
+              }
+              json(200, { ok: true, accounts: safeAccounts() });
+              return true;
+            }
+            return fail(400, 'acc_bad_action', 'geçersiz hesap işlemi');
+          } catch (err: any) {
+            return fail(400, 'acc_failed', err?.message || 'hesap işlemi başarısız');
+          }
         }
 
         if (url.pathname === '/api/folders/browse') {
@@ -455,13 +692,15 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         if (st.limitedUntil) return fail(409, 'limited', `${engine.label} kotası dolu`, { engine: engine.label, limitedUntil: st.limitedUntil });
 
         // agy modeli çabaya göre seçilir (gemini-3.8-flash-low | -high); diğerlerinde model kimliği olduğu gibi
-        const modelId = engine.id === 'agy' ? `${model.id}-${effort === 'low' ? 'low' : 'high'}` : model.id;
+        const agyEffort = model.id === 'gemini-4-argon' ? (effort === 'low' || effort === 'high' ? effort : 'medium') : (effort === 'low' ? 'low' : 'high');
+        const modelId = engine.id === 'agy' ? `${model.id}-${agyEffort}` : model.id;
         const runner = await getRunner();
         const { taskId, promise } = runner.startTask({
           agent: engine.id, prompt: b.prompt, cwd: path.resolve(cwd), model: modelId,
           effort: engine.id === 'claude' || engine.id === 'codex' ? effort : undefined,
           sandbox: write ? 'workspace-write' : 'read-only',
           sessionId: typeof b.sessionId === 'string' && b.sessionId ? b.sessionId : undefined,
+          account: typeof b.account === 'string' && b.account.trim() ? b.account.trim() : undefined,
           dangerouslySkipPermissions: false, timeoutSeconds: 900
         });
         active.add(taskId);

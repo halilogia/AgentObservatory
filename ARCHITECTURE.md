@@ -90,3 +90,22 @@ interface TaskEvent {
 1. **Doğrudan Kaynaktan Öncelik:** Bir ajan için Tier 1 (native stream) mevcutsa, dosya izleyici (Tier 3) o oturum için mükerrer olay üretmez.
 2. **Kör Uçuş Yasağı:** Hiçbir CLI görevi arka planda takılı bırakılamaz; her görevin kesin zaman aşımı (timeout) ve iptal mekanizması (`AbortController`) vardır.
 3. **Abonelik & Yetki İzolasyonu:** Asla yerel OAuth kimlik bilgileri API anahtarına dönüştürülmeye çalışılmaz; CLI'ların yerel yetki modelleri korunur.
+
+<!-- ARCH-AUTO:START (tools/generate_architecture.py --sync; elle düzenlemeyin) -->
+## Source inventory
+
+- Source files: **176**; non-empty LOC: **27961**
+- Test files: **52**
+
+| Directory | Files | LOC |
+|---|---:|---:|
+| archive | 2 | 407 |
+| bin | 1 | 14 |
+| nexus_ai_office | 46 | 8657 |
+| scripts | 1 | 105 |
+| src | 50 | 9003 |
+| test | 50 | 3663 |
+| tmp | 1 | 28 |
+| updates-dashboard | 2 | 189 |
+| web | 23 | 5895 |
+<!-- ARCH-AUTO:END -->

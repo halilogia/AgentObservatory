@@ -9,7 +9,8 @@ Sorun: Terminale doğrudan `codex`, `claude` veya `opencode` yazıp başlattığ
 | **claude** | `~/.claude/projects/<proje>/<oturum>.jsonl` | JSONL (`user`, `assistant`, `tool_use`, `tool_result`) |
 | **codex** | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | JSONL (`response_item`, `event_msg`) |
 | **opencode** | `~/.local/share/opencode/opencode.db` | SQLite (`session`, `message`, `part`), salt okunur |
-| agy | (yok) | Antigravity kayıtları ayrı biçimde; henüz desteklenmiyor |
+| **agy** | `~/.gemini/antigravity/brain/<konuşma>/.system_generated/logs/transcript.jsonl` | JSONL (`USER_INPUT`, `PLANNER_RESPONSE`, `GENERIC`) |
+| **commandcode** | `~/.commandcode/projects/<proje>/<oturum>.jsonl` | JSONL (`session`, `message`: `thinking`, `text`, `tool_use`, `tool_result`) |
 
 Kimlik bilgisi dosyalarına (`auth.json` vb.) dokunulmaz; yalnızca sohbet kayıtları okunur.
 
@@ -19,6 +20,8 @@ node bin/observatory.js ingest --follow                 # canlı izle (Ctrl+C il
 node bin/observatory.js ingest                          # bir kez tara
 node bin/observatory.js ingest --backfill --active-minutes 120   # son 2 saatin oturumlarını baştan al
 node bin/observatory.js ingest --sources claude,opencode
+node bin/observatory.js ingest --sources commandcode --backfill --active-minutes 300
+node bin/observatory.js ingest --follow          # claude, codex, opencode, agy ve commandcode birlikte
 ```
 
 **Otomatik:** Observatory MCP sunucusu açıkken (Claude Code oturumu açıkken) arka planda kendiliğinden çalışır. Kapatmak için `OBSERVATORY_NO_INGEST=1`. Birden çok sunucu işlemi açıksa yalnızca biri okur (kilit dosyası `agent_observatory_ingest.lock`, 6 sn eskirse devralınır).

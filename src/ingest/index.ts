@@ -1,9 +1,10 @@
-// observatory ingest [--follow] [--sources claude,codex,opencode,agy] [--active-minutes 30] [--backfill]
-// Observatory dışında (terminalde elle) başlatılan Claude Code, Codex, OpenCode ve Antigravity oturumlarını, ajanların
+// observatory ingest [--follow] [--sources claude,codex,opencode,agy,commandcode] [--active-minutes 30] [--backfill]
+// Observatory dışında (terminalde elle) başlatılan Claude Code, Codex, OpenCode, Antigravity ve Command Code oturumlarını, ajanların
 // kendi kayıt dosyalarını OKUYARAK (salt okunur) olay deposuna ekler. Kimlik bilgisi dosyalarına dokunmaz.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import type { StatementSync } from 'node:sqlite';
 import { globalSqlite, SqliteStore } from '../core/sqlite_store.ts';
@@ -12,9 +13,10 @@ import type { ExtEvent, LineParser, ManagedCheck } from './core.ts';
 import { AntigravityLineParser, conversationIdFromPath } from './antigravity.ts';
 import { ClaudeLineParser, ClaudeSubagentParser } from './claude.ts';
 import { CodexLineParser } from './codex.ts';
+import { CommandCodeLineParser, commandCodeSessionIdFromPath, countCommandCodeTurns } from './commandcode.ts';
 import { OpenCodeDbSource } from './opencode.ts';
 
-type Src = 'claude' | 'codex' | 'opencode' | 'agy';
+type Src = 'claude' | 'codex' | 'opencode' | 'agy' | 'commandcode';
 
 /** Antigravity konuşma kayıtlarının kök klasörü. */
 export function defaultAntigravityDir(): string {
@@ -86,6 +88,24 @@ function openSubagent(file: string, toolTurns: Map<string, string>): LineParser 
   } catch { return null; }
 }
 
+
+const TASTE_SIGNAL_RE = /(?:tercih|yerine|böyle yap|öyle yapma|kullanma|istiyorum|istemiyorum|always|never|prefer|instead|don't|do not)/i;
+const TASTE_WORKER_PATH = path.join(os.homedir(), '.gemini', 'config', 'taste_worker.py');
+
+function triggerTasteLearner(agent: string, sessionId: string, prompt: string): void {
+  if (!fs.existsSync(TASTE_WORKER_PATH)) return;
+  try {
+    const child = spawn(
+      'python',
+      [TASTE_WORKER_PATH, '--agent', agent, '--session', sessionId, '--prompt', prompt],
+      { detached: true, stdio: 'ignore', windowsHide: true }
+    );
+    child.unref();
+  } catch (err) {
+    if (process.env.DEBUG_TASTE) console.error('[Ingest] Taste learner spawn error:', err);
+  }
+}
+
 interface FileState { offset: number; buf: string; parser: LineParser; src: Src }
 
 export interface IngestOptions {
@@ -97,6 +117,7 @@ export interface IngestOptions {
   claudeDir?: string;
   codexDir?: string;
   antigravityDir?: string;
+  commandcodeDir?: string;
   isManaged?: ManagedCheck;
   log?: (s: string) => void;
   /** İlk taramadan sonraki periyodik taramalar asenkron (varsayılan: follow). Tek seferlik/test çağrılarında senkron kalır. */
@@ -111,6 +132,7 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
   if (opts.sources.includes('claude')) roots.push(['claude', opts.claudeDir || path.join(os.homedir(), '.claude', 'projects')]);
   if (opts.sources.includes('codex')) roots.push(['codex', opts.codexDir || path.join(os.homedir(), '.codex', 'sessions')]);
   if (opts.sources.includes('agy')) roots.push(['agy', opts.antigravityDir || defaultAntigravityDir()]);
+  if (opts.sources.includes('commandcode')) roots.push(['commandcode', opts.commandcodeDir || path.join(os.homedir(), '.commandcode', 'projects')]);
   const files = new Map<string, FileState>();
   const toolTurns = new Map<string, string>(); // Task/Agent araç çağrısı kimliği -> ana görev kimliği
   const startedAt = Date.now();
@@ -126,6 +148,19 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
       // Tek işlemde toplu yazım: olay başına BEGIN/COMMIT açmak SQLite'ı kilitlemesin.
       store.recordEvents(batch);
       count += batch.length;
+      if (!opts.backfill) {
+        for (const ev of evs) {
+          if (ev.type === 'task.completed' && ev.agent !== 'agy') {
+            const task = store.getTask(ev.taskId);
+            if (task && task.prompt) {
+              const p = String(task.prompt);
+              if (p.length > 5 && TASTE_SIGNAL_RE.test(p)) {
+                triggerTasteLearner(ev.agent, ev.sessionId || task.sessionId || 'session', p);
+              }
+            }
+          }
+        }
+      }
     } catch (err: any) {
       log(`yazılamadı: ${err.message}`);
     }
@@ -136,6 +171,8 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
   /** stat'ı alınmış aday dosyayı (son activeMinutes içinde değiştiyse) izlemeye alır. */
   const track = (src: Src, f: string, st: fs.Stats, cutoff: number) => {
     if (files.has(f) || st.mtimeMs < cutoff) return;
+    // Command Code checkpoint dosyaları da .jsonl uzantılıdır; kayıt içermezler (yalnızca dosya anlık görüntüleri).
+    if (src === 'commandcode' && f.endsWith('.checkpoints.jsonl')) return;
     let parser: LineParser;
     if (src === 'claude' && path.basename(path.dirname(f)) === 'subagents') {
       // alt ajan dosyası: ebeveyn görev, meta dosyasındaki toolUseId ile bulunur; ana kayıt henüz okunmadıysa sonra yeniden denenir
@@ -157,6 +194,20 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
         } catch { /* dosya okuma hatasında 0'dan başlar */ }
       }
       parser = new AntigravityLineParser(isManaged, conversationIdFromPath(f), f, initialTurn);
+    }
+    else if (src === 'commandcode') {
+      // Dosya sonundan izlemeye başlanıyorsa oturum kimliği dosya adından, tur numarası önceki istemlerden gelir.
+      let initialTurn = 0;
+      if (!opts.backfill && st.birthtimeMs < startedAt) {
+        try {
+          const fd = fs.openSync(f, 'r');
+          const buf = Buffer.alloc(Math.min(st.size, 10 * 1024 * 1024));
+          const bytesRead = fs.readSync(fd, buf, 0, buf.length, 0);
+          fs.closeSync(fd);
+          initialTurn = countCommandCodeTurns(buf.toString('utf8', 0, bytesRead));
+        } catch { /* okunamazsa 0'dan başlar */ }
+      }
+      parser = new CommandCodeLineParser(isManaged, commandCodeSessionIdFromPath(f), initialTurn);
     }
     else parser = src === 'claude' ? new ClaudeLineParser(isManaged, toolTurns) : new CodexLineParser(isManaged);
     // ingest başladıktan sonra oluşan dosya baştan okunur; eski dosyada yalnızca yeni eklenenler
@@ -274,7 +325,7 @@ export function startIngest(opts: IngestOptions): { tick: () => number; stop: ()
 
 export async function runIngest(args: string[]): Promise<void> {
   const val = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
-  const sources = (val('--sources') || 'claude,codex,opencode,agy').split(',').filter((s) => ['claude', 'codex', 'opencode', 'agy'].includes(s)) as Src[];
+  const sources = (val('--sources') || 'claude,codex,opencode,agy,commandcode').split(',').filter((s) => ['claude', 'codex', 'opencode', 'agy', 'commandcode'].includes(s)) as Src[];
   const activeMinutes = Number(val('--active-minutes')) || 30;
   const follow = args.includes('--follow');
   const backfill = args.includes('--backfill');
@@ -293,7 +344,7 @@ const INGEST_LOCK = path.join(os.tmpdir(), 'agent_observatory_ingest.lock');
  */
 export function startBackgroundIngest(): (() => void) | null {
   if (process.env.OBSERVATORY_NO_INGEST === '1' || process.env.NODE_ENV === 'test') return null;
-  const handle = startIngest({ sources: ['claude', 'codex', 'opencode', 'agy'], activeMinutes: 30, backfill: false, follow: false, asyncDiscover: true });
+  const handle = startIngest({ sources: ['claude', 'codex', 'opencode', 'agy', 'commandcode'], activeMinutes: 30, backfill: false, follow: false, asyncDiscover: true });
   const timer = setInterval(() => {
     try {
       const fresh = Date.now() - fs.statSync(INGEST_LOCK).mtimeMs < 6000;

@@ -1,9 +1,12 @@
+import { resolveSessionTitle } from '../core/title_generator.ts';
 import { EventStore, globalStore } from '../core/event_store.ts';
 import { globalSqlite } from '../core/sqlite_store.ts';
 import type { TaskEvent, TaskStatus, TaskSummary } from '../core/types.ts';
 import { TranscriptRenderer } from './transcript.ts';
 import { openWebPanel } from '../commands/web_opener.ts';
 import { openOfficeTui } from '../commands/office_opener.ts';
+import { globalTasteStore, type TasteRule } from '../core/taste_store.ts';
+import path from 'node:path';
 
 export const COLORS = {
   reset: '\x1b[0m',
@@ -264,7 +267,7 @@ function printEvent(evt: TaskEvent, pendingTools: Map<string, ToolInfo>): void {
 }
 
 // Oturum seçici durumu: canlı akış / seçim listesi / görev incelemesi.
-type ViewMode = 'live' | 'picker' | 'inspect';
+type ViewMode = 'live' | 'picker' | 'inspect' | 'taste';
 let viewMode: ViewMode = 'live';
 let pickerTasks: TaskSummary[] = [];
 const PICKER_LIMIT = 15;
@@ -420,6 +423,10 @@ function renderSessionPicker(): void {
   lines.push(sel
     ? truncate(` ID: ${shortId(sel.taskId, 14)} │ Oturum: ${shortId(sel.sessionId, 8)} │ Model: ${sel.model || '-'}`, width)
     : ' -');
+  const selTitle = sel ? resolveSessionTitle(sel.sessionId, sel.agent, [sel.prompt]) : '';
+  if (sel && selTitle && selTitle !== 'Yeni sohbet') {
+    lines.push(truncate(` Başlık: ${paint('yellow', selTitle)}`, width));
+  }
   lines.push(sel ? truncate(` Prompt: ${cleanText(sel.prompt) || '(boş prompt)'}`, width) : ' -');
   lines.push(paint('yellow', truncate('[↑ / ↓] Gezin · [Enter] İncele · [Esc / C] Canlı Akış · [Q] Çıkış', width)));
 
@@ -464,6 +471,123 @@ export function handlePickerKey(key: string): 'live' | 'handled' | null {
 }
 
 // Bir görevin özetini ve tüm olaylarını adım adım basar.
+
+let tasteRules: TasteRule[] = [];
+let tasteSelectedIndex = 0;
+let tasteScrollOffset = 0;
+
+export function getTasteSelectedIndex(): number {
+  return tasteSelectedIndex;
+}
+
+export function formatConfidenceBar(conf: number): string {
+  const filled = Math.min(10, Math.max(0, Math.round(conf * 10)));
+  const empty = 10 - filled;
+  const bar = '█'.repeat(filled) + '░'.repeat(empty);
+  const color = conf >= 0.85 ? 'green' : conf >= 0.70 ? 'yellow' : 'cyan';
+  return paint(color, `[${bar}] ${conf.toFixed(2)}`);
+}
+
+export function showTasteView(): TasteRule[] {
+  viewMode = 'taste';
+  globalTasteStore.reload();
+  tasteRules = globalTasteStore.getRules();
+  tasteSelectedIndex = 0;
+  tasteScrollOffset = 0;
+  renderTasteView();
+  return tasteRules;
+}
+
+export function handleTasteKey(key: string): 'live' | 'handled' | null {
+  if (viewMode !== 'taste') return null;
+
+  if (key === '\u001b[A' || key === '\u001bOA' || key === 'k' || key === 'K') {
+    if (tasteRules.length > 0) {
+      tasteSelectedIndex = (tasteSelectedIndex - 1 + tasteRules.length) % tasteRules.length;
+      renderTasteView();
+    }
+    return 'handled';
+  }
+  if (key === '\u001b[B' || key === '\u001bOB' || key === 'j' || key === 'J') {
+    if (tasteRules.length > 0) {
+      tasteSelectedIndex = (tasteSelectedIndex + 1) % tasteRules.length;
+      renderTasteView();
+    }
+    return 'handled';
+  }
+  if (key === 'd' || key === 'D') {
+    if (tasteRules.length > 0 && tasteRules[tasteSelectedIndex]) {
+      const sel = tasteRules[tasteSelectedIndex];
+      globalTasteStore.deleteRule(sel.category, sel.text);
+      tasteRules = globalTasteStore.getRules();
+      if (tasteSelectedIndex >= tasteRules.length) {
+        tasteSelectedIndex = Math.max(0, tasteRules.length - 1);
+      }
+      renderTasteView();
+    }
+    return 'handled';
+  }
+  if (key === 'r' || key === 'R') {
+    globalTasteStore.reload();
+    tasteRules = globalTasteStore.getRules();
+    renderTasteView();
+    return 'handled';
+  }
+  if (key === '\u001b' || key === 'c' || key === 'C' || key === 't' || key === 'T') {
+    return 'live';
+  }
+  return null;
+}
+
+export function renderTasteView(): void {
+  const width = Math.max(40, (process.stdout.columns || 80) - 1);
+  const total = tasteRules.length;
+  const win = computeWindow(tasteSelectedIndex, tasteScrollOffset, total, 10);
+  tasteScrollOffset = win.offset;
+
+  const lines: string[] = [];
+  lines.push(truncate(` 🧠 AGENT OBSERVATORY · Kod Zevki (Taste) · ${total} Kural Kayıtlı`, width));
+  lines.push(paint('cyan', '═'.repeat(width)));
+  lines.push(win.hasAbove ? paint('gray', `   ▲ daha fazla (${win.offset} kural yukarıda)`) : '');
+
+  if (total === 0) {
+    lines.push(paint('gray', ' Henüz kaydedilmiş kodlama zevki bulunamadı.'));
+  }
+
+  for (let i = win.offset; i < win.end; i++) {
+    const r = tasteRules[i];
+    const selected = i === tasteSelectedIndex;
+    const catTag = `[${r.category.toUpperCase()}]`;
+    const bar = formatConfidenceBar(r.confidence);
+    const prefix = `${selected ? ' ▶ ' : '   '}${paint('cyan', catTag.padEnd(12))} `;
+    const row = prefix + truncate(r.text, Math.max(10, width - prefix.length - 18)) + ' ' + bar;
+
+    if (selected) {
+      lines.push(paint('bold', paint('yellow', row)));
+    } else {
+      lines.push(row);
+    }
+  }
+
+  lines.push(win.hasBelow
+    ? paint('gray', `   ▼ daha fazla (${total} kuraldan ${tasteSelectedIndex + 1}'üncüsü)`)
+    : (total > 0 ? paint('gray', `   (${total} kuraldan ${tasteSelectedIndex + 1}'üncüsü)`) : ''));
+
+  lines.push(paint('gray', '─'.repeat(width)));
+  if (total > 0 && tasteRules[tasteSelectedIndex]) {
+    const sel = tasteRules[tasteSelectedIndex];
+    lines.push(` Kategori: ${paint('cyan', sel.category)} │ Güven: ${paint('green', String(sel.confidence))} │ Kaynak: ${path.basename(sel.sourceFile)}`);
+    lines.push(` Kural: ${paint('bold', sel.text)}`);
+  } else {
+    lines.push(' -');
+  }
+  lines.push(paint('gray', '─'.repeat(width)));
+  lines.push(paint('yellow', '[↑ / ↓] Gezin · [D] Tercihi Sil · [R] Yenile · [Esc / C / T] Canlı Akış'));
+
+  clearScreen();
+  process.stdout.write(lines.join('\n') + '\n');
+}
+
 export function inspectTask(taskId: string): void {
   viewMode = 'inspect';
   clearScreen();
@@ -578,6 +702,15 @@ export class TerminalUI {
         process.exit(0);
       } else if (viewMode !== 'live' && handlePickerKey(key) === 'handled') {
         // seçici/inceleme tuşu işlendi
+      } else if (viewMode === 'taste') {
+        const res = handleTasteKey(key);
+        if (res === 'live') {
+          viewMode = 'live';
+          try { console.clear(); } catch (err) { if (process.env.DEBUG_TUI) console.error(err); }
+          this.renderHeader();
+        }
+      } else if (key === 't' || key === 'T') {
+        showTasteView();
       } else if (key === 's' || key === 'S') {
         showSessionPicker();
       } else if (key === 'o' || key === 'O') {
@@ -635,7 +768,7 @@ export class TerminalUI {
   renderHeader(): void {
     console.log(paint('cyan', '═'.repeat(80)));
     console.log(` ${paint('bold', '🔭 AGENT OBSERVATORY')} · ${paint('green', 'Canlı Olay Akışı')} · ${paint('gray', hms())}`);
-    console.log(` ${paint('gray', 'Kısayollar: [S] Oturum Seç · [H] Tüm Geçmiş · [C] Canlı Akış / Temizle · [W] Web Paneli · [Q] Çıkış')}`);
+    console.log(` ${paint('gray', 'Kısayollar: [S] Oturum Seç · [T] Kod Zevki (Taste) · [H] Geçmiş · [C] Canlı Akış · [W] Web · [Q] Çıkış')}`);
     console.log(paint('cyan', '═'.repeat(80)));
   }
 

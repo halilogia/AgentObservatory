@@ -11,6 +11,7 @@ import { validateCwd } from '../core/paths.ts';
 import { launchTuiWindow } from '../runtime/tui_launcher.ts';
 import { globalFleetOrchestrator } from '../runtime/fleet_orchestrator.ts';
 import { globalWorktreeManager } from '../runtime/worktree_manager.ts';
+import { globalAccountPool } from '../core/account_pool.ts';
 
 function formatTokens(n: any): string {
   const v = Number(n) || 0;
@@ -116,9 +117,10 @@ export async function startMcpServer(): Promise<void> {
       timeout_seconds: z.number().optional().default(1800).describe('Execution timeout in seconds (default 1800s / 30m; 0 for unlimited)'),
       detailed: z.boolean().optional().default(false).describe('Return verbose tool logs and full output (default false)'),
       effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().describe('Reasoning effort level (low, medium, high, xhigh, max). Used by Claude.'),
-      model: z.string().optional().describe('Optional model override. For OpenCode, pass a model ID returned by opencode models (example: opencode/deepseek-v4.1-flash-free).')
+      model: z.string().optional().describe('Optional model override. For OpenCode, pass a model ID returned by opencode models (example: opencode/deepseek-v4.1-flash-free).'),
+      account: z.string().optional().describe('Optional named account from the multi-account pool (for agy or claude).')
     },
-    async ({ agent, prompt, cwd, session_id, dangerously_skip_permissions, sandbox, timeout_seconds, detailed, effort, model }) => {
+    async ({ agent, prompt, cwd, session_id, dangerously_skip_permissions, sandbox, timeout_seconds, detailed, effort, model, account }) => {
       try {
         const validatedCwd = validateCwd(cwd);
         const summary = await globalRunner.runTask({
@@ -130,7 +132,8 @@ export async function startMcpServer(): Promise<void> {
           sandbox,
           timeoutSeconds: typeof timeout_seconds === 'number' ? timeout_seconds : 1800,
           effort,
-          model
+          model,
+          account
         });
 
         return {
@@ -159,9 +162,10 @@ export async function startMcpServer(): Promise<void> {
       timeout_seconds: z.number().optional().default(1800).describe('Execution timeout in seconds (default 1800s / 30m; 0 for unlimited)'),
       parent_task_id: z.string().optional().describe('Optional parent task ID (hierarchy)'),
       effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().describe('Reasoning effort level (low, medium, high, xhigh, max). Used by Claude.'),
-      model: z.string().optional().describe('Optional model override. For OpenCode, pass a model ID returned by opencode models (example: opencode/deepseek-v4.1-flash-free).')
+      model: z.string().optional().describe('Optional model override. For OpenCode, pass a model ID returned by opencode models (example: opencode/deepseek-v4.1-flash-free).'),
+      account: z.string().optional().describe('Optional named account from the multi-account pool (for agy or claude).')
     },
-    async ({ agent, prompt, cwd, session_id, dangerously_skip_permissions, sandbox, timeout_seconds, parent_task_id, effort, model }) => {
+    async ({ agent, prompt, cwd, session_id, dangerously_skip_permissions, sandbox, timeout_seconds, parent_task_id, effort, model, account }) => {
       try {
         const validatedCwd = validateCwd(cwd);
         const { taskId, promise } = globalRunner.startTask({
@@ -174,7 +178,8 @@ export async function startMcpServer(): Promise<void> {
           sandbox,
           timeoutSeconds: typeof timeout_seconds === 'number' ? timeout_seconds : 1800,
           effort,
-          model
+          model,
+          account
         });
 
         promise.catch((err) => {
@@ -300,9 +305,10 @@ export async function startMcpServer(): Promise<void> {
       dangerously_skip_permissions: z.boolean().optional().default(false).describe('Explicitly bypass permissions (default: false)'),
       timeout_seconds: z.number().optional().default(1800).describe('Execution timeout in seconds (default 1800s / 30m; 0 for unlimited)'),
       detailed: z.boolean().optional().default(false).describe('Return verbose tool logs and full output (default false)'),
-      model: z.string().optional().describe('Model override for Antigravity agy.')
+      model: z.string().optional().describe('Model override for Antigravity agy.'),
+      account: z.string().optional().describe('Optional named account from the agy multi-account pool.')
     },
-    async ({ prompt, cwd, session_id, dangerously_skip_permissions, timeout_seconds, detailed, model }) => {
+    async ({ prompt, cwd, session_id, dangerously_skip_permissions, timeout_seconds, detailed, model, account }) => {
       try {
         const validatedCwd = validateCwd(cwd);
         const summary = await globalRunner.runTask({
@@ -312,7 +318,8 @@ export async function startMcpServer(): Promise<void> {
           sessionId: session_id,
           dangerouslySkipPermissions: dangerously_skip_permissions,
           timeoutSeconds: typeof timeout_seconds === 'number' ? timeout_seconds : 1800,
-          model
+          model,
+          account
         });
         return { content: [{ type: 'text', text: formatTaskReport(summary, detailed) }] };
       } catch (err: any) {
@@ -553,6 +560,56 @@ export async function startMcpServer(): Promise<void> {
           isError: true,
           content: [{ type: 'text', text: `Worktree temizleme hatası: ${err.message}` }]
         };
+      }
+    }
+  );
+
+  // Tool 11: manage_accounts (Multi-account pool & auto-failover for agy and claude)
+  server.tool(
+    'manage_accounts',
+    'Manages the multi-account pool and quota auto-failover for agy (Windows Credential Manager) and claude (CLAUDE_CONFIG_DIR). Actions: list, save, switch, clear_cooldown, remove.',
+    {
+      action: z.enum(['list', 'save', 'switch', 'clear_cooldown', 'remove']).describe('Action to perform'),
+      agent: z.enum(['agy', 'claude']).optional().describe('Target agent (agy or claude)'),
+      name: z.string().optional().describe('Account identifier (e.g. "pro1", "pro2")'),
+      label: z.string().optional().describe('Optional human-readable label')
+    },
+    async ({ action, agent, name, label }) => {
+      try {
+        if (action === 'list') {
+          const list = globalAccountPool.listAccounts(agent);
+          if (list.length === 0) {
+            return { content: [{ type: 'text', text: 'Havuzda kayıtlı hesap bulunamadı. Mevcut oturumu kaydetmek için `action="save", agent="agy", name="pro1"` kullanın.' }] };
+          }
+          const lines = ['| Ajan | Hesap Adı | Etiket | Aktif | Durum | Kalan Cooldown |', '|---|---|---|---|---|---|'];
+          for (const a of list) {
+            const remMin = a.remainingCooldownMs > 0 ? `${Math.ceil(a.remainingCooldownMs / 60000)} dk` : '-';
+            lines.push(`| ${a.agent} | \`${a.name}\` | ${a.label || '-'} | ${a.isActive ? '✅ Evet' : 'Hayır'} | ${a.isAvailable ? '🟢 Uygun' : '⏳ Cooldown'} | ${remMin} |`);
+          }
+          return { content: [{ type: 'text', text: lines.join('\n') }] };
+        }
+        if (!agent || !name) {
+          throw new Error('Bu işlem için `agent` ("agy" | "claude") ve `name` parametreleri zorunludur.');
+        }
+        if (action === 'save') {
+          const saved = globalAccountPool.saveAccount(agent, name, label);
+          return { content: [{ type: 'text', text: `✅ \`${agent}\` hesabı \`${saved.name}\` başarıyla havuza kaydedildi ve aktif hesap olarak işaretlendi.` }] };
+        }
+        if (action === 'switch') {
+          const switched = globalAccountPool.switchAccount(agent, name);
+          return { content: [{ type: 'text', text: `🔄 \`${agent}\` aktif hesabı \`${switched.name}\` olarak değiştirildi.` }] };
+        }
+        if (action === 'clear_cooldown') {
+          const ok = globalAccountPool.clearCooldown(agent, name);
+          return { content: [{ type: 'text', text: ok ? `🟢 \`${name}\` hesabının kota bekleme süresi sıfırlandı.` : `Hesap bulunamadı: \`${name}\`` }] };
+        }
+        if (action === 'remove') {
+          const ok = globalAccountPool.removeAccount(agent, name);
+          return { content: [{ type: 'text', text: ok ? `🗑️ \`${name}\` hesabı havuzdan silindi.` : `Hesap bulunamadı: \`${name}\`` }] };
+        }
+        return { content: [{ type: 'text', text: 'Bilinmeyen işlem.' }] };
+      } catch (err: any) {
+        return { isError: true, content: [{ type: 'text', text: `Hesap yönetimi hatası: ${err.message}` }] };
       }
     }
   );

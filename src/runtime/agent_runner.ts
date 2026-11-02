@@ -3,8 +3,9 @@ import type { ChildProcess } from 'node:child_process';
 import readline from 'node:readline';
 import { EventStore, globalStore } from '../core/event_store.ts';
 import { createEvent } from '../core/types.ts';
-import { failureData } from '../core/failure.ts';
+import { classifyFailure, failureData } from '../core/failure.ts';
 import type { TaskSummary } from '../core/types.ts';
+import { AccountPoolManager, globalAccountPool } from '../core/account_pool.ts';
 import { BaseAdapter } from '../adapters/base_adapter.ts';
 import { ClaudeAdapter } from '../adapters/claude_adapter.ts';
 import { CodexAdapter } from '../adapters/codex_adapter.ts';
@@ -27,6 +28,9 @@ export interface RunTaskOptions {
   parentTaskId?: string;
   effort?: string;
   model?: string;
+  account?: string;
+  autoFailover?: boolean;
+  _failoverDepth?: number;
 }
 
 interface ActiveProcessEntry {
@@ -39,11 +43,13 @@ interface ActiveProcessEntry {
 
 export class AgentRunner {
   private store: EventStore;
+  private accountPool: AccountPoolManager;
   private adapters: Map<string, BaseAdapter> = new Map();
   private activeProcesses: Map<string, ActiveProcessEntry> = new Map();
 
-  constructor(store: EventStore = globalStore) {
+  constructor(store: EventStore = globalStore, accountPool: AccountPoolManager = globalAccountPool) {
     this.store = store;
+    this.accountPool = accountPool;
     this.registerAdapter(new ClaudeAdapter());
     this.registerAdapter(new CodexAdapter());
     this.registerAdapter(new AgyAdapter());
@@ -78,6 +84,8 @@ export class AgentRunner {
     const taskId = 'task_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
     const validatedCwd = validateCwd(cwd);
 
+    const prepared = this.accountPool.prepareAccountForTask(adapter.name, options.account);
+
     const cmd = adapter.buildCommand({
       ...options,
       taskId,
@@ -85,6 +93,7 @@ export class AgentRunner {
       effort: options.effort,
       model: options.model
     });
+    cmd.env = Object.assign({}, cmd.env, prepared.env);
 
     autoLaunchTui();
 
@@ -216,6 +225,32 @@ export class AgentRunner {
 
         const summary = this.store.getTask(taskId);
         if (summary) {
+          const canFailover = options.autoFailover !== false && (options._failoverDepth || 0) < 4;
+          const isPooled = adapter.name === 'agy' || adapter.name === 'claude';
+          const errText = summary.error || stderr || '';
+          const failure = summary.status === 'failed' ? classifyFailure(errText) : { kind: 'unknown' as const };
+          if (canFailover && isPooled && failure.kind === 'rate_limit') {
+            const nextAcc = this.accountPool.failoverToNext(
+              adapter.name as 'agy' | 'claude',
+              failure.cooldownMs ?? 30 * 60 * 1000,
+              errText,
+              prepared.accountName
+            );
+            if (nextAcc) {
+              const resumeSessionId = summary.sessionId || sessionId;
+              const retryPrompt = resumeSessionId ? 'Kaldığın yerden devam et.' : prompt;
+              const retry = this.startTask({
+                ...options,
+                prompt: retryPrompt,
+                sessionId: resumeSessionId,
+                account: nextAcc.name,
+                parentTaskId: taskId,
+                _failoverDepth: (options._failoverDepth || 0) + 1
+              });
+              retry.promise.then(resolve).catch(reject);
+              return;
+            }
+          }
           resolve(summary);
         } else {
           reject(new Error(`Görev özeti bulunamadı: ${taskId}`));

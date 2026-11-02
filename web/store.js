@@ -1,7 +1,9 @@
+// @ts-mandatory: Tarayıcıda sıfır-derleme (zero-build CSP script-src self) ile doğrudan çalışan yerel sohbet deposu modülüdür.
 // Sohbet geçmişi: tarayıcıda (localStorage) saklanır; sunucuya gönderilmez. Depolama kapalıysa bellekte çalışır.
 (function (root) {
   'use strict';
   var KEY = 'obs-chats-v1', MAX_CHATS = 40, MAX_OUT = 2000, MAX_BYTES = 300000;
+  var ARCHIVE_MS = 30 * 86400 * 1000; // 30 gün
   var memory = [];
 
   function read() {
@@ -20,7 +22,26 @@
   }
 
   root.ObsStore = {
+    ARCHIVE_MS: ARCHIVE_MS,
     newId: function () { return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); },
+    isArchived: function (c, now) {
+      if (!c) return false;
+      if (c.archived === true) return true;
+      if (c.archived === false) return false;
+      var ts = Number(c.updated || c.created || 0);
+      return ts > 0 && ((now || Date.now()) - ts > ARCHIVE_MS);
+    },
+    setArchived: function (id, flag) {
+      var chats = read();
+      for (var i = 0; i < chats.length; i++) {
+        if (chats[i].id === id) {
+          chats[i].archived = !!flag;
+          if (!flag) chats[i].updated = Date.now();
+          break;
+        }
+      }
+      write(chats);
+    },
     list: function () { return read().sort(function (a, b) { return b.updated - a.updated; }); },
     get: function (id) { return read().filter(function (c) { return c.id === id; })[0] || null; },
     save: function (chat) {

@@ -1660,4 +1660,27 @@ select.addin { appearance: auto; }
 .ctx-copy { flex: none; background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 1px 8px; font-size: 11px; color: var(--muted); cursor: pointer; }
 .ctx-copy:hover { background: var(--sunken); }
 
+/* ---------- Çoklu Hesap Havuzu (Multi-Account Pool) ---------- */
+.dlgbox.acc-box { width: min(560px, 100%); max-height: min(84vh, 680px); gap: 10px; }
+.acc-list { max-height: 210px; min-height: 60px; }
+.acc-row { padding: 8px 6px; gap: 10px; }
+.acc-info { flex: 1; min-width: 0; }
+.acc-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.acc-actions button { margin-top: 0 !important; font-size: 12px; padding: 5px 10px; border-radius: 8px; }
+.acc-badge-active { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); font-weight: 700; }
+.acc-badge-ready { color: var(--muted); }
+.acc-badge-wait { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.acc-form { border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.acc-hint { line-height: 1.45; margin: 0 !important; }
+.acc-inputs { display: grid; grid-template-columns: 1fr 1.3fr; gap: 8px; }
+.acc-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.acc-btns button { font-size: 13px; padding: 8px 10px; }
+.acc-feedback { font-size: 12.5px; padding: 7px 10px; border-radius: 8px; background: var(--sunken); }
+.acc-feedback.ok { color: var(--ok); border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent); }
+.acc-feedback.err { color: var(--err); border: 1px solid color-mix(in srgb, var(--err) 35%, transparent); }
+@media (max-width: 520px) {
+  .acc-inputs, .acc-btns { grid-template-columns: 1fr; }
+}
+
+
 

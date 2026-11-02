@@ -117,6 +117,43 @@ async function main(): Promise<void> {
     const port = pIdx >= 0 ? Number(args[pIdx + 1]) : Number(process.env.OBSERVATORY_PORT) || 8787;
     startServer({ port });
     console.log(paint('gray', `Observatory API: http://127.0.0.1:${port}  (/health, /tasks, /events, /stream)`));
+  } else if (command === 'accounts' || command === 'account') {
+    const { globalAccountPool } = await import('./core/account_pool.ts');
+    const sub = args[1] || 'list';
+    const agentArg = args[2] as 'agy' | 'claude' | undefined;
+    const nameArg = args[3];
+    const labelArg = args[4];
+    if (sub === 'list') {
+      const list = globalAccountPool.listAccounts(agentArg === 'agy' || agentArg === 'claude' ? agentArg : undefined);
+      if (list.length === 0) {
+        console.log(paint('yellow', 'Havuzda kayıtlı hesap yok. Kaydetmek için: observatory accounts save agy <ad>'));
+        process.exit(0);
+      }
+      for (const a of list) {
+        const activeTag = a.isActive ? paint('green', ' [AKTİF]') : '';
+        const statusTag = a.isAvailable ? paint('green', 'uygun') : paint('yellow', `cooldown (${Math.ceil(a.remainingCooldownMs / 60000)} dk)`);
+        console.log(`- ${paint('bold', a.agent)} / ${paint('bold', a.name)}${a.label ? ` (${a.label})` : ''}${activeTag} — ${statusTag}`);
+      }
+      process.exit(0);
+    }
+    if ((agentArg !== 'agy' && agentArg !== 'claude') || !nameArg) {
+      console.error(paint('red', 'Kullanım: observatory accounts <list|save|switch|clear|remove> <agy|claude> <hesap_adı> [etiket]'));
+      process.exit(1);
+    }
+    if (sub === 'save') {
+      const saved = globalAccountPool.saveAccount(agentArg, nameArg, labelArg);
+      console.log(paint('green', `✔ ${agentArg} hesabı "${saved.name}" havuza kaydedildi ve aktif yapıldı.`));
+    } else if (sub === 'switch') {
+      const switched = globalAccountPool.switchAccount(agentArg, nameArg);
+      console.log(paint('green', `✔ ${agentArg} aktif hesabı "${switched.name}" olarak değiştirildi.`));
+    } else if (sub === 'clear') {
+      globalAccountPool.clearCooldown(agentArg, nameArg);
+      console.log(paint('green', `✔ "${nameArg}" hesabının kota bekleme süresi sıfırlandı.`));
+    } else if (sub === 'remove') {
+      globalAccountPool.removeAccount(agentArg, nameArg);
+      console.log(paint('green', `✔ "${nameArg}" hesabı havuzdan kaldırıldı.`));
+    }
+    process.exit(0);
   } else {
     console.log(paint('bold', '🔭 Agent Observatory CLI (TypeScript)'));
     console.log('Kullanım:');
@@ -126,10 +163,11 @@ async function main(): Promise<void> {
     console.log('  node --experimental-strip-types src/cli.ts inspect <taskId>        - Tek bir görevin tüm olaylarını gösterir');
     console.log('  node --experimental-strip-types src/cli.ts mcp                     - Antigravity MCP sunucu modu');
     console.log('  node --experimental-strip-types src/cli.ts web [--port 8788]       - Sohbet arayüzü (model seçici: Claude Code, Codex, OpenCode, agy)');
-    console.log('  node --experimental-strip-types src/cli.ts ingest [--follow] [--sources claude,codex,opencode,agy] [--backfill] - Elle başlatılan oturumları (Tier 3) olay deposuna ekler');
+    console.log('  node --experimental-strip-types src/cli.ts ingest [--follow] [--sources claude,codex,opencode,agy,commandcode] [--backfill] - Elle başlatılan oturumları (Tier 3) olay deposuna ekler');
     console.log('  node --experimental-strip-types src/cli.ts chat [taskId|latest] [--follow] [--skin X] - Oturumu ajanın CLI görünümünde gösterir');
     console.log('  node --experimental-strip-types src/cli.ts doctor [--live]        - Kurulu ajanları ve (--live) gerçek yanıtı denetler');
     console.log('  node --experimental-strip-types src/cli.ts serve [--port 8787]     - Olayları HTTP + SSE ile yayınlar');
+    console.log('  node --experimental-strip-types src/cli.ts accounts <list|save|switch|clear|remove> [agy|claude] [ad] - Çoklu hesap havuzu ve kota failover yönetimi');
   }
 }
 
