@@ -20,7 +20,8 @@ import { Remote } from './web_remote.ts';
 import { groupSessions, sessionEvents, subagentsOf } from './web_sessions.ts';
 import { scanWidgets, renderWidgetSvg } from '../core/library_widgets.ts';
 import { globalTasteStore } from '../core/taste_store.ts';
-import { listUI, readUI, readUIActions, submitUI, UIError } from '../features/intelligent_ui/index.ts';
+import { listUI, readUI, readUIActions, submitUI, UIError, readUIState, uiContinuationSource, readUIContinuation, claimUIContinuation, finishUIContinuation, continueSchema } from '../features/intelligent_ui/index.ts';
+import type { UIDocument } from '../features/intelligent_ui/index.ts';
 import { SqliteStore } from '../core/sqlite_store.ts';
 
 export interface ModelDef { id: string; label: string; sub: string }
@@ -304,6 +305,15 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
     return { installed, limitedUntil };
   }
 
+  function uiState(db: ExtraCtx['db'], doc: UIDocument) {
+    const state = readUIState(db, doc.id);
+    try {
+      const source = uiContinuationSource(db, doc);
+      if (!ENGINES.some(e => e.id === source.agent)) throw new UIError('Bu ajan web üzerinden devam etmeyi desteklemiyor.', 409);
+      if (!allowedDir(source.cwd)) throw new UIError('Kaynak klasör izinli köklerin dışında.', 403);
+      return { ...state, continuation: { available: true, agent: source.agent, sandbox: source.sandbox } };
+    } catch (error) { return { ...state, continuation: { available: false, reason: error instanceof Error ? error.message : 'Devam edilemiyor.' } }; }
+  }
   if (remote.enabled) { void remote.refreshTs(true); }
   const tsTimer = setInterval(() => { if (remote.enabled) void remote.refreshTs(); }, 60000); tsTimer.unref();
   let libraryCache: { at: number; items: Array<{ path: string; name: string; ext: string; mtime: number; size: number; agent: string; sessionId: string; title: string; widgetId?: string; kind?: string; seq?: number }> } | null = null;
@@ -535,11 +545,15 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         const id = url.searchParams.get('id');
         if (id) {
           const document = readUI(db, id);
-          json(document ? 200 : 404, document ? { document, actions: readUIActions(db, id) } : { error: 'UI not found' });
-        } else json(200, { documents: listUI(db, { taskId: url.searchParams.get('taskId') || undefined, sessionId: url.searchParams.get('sessionId') || undefined }) });
+          json(document ? 200 : 404, document ? { document, actions: readUIActions(db, id), state: uiState(db, document) } : { error: 'UI not found' });
+        } else {
+          const taskId = url.searchParams.get('taskId') || undefined, sessionId = url.searchParams.get('sessionId') || undefined;
+          const documents = listUI(db, { taskId, sessionId });
+          json(200, { documents, states: taskId || sessionId ? Object.fromEntries(documents.map(doc => [doc.id, uiState(db, doc)])) : {} });
+        }
         return true;
       }
-      if (method === 'POST' && ['/api/ui/action', '/api/run', '/api/cancel', '/api/approve', '/api/accounts', '/api/folders', '/api/folders/browse', '/api/folders/remove', '/api/snapshot', '/api/restore', '/api/remote', '/api/pair/new', '/api/devices/write', '/api/devices/remove'].includes(url.pathname)) {
+      if (method === 'POST' && ['/api/ui/action', '/api/ui/continue', '/api/run', '/api/cancel', '/api/approve', '/api/accounts', '/api/folders', '/api/folders/browse', '/api/folders/remove', '/api/snapshot', '/api/restore', '/api/remote', '/api/pair/new', '/api/devices/write', '/api/devices/remove'].includes(url.pathname)) {
         // hata yanıtları `code` taşır: arayüz bunu seçili dile çevirir; `error` Türkçe yedek metindir
         const fail = (status: number, code: string, error: string, params: Record<string, unknown> = {}) => { json(status, { code, error, params }); return true; };
         const site = req.headers['sec-fetch-site'];
@@ -549,6 +563,47 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         let b: any;
         try { b = await readJson(req); } catch (e: any) { return fail(e.status || 400, e.status === 413 ? 'too_large' : 'bad_json', e.message); }
 
+        if (url.pathname === '/api/ui/continue') {
+          if (remote.deviceOf(req) && !remote.deviceOf(req)?.write) return fail(403, 'read_only', 'Salt okunur cihaz');
+          try {
+            const parsed = continueSchema.safeParse(b);
+            if (!parsed.success) throw new UIError('Geçersiz devam isteği.');
+            const previous = readUIContinuation(db, parsed.data.id, parsed.data.requestId);
+            if (previous) { json(200, { continuation: previous }); return true; }
+            const doc = readUI(db, parsed.data.id);
+            if (!doc) throw new UIError('UI not found', 404);
+            const source = uiContinuationSource(db, doc);
+            if (!allowedDir(source.cwd)) throw new UIError('Kaynak klasör izinli köklerin dışında.', 403);
+            const engine = ENGINES.find(e => e.id === source.agent);
+            if (!engine) throw new UIError('Bu ajan web üzerinden devam etmeyi desteklemiyor.', 409);
+            const status = engineStatus(db, engine);
+            if (!status.installed) throw new UIError('Kaynak ajan kurulu değil.', 409);
+            if (status.limitedUntil) throw new UIError('Kaynak ajanın kotası dolu. Yanıt kaydedildi; kota açılınca tekrar deneyin.', 429);
+            if (source.agent === 'claude' || source.agent === 'agy') {
+              const accounts = pool.listAccounts(source.agent);
+              const original = source.account ? accounts.find(a => a.name === source.account) : undefined;
+              if ((source.account && !original) || (!source.account && accounts.length)) throw new UIError('Kaynak hesap doğrulanamıyor. Başka hesaba otomatik geçiş yapılmadı.', 409);
+              if (original && !original.isAvailable) throw new UIError('Kaynak hesabın kotası dolu. Başka hesaba geçilmedi.', 429);
+            }
+            const runner = await getRunner();
+            if (active.size >= MAX_ACTIVE) throw new UIError('Etkin görev sınırına ulaşıldı.', 429);
+            uiWriter ||= new SqliteStore(opts.dbPath || process.env.OBSERVATORY_DB);
+            const claim = claimUIContinuation(uiWriter, parsed.data);
+            if (claim.existing) { json(200, { continuation: claim.existing }); return true; }
+            let started: ReturnType<RunnerLike['startTask']>;
+            try {
+              started = runner.startTask({ ...claim.source, prompt: claim.prompt, dangerouslySkipPermissions: false, autoFailover: false, timeoutSeconds: 900 });
+            } catch (error) {
+              const continuation = finishUIContinuation(uiWriter, claim.document, { ...claim.state!, state: 'failed', error: error instanceof Error ? error.message : 'Ajan başlatılamadı.' });
+              json(200, { continuation }); return true;
+            }
+            active.add(started.taskId);
+            started.promise.catch(() => undefined).finally(() => active.delete(started.taskId));
+            const continuation = finishUIContinuation(uiWriter, claim.document, { ...claim.state!, state: 'started', continuationTaskId: started.taskId });
+            json(200, { continuation });
+          } catch (error) { json(error instanceof UIError ? error.status : 500, { error: error instanceof Error ? error.message : 'Devam işlemi başarısız.' }); }
+          return true;
+        }
         if (url.pathname === '/api/ui/action') {
           if (remote.deviceOf(req) && !remote.deviceOf(req)?.write) return fail(403, 'read_only', 'Salt okunur cihaz');
           try {

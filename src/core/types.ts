@@ -4,6 +4,7 @@ export type EventType =
   | 'ui.published'
   | 'ui.updated'
   | 'ui.action'
+  | 'ui.continuation'
   | 'task.started'
   | 'turn.started'
   | 'tool.invoked'

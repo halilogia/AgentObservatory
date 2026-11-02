@@ -2132,17 +2132,24 @@
     scrollDown();
     return v;
   }
-  function buildUI(v, doc) {
+  async function sendUIAction(body, choice) {
+    const saved = await api('/api/ui/action', body);
+    if (!choice?.continueAgent) return saved;
+    try { return { ...saved, ...await api('/api/ui/continue', { id: body.id, requestId: body.requestId }) }; }
+    catch (error) { return { ...saved, continuationError: error.message }; }
+  }
+  function buildUI(v, doc, state) {
     const old = [...v.content.querySelectorAll('.iui-document')].find(x => x.dataset.uiId === doc.id);
-    if (old && Number(old.dataset.revision) >= doc.revision) return;
+    if (old && (Number(old.dataset.revision) > doc.revision || (Number(old.dataset.revision) === doc.revision && (!state || old.dataset.stateKey === JSON.stringify(state))))) return;
     const part = v.rec.parts.find(p => p.k === 'ui' && p.document.id === doc.id);
     if (part) part.document = doc;
     else v.rec.parts.push({ k: 'ui', document: doc });
-    const box = ObsUI.render(doc, { readOnly: st.cfg && st.cfg.writeAllowed === false, onAction: body => api('/api/ui/action', body) });
-    if (old) old.replaceWith(box); else v.content.append(box);
+    const box = ObsUI.replace(old, doc, { state, readOnly: st.cfg && st.cfg.writeAllowed === false, onAction: sendUIAction });
+    if (state) box.dataset.stateKey = JSON.stringify(state);
+    if (!old) v.content.append(box);
   }
   async function hydrateUI(v) {
-    try { const result = await api('/api/ui?taskId=' + encodeURIComponent(v.rec.taskId)); if (v.content.isConnected) result.documents.forEach(doc => buildUI(v, doc)); } catch { /* transcript remains available */ }
+    try { const result = await api('/api/ui?taskId=' + encodeURIComponent(v.rec.taskId)); if (v.content.isConnected) result.documents.forEach(doc => buildUI(v, doc, result.states?.[doc.id])); } catch { /* transcript remains available */ }
   }
   async function hydrateSessionUI() {
     const current = chat; const session = current && current.session && current.session.id;
@@ -2152,7 +2159,7 @@
       if (chat !== current) return;
       result.documents.forEach(doc => {
         const v = uiTargets.get(doc.taskId) || [...uiTargets.values()].at(-1);
-        if (v && v.content.isConnected) buildUI(v, doc);
+        if (v && v.content.isConnected) buildUI(v, doc, result.states?.[doc.id]);
       });
     } catch { /* transcript remains available */ }
   }
@@ -2473,6 +2480,13 @@
 
   // ---------- olay akışı ----------
   function onEvent(ev) {
+    if (ev.type === 'ui.action' || ev.type === 'ui.continuation' || ev.type === 'task.completed' || ev.type === 'task.failed' || ev.type === 'task.cancelled') {
+      const target = uiTargets.get(ev.taskId);
+      if (target) hydrateUI(target);
+      const terminal = ['task.completed', 'task.failed', 'task.cancelled'].includes(ev.type);
+      if (terminal) uiTargets.forEach(v => { if (v !== target && v.rec.parts.some(p => p.k === 'ui')) hydrateUI(v); });
+      if (terminal || (chat && chat.session && chat.session.id === ev.sessionId)) hydrateSessionUI();
+    }
     if (ev.type === 'ui.published' || ev.type === 'ui.updated') {
       const target = uiTargets.get(ev.taskId);
       if (target && target.content.isConnected) buildUI(target, ev.data);

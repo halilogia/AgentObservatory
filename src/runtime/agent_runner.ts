@@ -139,7 +139,9 @@ export class AgentRunner {
         agent: adapter.name,
         tier: 1,
         type: 'task.started',
-        data: { prompt, cwd: cmd.cwd, model: effectiveModel, timeoutSeconds, pid: child.pid },
+        data: { prompt, cwd: cmd.cwd, model: effectiveModel, timeoutSeconds, pid: child.pid,
+          executionPolicy: { sandbox: options.sandbox ?? null, dangerouslySkipPermissions: options.dangerouslySkipPermissions === true,
+            effort: options.effort ?? null, account: prepared.accountName ?? null } },
         parentTaskId: options.parentTaskId
       }), child.pid);
 

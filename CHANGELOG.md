@@ -7,6 +7,8 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/) standardına day
 
 ## [Unreleased]
 
+- **Intelligent UI etkileşim döngüsü (2026-11-02):** Formdan kullanıcı seçimiyle aynı ajan/oturum ve kayıtlı izinlerle devam etme; kota ve meşgul oturum engelleri; atomik başlangıç kaydıyla çift süreç koruması eklendi. Görevler izin/hesap bilgisini kaydeder, devam işleminde izin atlama ve hesap failover kapalıdır. Taslak alanlar güncelleme/yenilemede korunur, son gönderilmiş yanıt ve devam sonucu yeniden yüklenir. Claude/Antigravity dahil yollar sahte çalıştırıcılarla, tarayıcı akışı sıfır canlı sağlayıcı çağrısıyla doğrulanır.
+
 - **Ortak Intelligent UI (2026-11-02):** Tüm MCP istemcilerine `ui_publish`, `ui_update`, `ui_read`; Zod ile doğrulanan metin, kart, tablo, çubuk grafik, form ve diyagram sözleşmesi eklendi. SQLite olay günlüğünde atomik tam görüntüler, revizyon çatışma denetimi, form alanı doğrulaması ve yinelenen gönderim koruması kullanılır. Web sohbetinde satır içi, `/visual.html` üzerinde bağımsız görünüm ve SSE ile canlı güncelleme; yerel hesaplayıcı, kayıtlı form yanıtları ve terminal dökümü desteği vardır. Model HTML/JavaScript çalıştırmaz. `OBSERVATORY_DB` artık global SQLite deposunda da uygulanır; test/MCP süreçleri izole veritabanını paylaşır. Kullanım: `docs/intelligent-ui.md`.
 
 - **Sentinel Güvenlik & Red-Team Uzman Ajanı (2026-11-02):**

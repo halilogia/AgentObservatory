@@ -145,6 +145,8 @@ export class SqliteStore {
         WHERE type IN ('ui.published','ui.updated');
       CREATE INDEX IF NOT EXISTS idx_events_ui_action ON events(json_extract(data,'$.id'), json_extract(data,'$.requestId'))
         WHERE type = 'ui.action';
+      CREATE INDEX IF NOT EXISTS idx_events_ui_continuation ON events(json_extract(data,'$.id'), json_extract(data,'$.requestId'))
+        WHERE type = 'ui.continuation';
 
       CREATE TABLE IF NOT EXISTS tasks (
         task_id TEXT PRIMARY KEY,
