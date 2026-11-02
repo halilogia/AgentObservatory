@@ -6,6 +6,8 @@ import { TranscriptRenderer } from './transcript.ts';
 import { openWebPanel } from '../commands/web_opener.ts';
 import { openOfficeTui } from '../commands/office_opener.ts';
 import { globalTasteStore, type TasteRule } from '../core/taste_store.ts';
+import { uiText } from '../features/intelligent_ui/index.ts';
+import type { UIDocument } from '../features/intelligent_ui/index.ts';
 import path from 'node:path';
 
 export const COLORS = {
@@ -174,6 +176,10 @@ function printEvent(evt: TaskEvent, pendingTools: Map<string, ToolInfo>): void {
   }
 
   switch (evt.type) {
+    case 'ui.published':
+    case 'ui.updated':
+      console.log(`${time} ${agent} ${uiText(evt.data as UIDocument)}\n         /visual.html?id=${encodeURIComponent(evt.data.id)}`);
+      break;
     case 'task.started':
       console.log(`\n${time} ${agent} ${paint('green', '▶ GÖREV BAŞLADI')}: ${paint('bold', evt.data.prompt || '')}`);
       if (evt.sessionId) {

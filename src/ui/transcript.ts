@@ -6,6 +6,8 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { buildSkin, describeTool, makePaint, skinIdForAgent } from './skins.ts';
 import type { Skin, SkinId } from './skins.ts';
+import { uiText } from '../features/intelligent_ui/index.ts';
+import type { UIDocument } from '../features/intelligent_ui/index.ts';
 
 export interface RenderEvent {
   taskId: string;
@@ -82,6 +84,11 @@ export class TranscriptRenderer {
     const d = ev.data || {};
 
     switch (ev.type) {
+      case 'ui.published':
+      case 'ui.updated':
+        this.closeAssistant();
+        this.out(uiText(d as UIDocument) + '\n/visual.html?id=' + encodeURIComponent(d.id) + '\n\n');
+        break;
       case 'task.started': {
         // agy gibi bazı ajanlar ikinci bir task.started (model bilgisiyle) üretir: başlık yalnızca bir kez
         if (this.headerShown) break;

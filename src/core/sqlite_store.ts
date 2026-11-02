@@ -141,6 +141,10 @@ export class SqliteStore {
       -- oturum sohbeti (ağaç ayrıntısı) ve reapStaleTasks'taki MAX(timestamp) tam tablo taraması yapmasın
       CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
       CREATE INDEX IF NOT EXISTS idx_events_task_ts ON events(task_id, timestamp);
+      CREATE INDEX IF NOT EXISTS idx_events_ui_document ON events(json_extract(data,'$.id'))
+        WHERE type IN ('ui.published','ui.updated');
+      CREATE INDEX IF NOT EXISTS idx_events_ui_action ON events(json_extract(data,'$.id'), json_extract(data,'$.requestId'))
+        WHERE type = 'ui.action';
 
       CREATE TABLE IF NOT EXISTS tasks (
         task_id TEXT PRIMARY KEY,
@@ -908,4 +912,4 @@ export class SqliteStore {
   }
 }
 
-export const globalSqlite = new SqliteStore();
+export const globalSqlite = new SqliteStore(process.env.OBSERVATORY_DB);

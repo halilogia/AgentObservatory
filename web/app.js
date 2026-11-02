@@ -947,7 +947,7 @@
       } catch { /* sunucu yok */ }
     }, 1000);
   }
-  function clearThread() { $('#thread').replaceChildren(); views.clear(); syncPromptWaypoints(); }
+  function clearThread() { $('#thread').replaceChildren(); views.clear(); uiTargets.clear(); syncPromptWaypoints(); }
   function showThread(has) {
     $('#empty').hidden = has;
     if (!has) {
@@ -994,6 +994,7 @@
     showThread(true);
     if (chat && chat.tastes && chat.tastes.length) renderTasteBanner(chat.tastes);
     chat.messages.forEach((m, i) => { if (m.r === 'u') addUserDom(m.text, i); else createBot(m, false); });
+    hydrateSessionUI();
     syncPromptWaypoints();
   }
   // canlı terminal oturumu: son (bitmemiş) turun araç adımlarından durum kartı kurulur; tur bitince kart kaybolur
@@ -2100,6 +2101,7 @@
   function fullText(rec) { return rec.parts.filter((p) => p.k === 'text').map((p) => p.v).join('\n\n'); }
   function engineLabel(rec) { const e = st.cfg && engineById(rec.engine); return e ? e.label : rec.engine; }
 
+  const uiTargets = new Map();
   function createBot(rec, live) {
     showThread(true);
     const row = el('div', 'msg bot'); row.style.setProperty('--c', rec.color);
@@ -2114,18 +2116,45 @@
     col.append(who, content, meta); row.appendChild(col);
     $('#thread').appendChild(row);
     const v = { rec, row, content, meta, dots, curText: null, curThinking: null, tools: new Map(), lastTool: null, raf: 0, tin: 0, tout: 0, t0: Date.now(), done: !live, steps: [], skin };
+    if (rec.taskId) uiTargets.set(rec.taskId, v);
     if (live) { runView = v; renderRunCard(); }
     if (!live) {
       rec.parts.forEach((p) => {
         if (p.k === 'text') { const box = el('div'); content.appendChild(box); renderMd(box, p.v); }
         else if (p.k === 'thinking') { buildThinking(v, p); }
+        else if (p.k === 'ui') { buildUI(v, p.document); }
         else buildTool(v, p, true);
       });
       if (rec.notice) content.appendChild(el('div', 'notice' + (rec.notice.warn ? ' warn' : ''), noticeText(rec.notice)));
       renderMeta(v);
     }
+    if (rec.taskId) hydrateUI(v);
     scrollDown();
     return v;
+  }
+  function buildUI(v, doc) {
+    const old = [...v.content.querySelectorAll('.iui-document')].find(x => x.dataset.uiId === doc.id);
+    if (old && Number(old.dataset.revision) >= doc.revision) return;
+    const part = v.rec.parts.find(p => p.k === 'ui' && p.document.id === doc.id);
+    if (part) part.document = doc;
+    else v.rec.parts.push({ k: 'ui', document: doc });
+    const box = ObsUI.render(doc, { readOnly: st.cfg && st.cfg.writeAllowed === false, onAction: body => api('/api/ui/action', body) });
+    if (old) old.replaceWith(box); else v.content.append(box);
+  }
+  async function hydrateUI(v) {
+    try { const result = await api('/api/ui?taskId=' + encodeURIComponent(v.rec.taskId)); if (v.content.isConnected) result.documents.forEach(doc => buildUI(v, doc)); } catch { /* transcript remains available */ }
+  }
+  async function hydrateSessionUI() {
+    const current = chat; const session = current && current.session && current.session.id;
+    if (!session) return;
+    try {
+      const result = await api('/api/ui?sessionId=' + encodeURIComponent(session));
+      if (chat !== current) return;
+      result.documents.forEach(doc => {
+        const v = uiTargets.get(doc.taskId) || [...uiTargets.values()].at(-1);
+        if (v && v.content.isConnected) buildUI(v, doc);
+      });
+    } catch { /* transcript remains available */ }
   }
   function buildThinking(v, part) {
     const box = el('details', 'thinking-box');
@@ -2444,6 +2473,11 @@
 
   // ---------- olay akışı ----------
   function onEvent(ev) {
+    if (ev.type === 'ui.published' || ev.type === 'ui.updated') {
+      const target = uiTargets.get(ev.taskId);
+      if (target && target.content.isConnected) buildUI(target, ev.data);
+      else if (chat && chat.session && chat.session.id === ev.sessionId) hydrateSessionUI();
+    }
     const sim = officeSim(); if (sim) sim.feed(ev);
     pushHudEvent(ev);
     scheduleDrawer();
@@ -2451,7 +2485,8 @@
     if (!v) { followTermSession(ev); early.push(ev); if (early.length > 600) early = early.slice(-300); if (ev.type === 'task.started' || ev.type === 'task.completed') scheduleTermRefresh(); return; }
     if (ev.sessionId && !v.done && chat) chat.session = { id: ev.sessionId, engine: v.rec.engine, cwd: v.rec.cwd };
     const d = ev.data || {};
-    if (ev.type === 'message.delta') {
+    if (ev.type === 'ui.published' || ev.type === 'ui.updated') { buildUI(v, d); persist(); scrollDown(); }
+    else if (ev.type === 'message.delta') {
       if (d.thinking) addThinking(v, String(d.thinking));
       if (d.text) addText(v, String(d.text));
     }
@@ -2467,7 +2502,7 @@
   function connect() {
     const es = new EventSource('/stream');
     es.addEventListener('observatory', (m) => { try { onEvent(JSON.parse(m.data)); } catch { /* bozuk olay */ } });
-    es.onopen = () => { refreshFoot(); syncServerTasks(true).then(() => hydrateHudEvents(true)); };
+    es.onopen = () => { refreshFoot(); syncServerTasks(true).then(() => hydrateHudEvents(true)); uiTargets.forEach(v => hydrateUI(v)); hydrateSessionUI(); };
     es.onerror = () => { $('#foot').textContent = t('foot.disconnected'); };
   }
 
@@ -2500,7 +2535,7 @@
         try { rec.snap = (await api('/api/snapshot', { cwd: runCwd })).snap || null; rec.snapCwd = runCwd; } catch { rec.snap = null; }
       }
       const r = await api('/api/run', { engine: e.id, model: m.id, effort: runEffort || undefined, prompt: sendText, mode: runMode, cwd: runCwd, sessionId: resume });
-      rec.taskId = r.taskId; views.set(r.taskId, view); st.running = r.taskId;
+      rec.taskId = r.taskId; views.set(r.taskId, view); uiTargets.set(r.taskId, view); hydrateUI(view); st.running = r.taskId;
       const buffered = early.filter((x) => x.taskId === r.taskId); early = early.filter((x) => x.taskId !== r.taskId);
       buffered.forEach(onEvent); refreshSend();
     } catch (err) {

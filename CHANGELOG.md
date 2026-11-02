@@ -7,6 +7,8 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/) standardına day
 
 ## [Unreleased]
 
+- **Ortak Intelligent UI (2026-11-02):** Tüm MCP istemcilerine `ui_publish`, `ui_update`, `ui_read`; Zod ile doğrulanan metin, kart, tablo, çubuk grafik, form ve diyagram sözleşmesi eklendi. SQLite olay günlüğünde atomik tam görüntüler, revizyon çatışma denetimi, form alanı doğrulaması ve yinelenen gönderim koruması kullanılır. Web sohbetinde satır içi, `/visual.html` üzerinde bağımsız görünüm ve SSE ile canlı güncelleme; yerel hesaplayıcı, kayıtlı form yanıtları ve terminal dökümü desteği vardır. Model HTML/JavaScript çalıştırmaz. `OBSERVATORY_DB` artık global SQLite deposunda da uygulanır; test/MCP süreçleri izole veritabanını paylaşır. Kullanım: `docs/intelligent-ui.md`.
+
 - **Sentinel Güvenlik & Red-Team Uzman Ajanı (2026-11-02):**
   - Sol kenar çubuğundaki `Ajanlar` (Specialist Roster) listesine `🛡️ Sentinel Güvenlik` (`id: 'sentinel'`, `engine: 'codex'`, `model: 'gpt-6-astra'`) uzman ajanı eklendi. Tıklandığında otomatik olarak adversarial analiz, privilege escalation, injection ve fail-closed güvenlik açıklarını denetleyen uzman talimatları içeren 1-e-1 direkt mesaj (DM) sohbeti açılır.
   - Web i18n çeviri anahtarları (`lib.*`, `arc.*`, `acc.*`, `models.gemini4argon`) TR ve EN sözlüklerine eklenerek tüm web testleri yeşile çekildi.

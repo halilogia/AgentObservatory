@@ -20,6 +20,8 @@ import { Remote } from './web_remote.ts';
 import { groupSessions, sessionEvents, subagentsOf } from './web_sessions.ts';
 import { scanWidgets, renderWidgetSvg } from '../core/library_widgets.ts';
 import { globalTasteStore } from '../core/taste_store.ts';
+import { listUI, readUI, readUIActions, submitUI, UIError } from '../features/intelligent_ui/index.ts';
+import { SqliteStore } from '../core/sqlite_store.ts';
 
 export interface ModelDef { id: string; label: string; sub: string }
 export type TeamId = 'turuncu' | 'mavi' | 'kirmizi' | 'siyah';
@@ -240,6 +242,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
   };
   const saveFolders = () => writeConfig(configPath, { ...readConfig(configPath), folders });
   const webDir = opts.webDir || WEB_DIR;
+  let uiWriter: SqliteStore | undefined;
   const active = new Set<string>();
   let runnerPromise: Promise<RunnerLike> | null = null;
   const getRunner = (): Promise<RunnerLike> => {
@@ -319,7 +322,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         const ext = path.extname(file).toLowerCase();
         const isBinary = ['.png', '.ico', '.webp'].includes(ext);
         let body: string | Buffer = isBinary ? fs.readFileSync(path.join(webDir, file)) : fs.readFileSync(path.join(webDir, file), 'utf8');
-        if (typeof body === 'string' && file === 'index.html') body = body.replace('__OBS_TOKEN__', token);
+        if (typeof body === 'string' && (file === 'index.html' || file === 'visual.html')) body = body.replace('__OBS_TOKEN__', token);
         const xFrameOptions = 'DENY';
         const csp = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
         res.writeHead(200, {
@@ -377,8 +380,8 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         }
         // Ayrıca Antigravity brain dizinini ve çalışma dizinindeki görselleri RECURSIVE tara
         const extraDirs = [
-          path.join(os.homedir(), '.gemini', 'antigravity', 'brain'),
-          path.resolve(process.cwd())
+          path.join(opts.home || os.homedir(), '.gemini', 'antigravity', 'brain'),
+          opts.home ? path.resolve(opts.home) : path.resolve(process.cwd())
         ];
         const IMG_RE = /\.(png|gif|svg|webp|jpg|jpeg)$/i;
         const walk = (dir: string, depth: number, cwdTop: boolean) => {
@@ -528,7 +531,15 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
       }
 
       // ---- yazan uçlar: jeton + aynı köken ----
-      if (method === 'POST' && ['/api/run', '/api/cancel', '/api/approve', '/api/accounts', '/api/folders', '/api/folders/browse', '/api/folders/remove', '/api/snapshot', '/api/restore', '/api/remote', '/api/pair/new', '/api/devices/write', '/api/devices/remove'].includes(url.pathname)) {
+      if (method === 'GET' && url.pathname === '/api/ui') {
+        const id = url.searchParams.get('id');
+        if (id) {
+          const document = readUI(db, id);
+          json(document ? 200 : 404, document ? { document, actions: readUIActions(db, id) } : { error: 'UI not found' });
+        } else json(200, { documents: listUI(db, { taskId: url.searchParams.get('taskId') || undefined, sessionId: url.searchParams.get('sessionId') || undefined }) });
+        return true;
+      }
+      if (method === 'POST' && ['/api/ui/action', '/api/run', '/api/cancel', '/api/approve', '/api/accounts', '/api/folders', '/api/folders/browse', '/api/folders/remove', '/api/snapshot', '/api/restore', '/api/remote', '/api/pair/new', '/api/devices/write', '/api/devices/remove'].includes(url.pathname)) {
         // hata yanıtları `code` taşır: arayüz bunu seçili dile çevirir; `error` Türkçe yedek metindir
         const fail = (status: number, code: string, error: string, params: Record<string, unknown> = {}) => { json(status, { code, error, params }); return true; };
         const site = req.headers['sec-fetch-site'];
@@ -537,6 +548,15 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         if (!String(req.headers['content-type'] || '').startsWith('application/json')) return fail(415, 'bad_content_type', 'application/json gerekli');
         let b: any;
         try { b = await readJson(req); } catch (e: any) { return fail(e.status || 400, e.status === 413 ? 'too_large' : 'bad_json', e.message); }
+
+        if (url.pathname === '/api/ui/action') {
+          if (remote.deviceOf(req) && !remote.deviceOf(req)?.write) return fail(403, 'read_only', 'Salt okunur cihaz');
+          try {
+            uiWriter ||= new SqliteStore(opts.dbPath || process.env.OBSERVATORY_DB);
+            json(200, { action: submitUI(uiWriter, b) });
+          } catch (err) { json(err instanceof UIError ? err.status : 500, { error: err instanceof Error ? err.message : 'UI action failed' }); }
+          return true;
+        }
 
         if (url.pathname === '/api/remote' || url.pathname === '/api/pair/new' || url.pathname.startsWith('/api/devices/')) {
           await remote.manage(url.pathname, method, b, json);
@@ -711,6 +731,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
       return false;
     }
   });
+  server.on('close', () => uiWriter?.close());
   return { server, token, port };
 }
 

@@ -59,7 +59,7 @@ def ensure_desktop_shortcut():
 def sync_copies():
     return ensure_desktop_shortcut()
 
-def add_section(title: str, body: str, subtitle: str = "Mimari ve Kod Değişikliği Güncellemesi"):
+def add_section(title: str, body: str, subtitle: str = "Mimari ve Kod Değişikliği Güncellemesi", sync: bool = True):
     """PDF sonuna yeni bir zeyilname / mimari güncelleme sayfası ekler."""
     try:
         from io import BytesIO
@@ -77,6 +77,14 @@ def add_section(title: str, body: str, subtitle: str = "Mimari ve Kod Değişikl
 
     buf = BytesIO()
     styles = getSampleStyleSheet()
+    # Turkish glyphs must survive rendering; built-in Helvetica lacks these characters.
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    font_path = Path(os.environ.get('WINDIR', 'C:/Windows')) / 'Fonts' / 'arial.ttf'
+    if font_path.exists():
+        pdfmetrics.registerFont(TTFont('ArchitectureArial', str(font_path)))
+        for style in styles.byName.values():
+            style.fontName = 'ArchitectureArial'
     styles['Title'].textColor = colors.HexColor('#16324f')
     
     items = [
@@ -106,17 +114,19 @@ def add_section(title: str, body: str, subtitle: str = "Mimari ve Kod Değişikl
 
     reader = PdfReader(REPO_PDF)
     print(f"✔ PDF güncellendi! Yeni toplam sayfa: {len(reader.pages)}")
-    sync_copies()
+    if sync:
+        sync_copies()
     return True
 
 def main():
     parser = argparse.ArgumentParser(description="Agent Observatory Mimari PDF Senkronizasyonu")
     parser.add_argument("--sync", action="store_true", help="Repo ve masaüstü kopyalarını eşitler")
+    parser.add_argument("--no-sync", action="store_true", help="PDF güncellenirken masaüstü dosyalarına dokunma")
     parser.add_argument("--add", nargs=2, metavar=("BASLIK", "METIN"), help="PDF sonuna yeni mimari bölüm ekler")
     args = parser.parse_args()
 
     if args.add:
-        add_section(args.add[0], args.add[1])
+        add_section(args.add[0], args.add[1], sync=not args.no_sync)
     else:
         sync_copies()
 

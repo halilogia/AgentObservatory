@@ -55,6 +55,11 @@
             rec._cur.v += text;
           }
         }
+      } else if (ev.type === 'ui.published' || ev.type === 'ui.updated') {
+        rec._cur = null;
+        var up = rec.parts.find(function (p) { return p.k === 'ui' && p.document.id === d.id; });
+        if (up) { if (up.document.revision < d.revision) up.document = d; }
+        else rec.parts.push({ k: 'ui', document: d });
       } else if (ev.type === 'tool.invoked') {
         rec._cur = null;
         var part = { k: 'tool', name: d.name || 'tool', kind: h.toolKind(d.name), summary: h.toolSummary(d.name, d.input), out: '', input: d.input, t0: ev.timestamp, t1: 0 };

@@ -22,3 +22,7 @@ We are building the **Adaptive Mission Orchestrator** following the 9-phase road
 - All SQLite operations must be ACID-safe and maintain isolated in-memory testing (`:memory:`).
 - Document all notable changes in `CHANGELOG.md` under `## [Unreleased]`.
 - `AgentObservatory_Tum_Dosyalar_Mimari_Rehberi.pdf` belgesi, projedeki her dosya veya mimari değişikliğinde (yeni dosya ekleme, çıkarma veya işlev güncellemesinde) sürekli olarak güncel tutulmalıdır.
+
+## Görsel yanıtlar
+@AGENTS.md
+Görsel yanıt sözleşmesi: @docs/intelligent-ui.md

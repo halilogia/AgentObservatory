@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
 
 export type EventType =
+  | 'ui.published'
+  | 'ui.updated'
+  | 'ui.action'
   | 'task.started'
   | 'turn.started'
   | 'tool.invoked'

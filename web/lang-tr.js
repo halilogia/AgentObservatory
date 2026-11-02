@@ -1,6 +1,8 @@
 // @ts-mandatory: Tarayıcıda sıfır-derleme (zero-build CSP script-src self) ile doğrudan çalışan istemci dil modülüdür.
 ObsI18n.addResources('tr', {
   app: { title: 'Agent Observatory' },
+  ui: { answers: 'Görsel yanıtlar ↗' },
+  'api.read_only': 'Bu cihaz salt okunur.',
   common: { copy: 'Kopyala', copied: 'Kopyalandı', thinking: 'Düşünme süreci' },
   perm: { request: 'Onay İsteği', approve: '✓ İzin Ver (Evet)', reject: '✗ Reddet (Hayır)', approved: '✓ İzin Verildi', rejected: '✗ Reddedildi' },
   nav: { newChat: 'Yeni sohbet', toggle: 'Geçmişi aç veya kapat', history: 'Sohbet geçmişi', office: 'Nexus 3D Ofis' },

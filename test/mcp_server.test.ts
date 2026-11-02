@@ -40,6 +40,17 @@ transport.stderr?.on('data', () => {});
 try {
   await client.connect(transport);
   const { tools } = await client.listTools();
+  for (const name of ['ui_publish', 'ui_update', 'ui_read']) assert.ok(tools.some(t => t.name === name), name);
+  const visualSpec = { version: 1, title: 'MCP visual', summary: 'Real stdio test', blocks: [{ id: 'card', type: 'card', text: 'Hello' }] };
+  const published = await client.callTool({ name: 'ui_publish', arguments: { id: 'mcp-ui', agent: 'codex', spec: visualSpec } });
+  assert.ok(!published.isError, JSON.stringify(published));
+  assert.equal((published.structuredContent as any).document.revision, 1);
+  const updated = await client.callTool({ name: 'ui_update', arguments: { id: 'mcp-ui', expectedRevision: 1, spec: { ...visualSpec, summary: 'Updated' } } });
+  assert.equal((updated.structuredContent as any).document.revision, 2);
+  const stale = await client.callTool({ name: 'ui_update', arguments: { id: 'mcp-ui', expectedRevision: 1, spec: visualSpec } });
+  assert.equal(stale.isError, true);
+  const read = await client.callTool({ name: 'ui_read', arguments: { id: 'mcp-ui' } });
+  assert.equal((read.structuredContent as any).document.spec.summary, 'Updated');
   for (const name of ['run_agent', 'start_task']) {
     const schema = tools.find((tool) => tool.name === name)!.inputSchema;
     assert.ok((schema.properties!.agent as any).enum.includes('commandcode'), `${name} advertises commandcode`);
