@@ -1,12 +1,12 @@
 // @ts-mandatory: Tarayıcıda sıfır-derleme (zero-build CSP script-src self) ile doğrudan çalışan istemci dil modülüdür.
 ObsI18n.addResources('en', {
   app: { title: 'Agent Observatory' },
-  ui: { answers: 'Visual answers ↗' },
+  ui: { answers: 'Visual answers ↗', all: 'All visual answers', back: '← Agent Observatory', loading: 'Loading visual answer…', empty: 'No visual answers yet. They appear here when an agent uses the ui_publish tool.', error: 'Could not load the visual answer', search: 'Search title, agent or summary', count: '{{count}} visual answers', blocks: '{{count}} blocks', delete: 'Delete', deleteConfirm: 'Delete this visual answer? This cannot be undone.' },
   'api.read_only': 'This device is read only.',
   common: { copy: 'Copy', copied: 'Copied', thinking: 'Thinking process' },
   perm: { request: 'Approval Request', approve: '✓ Allow (Yes)', reject: '✗ Deny (No)', approved: '✓ Allowed', rejected: '✗ Denied' },
   nav: { newChat: 'New chat', toggle: 'Show or hide history', history: 'Chat history', office: 'Nexus 3D Office' },
-  rc: { start: 'Starting…', read: 'Reading {{count}} files', term: 'Running command', diff: 'Editing files', task: 'Running subtask', generic: 'Using a tool', step: 'Step {{n}}', more: '… +{{n}} lines', stop: 'Stop', toggle: 'Show or hide detailed view' },
+  rc: { start: 'Starting…', read: 'Reading {{count}} files', term: 'Running command', diff: 'Editing files', task: 'Running subtask', generic: 'Using a tool', step: 'Step {{n}}', more: '… +{{n}} lines', stop: 'Stop', verbRead: 'Read', verbReading: 'Reading', verbEdited: 'Edited', verbEditing: 'Editing', verbRan: 'Ran', verbRunning: 'Running', verbSearched: 'Searched', verbSearching: 'Searching', verbTested: 'Tests passed', verbTesting: 'Testing', verbTask: 'Subtask', verbTool: 'Tool', toggle: 'Show or hide detailed view', open: 'Open run' },
   empty: { title: 'What should we get done?' },
   composer: { placeholder: 'Type something', label: 'Prompt', send: 'Send', stop: 'Stop' },
   mode: { read: 'Read-only', write: 'Can write', readTitle: 'Read-Only (Inspection / Files not touched)', writeTitle: 'Agent Mode (Writes code and edits files)', noWrite: '{{engine}}: no write mode' },

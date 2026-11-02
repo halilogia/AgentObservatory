@@ -56,7 +56,7 @@ try {
   const published = await client.callTool({ name: 'ui_publish', arguments: { id: 'visual-demo', taskId: 'ui-browser-task', agent: 'claude', spec } });
   assert.ok(!published.isError, JSON.stringify(published));
   browser = await chromium.launch({ channel: 'chrome', headless: true });
-  context = await browser.newContext({ viewport: { width: 1440, height: 1080 }, recordVideo: { dir: out, size: { width: 1440, height: 1080 } } });
+  context = await browser.newContext({ locale: 'tr-TR', viewport: { width: 1440, height: 1080 }, recordVideo: { dir: out, size: { width: 1440, height: 1080 } } });
   const page = await context.newPage(); const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(`http://127.0.0.1:${port}/visual.html?id=visual-demo`);
@@ -94,6 +94,35 @@ try {
     const element = ObsUI.render({ id: 'safe', agent: 'codex', revision: 1, spec: { title: '<img src=x onerror=alert(1)>', summary: '', blocks: [{ id: 'x', type: 'text', text: '<script>window.__uiXss=1</script>' }] } });
     document.body.append(element); if (element.querySelector('script,img')) throw new Error('Unsafe model markup'); element.remove();
   });
+  // Visual answer list: grouping, search, language and theme parity with the main app.
+  await client.callTool({ name: 'ui_publish', arguments: { id: 'visual-second', agent: 'codex', spec: { version: 1, title: 'İkinci yanıt', summary: 'Liste testi', blocks: [{ id: 'note', type: 'text', text: 'Liste görünümü' }] } } });
+  const listContext = await browser.newContext({ locale: 'tr-TR', viewport: { width: 1200, height: 900 } });
+  const listPage = await listContext.newPage();
+  const listErrors = []; listPage.on('pageerror', e => listErrors.push(e.message));
+  await listPage.goto(`http://127.0.0.1:${port}/visual.html`);
+  await listPage.getByText('2 görsel yanıt', { exact: true }).waitFor();
+  await listPage.getByPlaceholder('Başlık, ajan veya özette ara').fill('İkinci');
+  assert.equal(await listPage.locator('.visual-list a').count(), 1, 'arama listeyi süzer');
+  await listPage.getByPlaceholder('Başlık, ajan veya özette ara').fill('');
+  await listPage.getByText('claude', { exact: true }).waitFor();
+  await listPage.screenshot({ path: path.join(out, '04b-visual-list.png'), fullPage: true });
+  await listPage.getByRole('button', { name: 'English' }).click();
+  await listPage.getByText('All visual answers', { exact: true }).waitFor();
+  await listPage.getByText('2 visual answers', { exact: true }).waitFor();
+  await listPage.getByRole('button', { name: 'Switch to dark theme' }).click();
+  assert.equal(await listPage.evaluate(() => document.documentElement.getAttribute('data-theme')), 'dark', 'tema düğmesi koyu temaya geçirir');
+  await listPage.screenshot({ path: path.join(out, '04c-visual-list-en-dark.png'), fullPage: true });
+  const delPage = await listContext.newPage();
+  delPage.on('dialog', dialog => dialog.accept());
+  await delPage.goto(`http://127.0.0.1:${port}/visual.html?id=visual-second`);
+  await delPage.getByRole('button', { name: 'Delete' }).click();
+  await delPage.waitForURL(/\/visual\.html$/);
+  await delPage.locator('.visual-count').filter({ hasText: '1 visual answers' }).waitFor();
+  assert.equal(await delPage.getByText('İkinci yanıt').count(), 0, 'silinen yanıt listede kalmaz');
+  await delPage.close();
+  await listPage.close();
+  await listContext.close();
+  errors.push(...listErrors);
   // Main chat hydration from recorded task events, including a reload.
   globalSqlite.recordEvent(createEvent({ taskId: 'ui-browser-task', sessionId: 'ui-browser-session', agent: 'claude', type: 'task.completed', data: {} }));
   await page.goto(`http://127.0.0.1:${port}/`);
@@ -123,7 +152,7 @@ try {
   await page.getByText('Ajan devam görevini tamamladı.', { exact: true }).waitFor();
   assert.equal(await page.getByLabel('Tutar (TL)').inputValue(), '600');
   assert.deepEqual(errors, []);
-  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, deviceScaleFactor: 1, recordVideo: { dir: out, size: { width: 390, height: 844 } } });
+  const mobile = await browser.newContext({ locale: 'tr-TR', viewport: { width: 390, height: 844 }, isMobile: true, deviceScaleFactor: 1, recordVideo: { dir: out, size: { width: 390, height: 844 } } });
   const phone = await mobile.newPage(); await phone.goto(`http://127.0.0.1:${port}/visual.html?id=visual-demo`);
   await phone.getByText('Sürüm 3', { exact: true }).waitFor();
   assert.equal(await phone.getByLabel('Tutar (TL)').inputValue(), '600', 'saved server response restores in a fresh context');
@@ -140,7 +169,7 @@ try {
   fs.renameSync(mobileVideo, path.join(out, 'intelligent-ui-mobile.webm'));
   const videoPath = await page.video().path(); await context.close(); context = undefined;
   fs.renameSync(videoPath, path.join(out, 'intelligent-ui-demo.webm'));
-  fs.writeFileSync(path.join(out, 'verification.json'), JSON.stringify({ passed: true, liveProviderCalls: 0, mockedContinuations: continuations.length, checked: ['MCP publish/read/update', 'real form submission', 'local calculation', 'SSE revision update', 'draft preservation across revisions and reload', 'saved response restored in fresh browser context', 'mocked same-session continuation', 'continuation status after reload', 'inline chat hydration', 'session-only association', 'XSS text rendering', 'mobile interaction and overflow'], browserErrors: errors }, null, 2));
+  fs.writeFileSync(path.join(out, 'verification.json'), JSON.stringify({ passed: true, liveProviderCalls: 0, mockedContinuations: continuations.length, checked: ['MCP publish/read/update', 'real form submission', 'local calculation', 'SSE revision update', 'draft preservation across revisions and reload', 'saved response restored in fresh browser context', 'mocked same-session continuation', 'continuation status after reload', 'inline chat hydration', 'session-only association', 'XSS text rendering', 'SVG diagram layout', 'visual answer list search and grouping', 'TR/EN and light/dark parity', 'confirmed delete removes the answer', 'mobile interaction and overflow'], browserErrors: errors }, null, 2));
   console.log(`PASS: browser recording and screenshots: ${out}`);
 } finally {
   if (context) await context.close(); if (browser) await browser.close();

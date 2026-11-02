@@ -143,6 +143,8 @@ export class SqliteStore {
       CREATE INDEX IF NOT EXISTS idx_events_task_ts ON events(task_id, timestamp);
       CREATE INDEX IF NOT EXISTS idx_events_ui_document ON events(json_extract(data,'$.id'))
         WHERE type IN ('ui.published','ui.updated');
+      CREATE INDEX IF NOT EXISTS idx_events_ui_document_v2 ON events(json_extract(data,'$.id'))
+        WHERE type IN ('ui.published','ui.updated','ui.deleted');
       CREATE INDEX IF NOT EXISTS idx_events_ui_action ON events(json_extract(data,'$.id'), json_extract(data,'$.requestId'))
         WHERE type = 'ui.action';
       CREATE INDEX IF NOT EXISTS idx_events_ui_continuation ON events(json_extract(data,'$.id'), json_extract(data,'$.requestId'))
@@ -749,6 +751,19 @@ export class SqliteStore {
   /** Runs a callback inside an immediate SQLite transaction. */
   withTransaction<T>(operation: (db: DatabaseSync) => T): T {
     this.db.exec('BEGIN IMMEDIATE;');
+    try {
+      const result = operation(this.db);
+      this.db.exec('COMMIT;');
+      return result;
+    } catch (error) {
+      this.db.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+
+  /** Read-only transaction: does not take the write lock that BEGIN IMMEDIATE would hold. */
+  withReadTransaction<T>(operation: (db: DatabaseSync) => T): T {
+    this.db.exec('BEGIN DEFERRED;');
     try {
       const result = operation(this.db);
       this.db.exec('COMMIT;');

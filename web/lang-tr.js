@@ -1,12 +1,12 @@
 // @ts-mandatory: Tarayıcıda sıfır-derleme (zero-build CSP script-src self) ile doğrudan çalışan istemci dil modülüdür.
 ObsI18n.addResources('tr', {
   app: { title: 'Agent Observatory' },
-  ui: { answers: 'Görsel yanıtlar ↗' },
+  ui: { answers: 'Görsel yanıtlar ↗', all: 'Tüm görsel yanıtlar', back: '← Agent Observatory', loading: 'Görsel yanıt yükleniyor…', empty: 'Henüz görsel yanıt yok. Ajanın ui_publish aracını kullanmasıyla burada görünür.', error: 'Görsel yanıt yüklenemedi', search: 'Başlık, ajan veya özette ara', count: '{{count}} görsel yanıt', blocks: '{{count}} blok', delete: 'Sil', deleteConfirm: 'Bu görsel yanıt silinsin mi? Bu işlem geri alınamaz.' },
   'api.read_only': 'Bu cihaz salt okunur.',
   common: { copy: 'Kopyala', copied: 'Kopyalandı', thinking: 'Düşünme süreci' },
   perm: { request: 'Onay İsteği', approve: '✓ İzin Ver (Evet)', reject: '✗ Reddet (Hayır)', approved: '✓ İzin Verildi', rejected: '✗ Reddedildi' },
   nav: { newChat: 'Yeni sohbet', toggle: 'Geçmişi aç veya kapat', history: 'Sohbet geçmişi', office: 'Nexus 3D Ofis' },
-  rc: { start: 'Başlıyor…', read: '{{count}} dosya okunuyor', term: 'Komut çalıştırıyor', diff: 'Dosya düzenliyor', task: 'Alt görev çalışıyor', generic: 'Araç kullanıyor', step: 'Adım {{n}}', more: '… +{{n}} satır', stop: 'Durdur', toggle: 'Ayrıntılı görünümü aç veya kapat' },
+  rc: { start: 'Başlıyor…', read: '{{count}} dosya okunuyor', term: 'Komut çalıştırıyor', diff: 'Dosya düzenliyor', task: 'Alt görev çalışıyor', generic: 'Araç kullanıyor', step: 'Adım {{n}}', more: '… +{{n}} satır', stop: 'Durdur', verbRead: 'Okundu', verbReading: 'Okunuyor', verbEdited: 'Düzenlendi', verbEditing: 'Düzenleniyor', verbRan: 'Çalıştırıldı', verbRunning: 'Çalıştırılıyor', verbSearched: 'Arandı', verbSearching: 'Aranıyor', verbTested: 'Test geçti', verbTesting: 'Test çalışıyor', verbTask: 'Alt görev', verbTool: 'Araç', toggle: 'Ayrıntılı görünümü aç veya kapat', open: 'Çalışmayı aç' },
   empty: { title: 'Ne yaptırmak istersin?' },
   composer: { placeholder: 'Bir şey yaz', label: 'İstem', send: 'Gönder', stop: 'Durdur' },
   mode: { read: 'Salt okunur', write: 'Yazabilir', readTitle: 'Salt Okunur (İnceleme / Dosyalara dokunmaz)', writeTitle: 'Ajan Modu (Kod yazar ve dosyaları düzenler)', noWrite: '{{engine}}: yazma kipi yok' },

@@ -2151,6 +2151,13 @@
   async function hydrateUI(v) {
     try { const result = await api('/api/ui?taskId=' + encodeURIComponent(v.rec.taskId)); if (v.content.isConnected) result.documents.forEach(doc => buildUI(v, doc, result.states?.[doc.id])); } catch { /* transcript remains available */ }
   }
+  function removeUI(v, id) {
+    if (!v || !v.content) return;
+    const old = [...v.content.querySelectorAll('.iui-document')].find(x => x.dataset.uiId === id);
+    if (old) old.remove();
+    const index = v.rec.parts.findIndex(p => p.k === 'ui' && p.document && p.document.id === id);
+    if (index >= 0) v.rec.parts.splice(index, 1);
+  }
   async function hydrateSessionUI() {
     const current = chat; const session = current && current.session && current.session.id;
     if (!session) return;
@@ -2480,6 +2487,7 @@
 
   // ---------- olay akışı ----------
   function onEvent(ev) {
+    if (ev.type === 'ui.deleted') { views.forEach(v => removeUI(v, ev.data.id)); persist(); }
     if (ev.type === 'ui.action' || ev.type === 'ui.continuation' || ev.type === 'task.completed' || ev.type === 'task.failed' || ev.type === 'task.cancelled') {
       const target = uiTargets.get(ev.taskId);
       if (target) hydrateUI(target);

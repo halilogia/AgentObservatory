@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import vm from 'node:vm';
 import { SqliteStore } from '../src/core/sqlite_store.ts';
 import { createEvent } from '../src/core/types.ts';
-import { publishUI, updateUI, readUI, listUI, submitUI, readUIActions, uiText, claimUIContinuation, finishUIContinuation, readUIState } from '../src/features/intelligent_ui/index.ts';
+import { publishUI, updateUI, patchUI, deleteUI, readUI, listUI, submitUI, readUIActions, uiText, claimUIContinuation, finishUIContinuation, readUIState } from '../src/features/intelligent_ui/index.ts';
 import { startWeb } from '../src/commands/web.ts';
 import { TranscriptRenderer } from '../src/ui/transcript.ts';
 import { AccountPoolManager } from '../src/core/account_pool.ts';
@@ -21,6 +21,25 @@ try {
   const doc = publishUI(store, { id: 'ui-test', taskId: 't1', agent: 'codex', spec });
   assert.equal(doc.sessionId, 's1');
   assert.equal(doc.revision, 1);
+  const patchDoc = publishUI(store, { id: 'ui-patch', agent: 'codex', spec });
+  const patched = patchUI(store, { id: patchDoc.id, expectedRevision: 1, ops: [
+    { op: 'replace', block: { id: 'bars', type: 'card', text: 'Grafik yerine kart' } },
+    { op: 'add', block: { id: 'note', type: 'text', text: 'Ek not' } },
+    { op: 'remove', blockId: 'form' }
+  ] });
+  assert.equal(patched.revision, 2);
+  assert.deepEqual(patched.spec.blocks.map(b => b.id), ['bars', 'note']);
+  assert.equal(patched.spec.blocks[0].type, 'card');
+  assert.throws(() => patchUI(store, { id: patchDoc.id, expectedRevision: 1, ops: [{ op: 'remove', blockId: 'note' }] }), /Revision conflict/);
+  assert.throws(() => patchUI(store, { id: patchDoc.id, expectedRevision: 2, ops: [{ op: 'add', block: { id: 'note', type: 'text', text: 'tekrar' } }] }), /already exists/);
+  assert.throws(() => patchUI(store, { id: patchDoc.id, expectedRevision: 2, ops: [{ op: 'remove', blockId: 'missing' }] }), /Block not found/);
+  assert.throws(() => deleteUI(store, { id: patchDoc.id, expectedRevision: 1 }), /conflict/);
+  deleteUI(store, { id: patchDoc.id, expectedRevision: 2 });
+  assert.equal(store.withTransaction(db => readUI(db, patchDoc.id)), null);
+  assert.ok(!store.withTransaction(db => listUI(db, {})).some(d => d.id === patchDoc.id), 'silinen belge listede görünmez');
+  assert.ok(!JSON.stringify(store.withTransaction(db => db.prepare("SELECT data FROM events WHERE json_extract(data,'$.id')=?").all(patchDoc.id))).includes('Ek not'), 'silinen içerik olay günlüğünden redakte edilir');
+  assert.throws(() => deleteUI(store, { id: patchDoc.id, expectedRevision: 2 }), /not found/);
+  assert.throws(() => publishUI(store, { id: patchDoc.id, agent: 'codex', spec }), /already exists/, 'silinen kimlik yeniden kullanılamaz');
   assert.throws(() => publishUI(store, { id: doc.id, agent: 'codex', spec }), /already exists/);
   assert.throws(() => publishUI(store, { taskId: 't1', agent: 'claude', spec }), /scope mismatch/);
   assert.throws(() => publishUI(store, { taskId: 'missing', agent: 'codex', spec }), /not found/);
@@ -30,7 +49,7 @@ try {
   assert.throws(() => publishUI(store, { agent: 'codex', spec: { ...spec, blocks: [{ id: 'x', type: 'table', columns: ['A'], rows: [[1, 2]] }] } }), /width/);
   assert.throws(() => publishUI(store, { agent: 'codex', spec: { ...spec, blocks: [{ id: 'x', type: 'diagram', nodes: [{ id: 'a', label: 'A' }], edges: [{ from: 'a', to: 'b' }] }] } }), /references/);
   assert.throws(() => publishUI(store, { agent: 'codex', spec: { ...spec, summary: 'a'.repeat(50000) } }), /48 KiB/);
-  const action = { id: doc.id, expectedRevision: 1, blockId: 'form', requestId: crypto.randomUUID(), values: { amount: 200, rate: 20 } };
+  const action = { id: doc.id, expectedRevision: 1, blockId: 'form', requestId: crypto.randomUUID(), values: { amount: 200, rate: 20 }, continue: true };
   assert.deepEqual(submitUI(store, action).values, action.values);
   submitUI(store, action);
   assert.throws(() => submitUI(store, { ...action, values: { amount: 201, rate: 20 } }), /already used/);
@@ -44,6 +63,9 @@ try {
   assert.equal(data.doc!.spec.summary, 'Güncellendi'); assert.equal(data.docs.length, 1); assert.equal(data.actions.length, 1);
   assert.equal(store.withTransaction(db => readUIActions(db, doc.id, data.actions[0].seq)).length, 0);
   assert.match(uiText(next), /Başarılı: 48/); assert.match(uiText(next), /Bilinmeyen: \?/);
+  const noConsent = crypto.randomUUID();
+  submitUI(store, { id: doc.id, expectedRevision: 2, blockId: 'form', requestId: noConsent, values: { amount: 1, rate: 2 } });
+  assert.throws(() => claimUIContinuation(store, { id: doc.id, requestId: noConsent }), /işaretlemedi/, 'sunucu devam için açık kullanıcı onayı ister');
   let output = ''; const transcript = new TranscriptRenderer(s => { output += s; }, { color: false });
   transcript.push({ taskId: 't1', agent: 'codex', type: 'ui.updated', data: next, timestamp: Date.now() });
   assert.match(output, /ui-test/);
@@ -51,19 +73,31 @@ try {
   assert.equal(context.ObsUI.calculate({ operation: 'percentage', inputs: ['a', 'b'] }, { a: 200, b: 20 }), 40);
   assert.equal(context.ObsUI.calculate({ operation: 'sum', inputs: ['a'] }, {}), null);
   assert.equal(context.ObsUI.calculate({ operation: 'product', inputs: ['a', 'b'] }, { a: 1e308, b: 1e308 }), null);
+  const chain = context.ObsUI.diagramLayout(
+    [{ id: 'a', label: 'Topla' }, { id: 'b', label: 'Doğrula ve kaydet' }, { id: 'c', label: 'Yayınla' }],
+    [{ from: 'a', to: 'b', label: 'veri' }, { from: 'b', to: 'c' }]
+  );
+  assert.ok(chain.pos.get('a').x < chain.pos.get('b').x && chain.pos.get('b').x < chain.pos.get('c').x, 'zincir soldan sağa sıralanır');
+  assert.equal(chain.edges.length, 2);
+  const cyclic = context.ObsUI.diagramLayout([{ id: 'x', label: 'X' }, { id: 'y', label: 'Y' }], [{ from: 'x', to: 'y' }, { from: 'y', to: 'x' }, { from: 'y', to: 'y' }]);
+  assert.ok(cyclic.pos.get('x') && cyclic.pos.get('y'), 'döngü ve kendine bağ sonsuz döngüye girmez');
+  assert.notEqual(cyclic.pos.get('x').x, cyclic.pos.get('y').x, 'döngüde düğümler üst üste binmez');
+  const wide = context.ObsUI.diagramLayout(Array.from({ length: 30 }, (_, i) => ({ id: 'n' + i, label: 'Düğüm ' + i })), Array.from({ length: 29 }, (_, i) => ({ from: 'n' + i, to: 'n' + (i + 1) })));
+  assert.equal(wide.pos.size, 30);
+  assert.ok(wide.width > 30 * 100, 'otuz düğüm yatay olarak yayılır');
   // The source, busy check and durable claim use one transaction across different connections.
   for (const agent of ['claude', 'agy', 'codex', 'opencode'] as const) {
     const taskId = 'source-' + agent, sessionId = 'session-' + agent;
     store.recordEvent(createEvent({ taskId, sessionId, agent, type: 'task.started', data: { cwd: process.cwd(), model: 'recorded-model', executionPolicy: { sandbox: 'read-only', dangerouslySkipPermissions: false, effort: 'high', account: 'saved-account' } } }));
     store.recordEvent(createEvent({ taskId, sessionId, agent, type: 'task.completed' }));
     const d = publishUI(store, { agent, taskId, spec }); const requestId = crypto.randomUUID();
-    submitUI(store, { id: d.id, expectedRevision: 1, blockId: 'form', requestId, values: { amount: 10 } });
+    submitUI(store, { id: d.id, expectedRevision: 1, blockId: 'form', requestId, values: { amount: 10 }, continue: true });
     const claim = claimUIContinuation(store, { id: d.id, requestId });
     assert.equal(claim.source!.agent, agent); assert.equal(claim.source!.sessionId, sessionId);
     assert.equal(claim.source!.sandbox, 'read-only'); assert.equal(claim.source!.account, 'saved-account');
     assert.match(claim.prompt!, /10/);
     assert.equal(claimUIContinuation(store, { id: d.id, requestId }).existing!.state, 'starting');
-    const other = crypto.randomUUID(); submitUI(store, { id: d.id, expectedRevision: 1, blockId: 'form', requestId: other, values: { amount: 20 } });
+    const other = crypto.randomUUID(); submitUI(store, { id: d.id, expectedRevision: 1, blockId: 'form', requestId: other, values: { amount: 20 }, continue: true });
     assert.throws(() => claimUIContinuation(store, { id: d.id, requestId: other }), /başka bir devam/);
     finishUIContinuation(store, claim.document, { ...claim.state!, state: 'started', continuationTaskId: 'continued-' + agent });
     assert.throws(() => claimUIContinuation(store, { id: d.id, requestId: other }), /başka bir devam/);
@@ -95,13 +129,14 @@ const abort = new AbortController();
 try {
   const stream = await fetch(base + '/stream?since=0', { signal: abort.signal });
   const reader = stream.body!.getReader(); await reader.read();
-  const doc = publishUI(writer, { id: 'http-ui', agent: 'claude', sessionId: 'session-claude', spec });
+  writer.recordEvent(createEvent({ taskId: 'http-source', sessionId: 'session-claude', agent: 'claude', type: 'task.started', data: { cwd: process.cwd(), model: 'source-model', executionPolicy: { sandbox: 'read-only', dangerouslySkipPermissions: false, effort: 'high', account: 'source-account' } } }));
+  const doc = publishUI(writer, { id: 'http-ui', taskId: 'http-source', agent: 'claude', spec });
   const frame = new TextDecoder().decode((await reader.read()).value); assert.match(frame, /ui.published/);
   assert.equal((await fetch(base + '/api/ui?id=missing')).status, 404);
   const fetched = await (await fetch(base + '/api/ui?id=http-ui')).json() as any; assert.equal(fetched.document.agent, 'claude');
   assert.equal(((await (await fetch(base + '/api/ui?sessionId=other')).json()) as any).documents.length, 0);
   const html = await (await fetch(base + '/visual.html')).text(); assert.ok(html.includes(token) && !html.includes('__OBS_TOKEN__'));
-  const action = { id: doc.id, expectedRevision: 1, blockId: 'form', requestId: crypto.randomUUID(), values: { amount: 200, rate: 20 } };
+  const action = { id: doc.id, expectedRevision: 1, blockId: 'form', requestId: crypto.randomUUID(), values: { amount: 200, rate: 20 }, continue: true };
   const send = (body: object, key = token) => fetch(base + '/api/ui/action', { method: 'POST', headers: { 'content-type': 'application/json', 'x-observatory-token': key }, body: JSON.stringify(body) });
   assert.equal((await send(action, 'bad')).status, 403);
   assert.equal((await send(action)).status, 200);

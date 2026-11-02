@@ -92,7 +92,7 @@ try {
   assert.ok(rd.status === 200 || rd.json.code === 'not_installed', 'telefondan okuma kipinde görev kabul edilir: ' + rd.body);
   const w = await run('write');
   assert.strictEqual(w.status, 403); assert.strictEqual(w.json.code, 'remote_write_forbidden', 'yazma varsayılan kapalı');
-  for (const endpoint of ['/api/ui/action', '/api/ui/continue']) {
+  for (const endpoint of ['/api/ui/action', '/api/ui/continue', '/api/ui/delete']) {
     const denied = await call('POST', endpoint, { ...me, body: {} });
     assert.strictEqual(denied.status, 403, endpoint + ' salt okunur cihazdan reddedilmeli');
     assert.strictEqual(denied.json.code, 'read_only');

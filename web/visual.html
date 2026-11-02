@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="tr">
+<html lang="tr" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,11 +7,24 @@
 <title>Görsel Yanıtlar · Agent Observatory</title>
 <link rel="icon" href="/favicon.svg">
 <link rel="stylesheet" href="/intelligent-ui.css">
+<script src="/theme.js?v=1.0.3"></script>
+<script src="/i18n.js?v=1.0.3"></script>
+<script src="/lang-tr.js?v=1.0.3"></script>
+<script src="/lang-en.js?v=1.0.3"></script>
 </head>
 <body class="visual-page">
 <main class="visual-shell">
-<nav class="visual-nav"><a href="/">← Agent Observatory</a><span>INTELLIGENT UI</span><a href="/visual.html">Tüm görsel yanıtlar</a></nav>
-<div id="visual-root" aria-live="polite"><p class="visual-state">Görsel yanıt yükleniyor…</p></div>
+<nav class="visual-nav">
+  <a href="/" data-i18n="ui.back">← Agent Observatory</a>
+  <span>INTELLIGENT UI</span>
+  <div class="visual-actions">
+    <a href="/visual.html" data-i18n="ui.all">Tüm görsel yanıtlar</a>
+    <button class="visual-btn" id="langBtn" type="button"></button>
+    <button class="visual-btn" id="themeBtn" type="button"></button>
+    <button class="visual-btn visual-danger" id="deleteBtn" type="button" hidden data-i18n="ui.delete">Sil</button>
+  </div>
+</nav>
+<div id="visual-root" aria-live="polite"><p class="visual-state" data-i18n="ui.loading">Görsel yanıt yükleniyor…</p></div>
 </main>
 <script src="/intelligent-ui.js"></script>
 <script src="/visual.js"></script>

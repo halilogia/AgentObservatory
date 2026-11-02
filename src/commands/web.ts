@@ -20,7 +20,7 @@ import { Remote } from './web_remote.ts';
 import { groupSessions, sessionEvents, subagentsOf } from './web_sessions.ts';
 import { scanWidgets, renderWidgetSvg } from '../core/library_widgets.ts';
 import { globalTasteStore } from '../core/taste_store.ts';
-import { listUI, readUI, readUIActions, submitUI, UIError, readUIState, uiContinuationSource, readUIContinuation, claimUIContinuation, finishUIContinuation, continueSchema } from '../features/intelligent_ui/index.ts';
+import { listUI, readUI, readUIActions, submitUI, UIError, readUIState, uiContinuationSource, readUIContinuation, claimUIContinuation, finishUIContinuation, continueSchema, deleteUI } from '../features/intelligent_ui/index.ts';
 import type { UIDocument } from '../features/intelligent_ui/index.ts';
 import { SqliteStore } from '../core/sqlite_store.ts';
 
@@ -319,6 +319,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
   let libraryCache: { at: number; items: Array<{ path: string; name: string; ext: string; mtime: number; size: number; agent: string; sessionId: string; title: string; widgetId?: string; kind?: string; seq?: number }> } | null = null;
   const server = startServer({
     port, dbPath: opts.dbPath, pollMs: opts.pollMs, ingest: opts.ingest,
+    host: process.env.OBSERVATORY_HOST || '127.0.0.1',
     allowedOrigins: () => [`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...remote.origins()],
     allowedHosts: remote.hosts,
     gate: (ctx) => remote.gate(ctx, () => fs.readFileSync(path.join(webDir, 'pair.html'), 'utf8'), () => fs.readFileSync(path.join(webDir, 'pair.js'), 'utf8')),
@@ -553,7 +554,7 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         }
         return true;
       }
-      if (method === 'POST' && ['/api/ui/action', '/api/ui/continue', '/api/run', '/api/cancel', '/api/approve', '/api/accounts', '/api/folders', '/api/folders/browse', '/api/folders/remove', '/api/snapshot', '/api/restore', '/api/remote', '/api/pair/new', '/api/devices/write', '/api/devices/remove'].includes(url.pathname)) {
+      if (method === 'POST' && ['/api/ui/action', '/api/ui/continue', '/api/ui/delete', '/api/run', '/api/cancel', '/api/approve', '/api/accounts', '/api/folders', '/api/folders/browse', '/api/folders/remove', '/api/snapshot', '/api/restore', '/api/remote', '/api/pair/new', '/api/devices/write', '/api/devices/remove'].includes(url.pathname)) {
         // hata yanıtları `code` taşır: arayüz bunu seçili dile çevirir; `error` Türkçe yedek metindir
         const fail = (status: number, code: string, error: string, params: Record<string, unknown> = {}) => { json(status, { code, error, params }); return true; };
         const site = req.headers['sec-fetch-site'];
@@ -563,6 +564,17 @@ export function startWeb(opts: WebOptions = {}): { server: http.Server; token: s
         let b: any;
         try { b = await readJson(req); } catch (e: any) { return fail(e.status || 400, e.status === 413 ? 'too_large' : 'bad_json', e.message); }
 
+        if (url.pathname === '/api/ui/delete') {
+          if (remote.deviceOf(req) && !remote.deviceOf(req)?.write) return fail(403, 'read_only', 'Salt okunur cihaz');
+          try {
+            uiWriter ||= new SqliteStore(opts.dbPath || process.env.OBSERVATORY_DB);
+            json(200, deleteUI(uiWriter, b));
+          } catch (error) {
+            if (error instanceof UIError) json(error.status, { error: error.message });
+            else { console.error('[ui.delete]', error); json(500, { error: 'Silme işlemi başarısız.' }); }
+          }
+          return true;
+        }
         if (url.pathname === '/api/ui/continue') {
           if (remote.deviceOf(req) && !remote.deviceOf(req)?.write) return fail(403, 'read_only', 'Salt okunur cihaz');
           try {

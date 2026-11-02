@@ -31,6 +31,26 @@ node bin/observatory.js run codex "Unit testleri çalıştır"
 
 ---
 
+## 🖼️ Görsel Yanıtlar (Intelligent UI)
+
+Bağlı her CLI ajanı, MCP üzerinden kart, tablo, grafik, form ve SVG diyagram yayınlayabilir. Kullanıcı formu doldurup gönderince ajan **aynı oturum ve izinlerle** devam edebilir.
+
+```bash
+node --experimental-strip-types src/cli.ts web    # http://127.0.0.1:8788
+```
+
+| Araç | Amaç |
+| --- | --- |
+| `ui_publish` | Yeni görsel yanıt |
+| `ui_update` | Tam belgeyi güncelle (revizyon çakışma denetimi) |
+| `ui_patch` | Yalnızca değişen blokları ekle/değiştir/sil |
+| `ui_read` | Belgeyi ve form yanıtlarını oku |
+| `ui_delete` | Yanıtı listelerden ve okumalardan kaldır |
+
+Sözleşme ve örnekler: [`docs/intelligent-ui.md`](docs/intelligent-ui.md) · Wiki: [`docs/wiki/15-gorsel-yanitlar.md`](docs/wiki/15-gorsel-yanitlar.md)
+
+---
+
 ## 🏛️ Mimari Özet (3 Kademeli Gözlem)
 
 | Öncelik | Katman | Mekanizma | Kapsam |
