@@ -1564,32 +1564,42 @@ select.addin { appearance: auto; }
   margin: 0;
 }
 
-/* çalışma durum kartı: kapalıyken hap, açıkken adım listesi */
-.runcard { width: 100%; max-width: 760px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+/* çalışma durum kartı: Elia Kuratli Agent Status Component */
+.runcard { width: 100%; max-width: 760px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); overflow: hidden; transition: all 0.2s ease; }
 .runcard[hidden] { display: none; }
-.rc-head { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 14px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
-.rc-spin { width: 14px; height: 14px; flex: none; border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--c, var(--accent)); animation: rcspin .9s linear infinite; }
-.rc-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rc-time { color: var(--muted); font-variant-numeric: tabular-nums; }
-.rc-head .chev { transition: transform .15s; color: var(--muted); }
+.runcard.open { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18); }
+.rc-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer; text-align: left; }
+.rc-head-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.rc-spin { width: 12px; height: 12px; flex: none; border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--c, var(--accent)); animation: rcspin .9s linear infinite; }
+.rc-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.rc-head-right { display: flex; align-items: center; gap: 8px; flex: none; }
+.rc-time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; font-weight: 500; }
+.rc-head .chev { transition: transform .2s cubic-bezier(0.16, 1, 0.3, 1); color: var(--muted); }
 .runcard.open .rc-head .chev { transform: rotate(180deg); }
-.rc-body { padding: 4px 14px 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
-.rc-meta { margin-top: 8px; font-size: 12px; color: var(--muted); }
-.rc-seg { display: flex; gap: 3px; }
-.rc-seg i { flex: 1; height: 3px; border-radius: 2px; background: var(--sunken); }
+.rc-body { padding: 0 16px 14px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+.rc-progress-bar { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.rc-progress-meta { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+.rc-model-pill { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--sunken); color: var(--text); border: 1px solid var(--border); }
+.rc-step-count { font-size: 11.5px; color: var(--muted); font-weight: 500; }
+.rc-seg { display: flex; gap: 4px; height: 4px; }
+.rc-seg i { flex: 1; height: 100%; border-radius: 2px; background: var(--sunken); transition: background .2s ease; }
 .rc-seg i.done { background: var(--c, var(--accent)); }
-.rc-seg i.run { background: var(--c, var(--accent)); opacity: .45; animation: blink 1.2s infinite; }
-.rc-list { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
-.rc-step { display: flex; gap: 8px; align-items: baseline; }
-.rc-step.run .rc-sum { color: var(--text); }
-.rc-sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-family: ui-monospace, Consolas, monospace; }
-.rc-ico { width: 14px; text-align: center; color: var(--faint); }
-.rc-dur { color: var(--faint); font-variant-numeric: tabular-nums; }
-.rc-out { margin: 0 0 2px 22px; padding: 4px 8px; background: var(--code-bg); border-radius: 6px; font: 12px/1.45 ui-monospace, Consolas, monospace; color: var(--muted); overflow: hidden; }
+.rc-seg i.run { background: var(--c, var(--accent)); opacity: .6; animation: blink 1.2s infinite; }
+.rc-list { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; }
+.rc-step { display: flex; align-items: center; gap: 10px; padding: 4px 6px; border-radius: 6px; }
+.rc-step:hover { background: var(--sunken); }
+.rc-step.run .rc-sum { color: var(--text); font-weight: 500; }
+.rc-ico { width: 16px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); flex: none; font-size: 13px; }
+.rc-sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.rc-dur { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 11.5px; flex: none; }
+.rc-out { margin: 0 0 2px 26px; padding: 4px 8px; background: var(--code-bg); border-radius: 6px; font: 12px/1.45 ui-monospace, Consolas, monospace; color: var(--muted); overflow: hidden; }
 .rc-out div { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 .rc-more { color: var(--faint); }
-.rc-stop { align-self: flex-start; border: 1px solid var(--border-strong); background: transparent; color: var(--text); border-radius: 8px; padding: 4px 12px; font: inherit; font-size: 12.5px; cursor: pointer; }
-.rc-stop:disabled { opacity: .5; cursor: default; }
+.rc-controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
+.rc-btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); transition: all .15s ease; }
+.rc-btn:hover { background: var(--sunken); border-color: var(--border-strong); }
+.rc-btn.stop { color: var(--err); }
+.rc-btn.stop:hover { background: rgba(239, 68, 68, 0.1); border-color: var(--err); }
 @keyframes rcspin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .rc-spin, .rc-seg i.run { animation: none; } }
 

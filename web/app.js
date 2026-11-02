@@ -815,10 +815,9 @@
       const row = el('div', 'hitem dm-item' + (isOn ? ' on' : ''));
       const b = el('button', 'hmain'); b.type = 'button';
       b.title = I18N.language === 'tr' ? sp.roleTr : sp.roleEn;
-      const dot = el('span', 'dot'); dot.style.setProperty('--c', sp.color);
       const av = el('span', 'dm-avatar', sp.icon);
       const nm = el('span', 't', sp.name);
-      b.append(dot, av, nm);
+      b.append(av, nm);
       b.onclick = () => openAgentDm(sp);
       row.appendChild(b);
       box.appendChild(row);
@@ -2371,30 +2370,73 @@
     if (!v || v.done) { box.hidden = true; box.replaceChildren(); if (runTimer) { clearInterval(runTimer); runTimer = 0; } return; }
     if (!runTimer) runTimer = setInterval(renderRunCard, 1000);
     const detail = rcDetail(); const now = Date.now();
-    box.hidden = false; box.style.setProperty('--c', v.rec.color); box.classList.toggle('open', detail);
+    box.hidden = false; box.style.setProperty('--c', v.rec.color || 'var(--accent)'); box.classList.toggle('open', detail);
+
     const head = el('button', 'rc-head'); head.type = 'button'; head.title = t('rc.toggle'); head.setAttribute('aria-expanded', String(detail));
+    const hLeft = el('div', 'rc-head-left');
+    const spin = el('span', 'rc-spin');
+    const lbl = el('span', 'rc-label', rcLabel(v));
+    hLeft.append(spin, lbl);
+
+    const hRight = el('div', 'rc-head-right');
+    const timer = el('span', 'rc-time', ObsRunCard.clock(now - v.t0));
     const chev = el('span', 'ico chev'); chev.innerHTML = ICON.chev;
-    head.append(el('span', 'rc-spin'), el('span', 'rc-label', rcLabel(v)), el('span', 'rc-time', ObsRunCard.clock(now - v.t0)), chev);
+    hRight.append(timer, chev);
+
+    head.append(hLeft, hRight);
     head.onclick = () => { rcSetDetail(!rcDetail()); renderRunCard(); };
+
     const kids = [head];
     if (detail) {
       const body = el('div', 'rc-body');
-      body.appendChild(el('div', 'rc-meta', `${engineLabel(v.rec)} · ${v.rec.label}` + (v.steps.length ? ' · ' + t('rc.step', { n: v.steps.length }) : '')));
-      const seg = el('div', 'rc-seg'); ObsRunCard.segments(v.steps, 24).forEach((s) => seg.appendChild(el('i', s))); body.appendChild(seg);
+
+      const progBox = el('div', 'rc-progress-bar');
+      const progMeta = el('div', 'rc-progress-meta');
+      const modelTag = el('span', 'rc-model-pill', v.rec.model || engineLabel(v.rec) || 'gemini-2.0-flash');
+      const stepTxt = el('span', 'rc-step-count', v.steps.length ? ('Adim ' + v.steps.length) : 'Baslatiliyor');
+      progMeta.append(modelTag, stepTxt);
+
+      const seg = el('div', 'rc-seg');
+      const segCount = Math.max(6, Math.min(24, v.steps.length || 6));
+      ObsRunCard.segments(v.steps, segCount).forEach((s) => seg.appendChild(el('i', s)));
+      progBox.append(progMeta, seg);
+      body.appendChild(progBox);
+
       const list = el('div', 'rc-list');
-      v.steps.slice(-8).forEach((s) => {
+      v.steps.slice(-5).forEach((s) => {
         const row = el('div', 'rc-step' + (s.t1 ? '' : ' run'));
-        row.append(el('span', 'rc-ico', RC_GLYPH[s.kind] || '•'), el('span', 'rc-sum', s.summary || s.name), el('span', 'rc-dur', ObsRunCard.dur((s.t1 || now) - s.t0)));
+        const ico = el('span', 'rc-ico', RC_GLYPH[s.kind] || '•');
+        const sum = el('span', 'rc-sum', s.summary || s.name);
+        const dur = el('span', 'rc-dur', ObsRunCard.dur((s.t1 || now) - s.t0));
+        row.append(ico, sum, dur);
         list.appendChild(row);
         if (s.kind === 'term' && s.out) {
-          const o = ObsRunCard.outLines(s.out, 3); const pre = el('div', 'rc-out');
+          const o = ObsRunCard.outLines(s.out, 3);
+          const pre = el('div', 'rc-out');
           o.lines.forEach((l) => pre.appendChild(el('div', '', l)));
           if (o.more) pre.appendChild(el('div', 'rc-more', t('rc.more', { n: o.more })));
           list.appendChild(pre);
         }
       });
       body.appendChild(list);
-      if (!v.term) { const stop = el('button', 'rc-stop', t('rc.stop')); stop.type = 'button'; stop.disabled = st.running === 'pending'; stop.onclick = send; body.appendChild(stop); }
+
+      const controls = el('div', 'rc-controls');
+      if (!v.term) {
+        const stopBtn = el('button', 'rc-btn stop', 'Durdur');
+        stopBtn.type = 'button';
+        stopBtn.disabled = st.running === 'pending';
+        stopBtn.onclick = (e) => { e.stopPropagation(); send(); };
+        controls.appendChild(stopBtn);
+      }
+      const openBtn = el('button', 'rc-btn', 'Detayları Gör');
+      openBtn.type = 'button';
+      openBtn.onclick = (e) => {
+        e.stopPropagation();
+        toggleDrawer('hudStream');
+      };
+      controls.appendChild(openBtn);
+
+      body.appendChild(controls);
       kids.push(body);
     }
     box.replaceChildren(...kids);
